@@ -148,7 +148,7 @@ bool CopyPixelsToTexture(
 
   gfx::Size source_size = source_shared_image->size();
   gfx::Rect source_rect(x, y, width, height);
-  if (!gfx::Rect(source_size).Contains(source_rect)) {
+  if (source_rect.IsEmpty() || !gfx::Rect(source_size).Contains(source_rect)) {
     return false;
   }
 
@@ -255,7 +255,7 @@ base::expected<void, GLError> CopySharedImageHelper::CopySharedImage(
 
   gfx::Size dest_size = dest_shared_image->size();
   gfx::Rect dest_rect(xoffset, yoffset, width, height);
-  if (!gfx::Rect(dest_size).Contains(dest_rect)) {
+  if (dest_rect.IsEmpty() || !gfx::Rect(dest_size).Contains(dest_rect)) {
     return base::unexpected(GLError(GL_INVALID_VALUE, "glCopySubTexture",
                                     "destination texture bad dimensions."));
   }
@@ -338,7 +338,7 @@ base::expected<void, GLError> CopySharedImageHelper::CopySharedImage(
 
   gfx::Size source_size = source_shared_image->size();
   gfx::Rect source_rect(x, y, width, height);
-  if (!gfx::Rect(source_size).Contains(source_rect)) {
+  if (source_rect.IsEmpty() || !gfx::Rect(source_size).Contains(source_rect)) {
     return base::unexpected(GLError(GL_INVALID_VALUE, "glCopySubTexture",
                                     "source texture bad dimensions."));
   }
@@ -500,7 +500,7 @@ base::expected<void, GLError> CopySharedImageHelper::CopySharedImageToGLTexture(
 
   gfx::Size source_size = source_shared_image->size();
   gfx::Rect source_rect(src_x, src_y, width, height);
-  if (!gfx::Rect(source_size).Contains(source_rect)) {
+  if (source_rect.IsEmpty() || !gfx::Rect(source_size).Contains(source_rect)) {
     return base::unexpected<GLError>(GLError(GL_INVALID_VALUE,
                                              "glCopySharedImageToTexture",
                                              "source texture bad dimensions."));
