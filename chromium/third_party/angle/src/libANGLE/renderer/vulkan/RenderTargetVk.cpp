@@ -448,12 +448,23 @@ void RenderTargetVk::invalidateEntireStencilContent(ContextVk *contextVk,
 gl::ImageIndex RenderTargetVk::getImageIndexForClear(uint32_t layerCount) const
 {
     // Determine the GL type from the Vk Image properties.
-    if (mImage->getType() == VK_IMAGE_TYPE_3D || mImage->getLayerCount() > 1)
+    if (mImage->getType() == VK_IMAGE_TYPE_3D)
     {
-        // This is used for the sake of staging clears.  The depth slices of the 3D image are
-        // threated as layers for this purpose.
+        // Staged clears on 3D images are recorded and flushed at layer 0 and apply to the entire
+        // image: Vulkan requires arrayLayers == 1 for VK_IMAGE_TYPE_3D, and both
+        // RenderTargetVk::flushStagedUpdates and ImageHelper::flushStagedUpdates only probe layer
+        // range [0, 1) for 3D images.  Staging a clear at the depth-slice index (mLayerIndex > 0)
+        // would permanently orphan it, silently dropping robust-resource-initialization clears
+        // staged by FramebufferVk::invalidateImpl.  The following render pass would then run with
+        // loadOp=DONT_CARE over invalidated contents, disclosing uninitialized/stale GPU memory
+        // (stale tile contents on tile-based GPUs) to the application.
+        return gl::ImageIndex::Make2DArrayRange(mLevelIndexGL.get(), 0, layerCount);
+    }
+    if (mImage->getLayerCount() > 1)
+    {
+        // This is used for the sake of staging clears.
         //
-        // We also don't need to distinguish 2D array and cube.
+        // We don't need to distinguish 2D array and cube.
         return gl::ImageIndex::Make2DArrayRange(mLevelIndexGL.get(), mLayerIndex, layerCount);
     }
 

@@ -10713,7 +10713,19 @@ angle::Result ImageHelper::flushStagedUpdatesImpl(ContextVk *contextVk,
 
                     // Do not call onWrite as it removes mCurrentSingleClearValue, but instead call
                     // setContentDefined directly.
-                    setContentDefined(updateMipLevelVk, 1, updateBaseLayer, updateLayerCount,
+                    //
+                    // A clear of a 3D image (always a single Vulkan array layer) writes every
+                    // depth slice; mark all tracked slices as having defined contents so that a
+                    // later render pass targeting a slice other than 0 uses loadOp=LOAD instead
+                    // of DONT_CARE (which would expose undefined/stale memory on tile-based
+                    // GPUs).
+                    uint32_t definedLayerCount = updateLayerCount;
+                    if (mImageType == VK_IMAGE_TYPE_3D && updateBaseLayer == 0)
+                    {
+                        definedLayerCount = static_cast<uint32_t>(
+                            std::max(getLevelExtents(updateMipLevelVk).depth, 1));
+                    }
+                    setContentDefined(updateMipLevelVk, 1, updateBaseLayer, definedLayerCount,
                                       update.data.clear.aspectFlags);
                     break;
                 }
