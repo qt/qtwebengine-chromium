@@ -60,7 +60,7 @@ namespace {
 
 void UpdateAnimationTiming(
     Document& document,
-    HeapHashSet<WeakMember<AnimationTimeline>>& timelines,
+    const HeapHashSet<WeakMember<AnimationTimeline>>& timelines,
     TimingUpdateReason reason) {
   if (RuntimeEnabledFeatures::AnimationTriggerEnabled()) {
     // First service all triggers because servicing a trigger might result in an
@@ -68,13 +68,16 @@ void UpdateAnimationTiming(
     // animation whose currentTime was updated. This can happen if an
     // animation's timeline is serviced first and then the trigger's timeline is
     // serviced afterwards.
-    for (auto& timeline : timelines) {
+    HeapVector<Member<AnimationTimeline>> timelines_to_service(timelines);
+    for (auto& timeline : timelines_to_service) {
       timeline->ServiceAnimationTriggers();
     }
   }
 
-  for (auto& timeline : timelines)
+  HeapVector<Member<AnimationTimeline>> timelines_to_service(timelines);
+  for (auto& timeline : timelines_to_service) {
     timeline->ServiceAnimations(reason);
+  }
   document.GetWorkletAnimationController().UpdateAnimationTimings(reason);
 }
 
