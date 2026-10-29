@@ -100,7 +100,7 @@ public:
     using ElementList = skia_private::STArray<4, const Element*>;
     Clip visitClipStackForDraw(const Transform&,
                                Geometry*,
-                               const SkStrokeRec&,
+                               SkStrokeRec* style,
                                bool msaaSupported,
                                ElementList* outEffectiveElements) const;
 

@@ -284,7 +284,7 @@ private:
     void drawGeometry(const Transform&,
                       Geometry&&,
                       const SkPaint&,
-                      const SkStrokeRec&,
+                      SkStrokeRec,
                       SkEnumBitMask<DrawFlags> = DrawFlags::kNone,
                       sk_sp<SkBlender> primitiveBlender = nullptr,
                       bool skipColorXform = false);

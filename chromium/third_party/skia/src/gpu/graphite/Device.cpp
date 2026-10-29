@@ -1372,7 +1372,7 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
 void Device::drawGeometry(const Transform& localToDevice,
                           Geometry&& geometry,
                           const SkPaint& paint,
-                          const SkStrokeRec& style,
+                          SkStrokeRec style,
                           SkEnumBitMask<DrawFlags> flags,
                           sk_sp<SkBlender> primitiveBlender,
                           bool skipColorXform) {
@@ -1452,7 +1452,7 @@ void Device::drawGeometry(const Transform& localToDevice,
     ClipStack::ElementList clipElements;
     Clip clip = fClip.visitClipStackForDraw(localToDevice,
                                             &geometry,
-                                            style,
+                                            &style,
                                             fMSAASupported,
                                             &clipElements);
     if (clip.isClippedOut()) {
