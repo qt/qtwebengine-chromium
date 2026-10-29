@@ -386,24 +386,21 @@ void XRWebGLLayer::OnFrameEnd() {
   // main work of OnFrameEnd if it's still valid. Otherwise, simply ensure the
   // shared image access is properly ended.
   if (session()->ended()) {
-    if (is_direct_draw_frame) {
-      drawing_buffer_->DoneWithSharedBuffer();
-      is_direct_draw_frame = false;
-    }
-
     if (camera_image_texture_scoped_access_) {
       gpu::SharedImageTexture::ScopedAccess::EndAccess(
           std::move(camera_image_texture_scoped_access_));
       camera_image_shared_image_texture_.reset();
     }
-    return;
   }
 
   if (framebuffer_) {
     framebuffer_->MarkOpaqueBufferComplete(false);
-    if (is_direct_draw_frame) {
-      drawing_buffer_->DoneWithSharedBuffer();
-      is_direct_draw_frame = false;
+    if(session()->ended()) {
+      if (is_direct_draw_frame) {
+        drawing_buffer_->DoneWithSharedBuffer();
+        is_direct_draw_frame = false;
+        return;
+      }
     }
 
     // Submit the frame to the XR compositor.
