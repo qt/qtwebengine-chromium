@@ -167,7 +167,7 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::Create(
     const base::flat_map<VkFormat, VkImageUsageFlags>& image_usage_cache,
     base::span<const uint8_t> pixel_data) {
   bool use_separate_gl_texture =
-        ExternalVkImageBacking::UseSeparateGLTexture(context_state.get(), format);
+        UseSeparateGLTexture(context_state.get(), format);
   bool is_external = context_state->support_vulkan_external_object();
 
   auto* device_queue = context_state->vk_context_provider()->GetDeviceQueue();
@@ -288,7 +288,7 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::CreateFromGMB(
   }
 
   bool use_separate_gl_texture =
-      ExternalVkImageBacking::UseSeparateGLTexture(context_state.get(), format);
+      UseSeparateGLTexture(context_state.get(), format);
 
   auto* vulkan_implementation =
       context_state->vk_context_provider()->GetVulkanImplementation();
@@ -314,8 +314,6 @@ std::unique_ptr<ExternalVkImageBacking> ExternalVkImageBacking::CreateFromGMB(
   textures.reserve(1);
   textures.emplace_back(std::move(image), format, color_space);
 
-  bool use_separate_gl_texture =
-      UseSeparateGLTexture(context_state.get(), format);
   auto backing = std::make_unique<ExternalVkImageBacking>(
       base::PassKey<ExternalVkImageBacking>(), mailbox, format, size,
       color_space, surface_origin, alpha_type, usage, std::move(debug_label),
@@ -984,6 +982,7 @@ void ExternalVkImageBacking::UpdateContent(uint32_t content_flags) {
     if ((latest_content_ & kInGLTexture)) {
       if (CopyPixelsFromGLTextureToVkImage()) {
         latest_content_ |= kInVkImage;
+      }
     }
   } else if (content_flags == kInGLTexture) {
     if (latest_content_ & kInVkImage) {
