@@ -241,7 +241,7 @@ template("rust_bindgen_generator") {
       ]
     }
 
-    if (is_win) {
+    if (is_win && !is_mingw && !is_robolectric) {
       # On Windows we fall back to using system headers from a sysroot from
       # depot_tools. This is negotiated by python scripts and the result is
       # available in //build/toolchain/win/win_toolchain_data.gni. From there
