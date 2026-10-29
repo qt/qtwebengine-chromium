@@ -124,6 +124,7 @@
 
 /* Define to include code reading entropy from `/dev/urandom'. */
 /* #undef XML_DEV_URANDOM */
+#define XML_DEV_URANDOM 1
 
 /* Define to make parameter entity parsing functionality available. */
 #define XML_DTD 1
