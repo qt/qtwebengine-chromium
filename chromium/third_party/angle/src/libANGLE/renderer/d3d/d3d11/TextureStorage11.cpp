@@ -751,12 +751,15 @@ angle::Result TextureStorage11::copySubresourceLevel(const gl::Context *context,
     D3D11_BOX *pSrcBox = nullptr;
     if (mRenderer->getRenderer11DeviceCaps().featureLevel <= D3D_FEATURE_LEVEL_9_3)
     {
-        GLsizei width  = region.width;
-        GLsizei height = region.height;
-        d3d11::MakeValidSize(false, mFormatInfo.texFormat, &width, &height, nullptr);
+        GLsizei width       = region.width;
+        GLsizei height      = region.height;
+        GLsizei depth       = region.depth;
+        int unusedLevelOffset = 0;
+        d3d11::MakeValidSize(false, mFormatInfo.texFormat, index.getType(), width, height, depth,
+                             unusedLevelOffset);
 
         // Keep srcbox as nullptr if we're dealing with tiny mips of compressed textures.
-        if (width == region.width && height == region.height)
+        if (width == region.width && height == region.height && depth == region.depth)
         {
             // However, D3D10Level9 doesn't always perform CopySubresourceRegion correctly unless
             // the source box is specified. This is okay, since we don't perform
