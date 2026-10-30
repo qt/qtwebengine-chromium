@@ -374,7 +374,16 @@ CompositorAnimations::CheckCanStartEffectOnCompositor(
           break;
         case CSSPropertyID::kBackdropFilter:
           // Backdrop-filter pixel moving filters do not change the layer bounds
-          // like regular filters do, so they can still be composited.
+          // like regular filters do, so they can still be composited. However,
+          // reference filters cannot be interpolated or composited.
+          if (keyframe->GetCompositorKeyframeValue() &&
+              To<CompositorKeyframeFilterOperations>(
+                  keyframe->GetCompositorKeyframeValue())
+                  ->Operations()
+                  .HasReferenceFilter()) {
+            DefaultToUnsupportedProperty(unsupported_properties_for_tracing,
+                                         property, &reasons);
+          }
           break;
         case CSSPropertyID::kBackgroundColor:
         case CSSPropertyID::kClipPath:
@@ -877,6 +886,7 @@ void AddKeyframeToCurve(cc::KeyframedFilterAnimationCurve& curve,
                               mojom::blink::ColorScheme::kLight);
   CompositorFilterOperations operations = builder.BuildFilterOperations(
       To<CompositorKeyframeFilterOperations>(value)->Operations());
+  DCHECK(!operations.HasReferenceFilter());
   std::unique_ptr<cc::FilterKeyframe> filter_keyframe =
       cc::FilterKeyframe::Create(base::Seconds(keyframe->Offset()),
                                  operations.ReleaseCcFilterOperations(),
