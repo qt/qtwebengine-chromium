@@ -62,13 +62,14 @@ class CORE_EXPORT CSSUnparsedValue final : public CSSStyleValue {
 
   wtf_size_t length() const { return tokens_.size(); }
 
+  String toString() const override;
+
   void Trace(Visitor* visitor) const override {
     visitor->Trace(tokens_);
     CSSStyleValue::Trace(visitor);
   }
 
  private:
-  String ToStringInternal() const;
   String SerializeSegments() const;
   // Return 'false' if there is a cycle in the serialization.
   bool AppendUnparsedString(
