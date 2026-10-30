@@ -197,6 +197,9 @@ static int yuv4_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     width  = st->codecpar->width;
     height = st->codecpar->height;
+    if (frame->width != width || frame->height != height)
+        return AVERROR(EINVAL);
+
     desc   = av_pix_fmt_desc_get(st->codecpar->format);
 
     /* The following code presumes all planes to be non-interleaved. */
@@ -282,7 +285,7 @@ static int yuv4_init(AVFormatContext *s)
                "gray9, gray10, gray12 "
                "and gray16 pixel formats. "
                "Use -pix_fmt to select one.\n");
-        return AVERROR(EIO);
+        return AVERROR_INVALIDDATA;
     }
 
     return 0;

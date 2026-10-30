@@ -33,6 +33,9 @@
 extern const DNNModule ff_dnn_backend_openvino;
 extern const DNNModule ff_dnn_backend_tf;
 extern const DNNModule ff_dnn_backend_torch;
+#if CONFIG_LIBONNXRUNTIME
+extern const DNNModule ff_dnn_backend_onnx;
+#endif
 
 #define OFFSET(x) offsetof(DnnContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM
@@ -49,10 +52,14 @@ static const AVOption dnn_base_options[] = {
                 OFFSET(backend_options), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS | AV_OPT_FLAG_DEPRECATED},
         {"nireq", "number of request",
                 OFFSET(nireq), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
+        {"batch_size", "batch size per request",
+                OFFSET(batch_size), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 1000, FLAGS},
         {"async", "use DNN async inference",
                 OFFSET(async), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, FLAGS},
         {"device", "device to run model",
                 OFFSET(device), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS},
+        {"device_id", "device ID to run model",
+                OFFSET(device_id), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
         {NULL}
 };
 
@@ -78,6 +85,9 @@ static const DnnBackendInfo dnn_backend_info_list[] = {
 #if CONFIG_LIBTORCH
         {offsetof(DnnContext, torch_option), .module = &ff_dnn_backend_torch},
 #endif
+#if CONFIG_LIBONNXRUNTIME
+        {offsetof(DnnContext, onnx_option), .module = &ff_dnn_backend_onnx},
+#endif
 };
 
 const DNNModule *ff_get_dnn_module(DNNBackendType backend_type, void *log_ctx)
@@ -98,6 +108,8 @@ void ff_dnn_init_child_class(DnnContext *ctx)
     for (int i = 0; i < FF_ARRAY_ELEMS(dnn_backend_info_list); i++) {
         const AVClass **ptr = (const AVClass **) ((char *) ctx + dnn_backend_info_list[i].offset);
         *ptr = dnn_backend_info_list[i].class;
+        // Set default values after the class pointer is set
+        av_opt_set_defaults(ptr);
     }
 }
 
@@ -137,4 +149,3 @@ const AVClass *ff_dnn_child_class_iterate_with_mask(void **iter, uint32_t backen
 
     return NULL;
 }
-

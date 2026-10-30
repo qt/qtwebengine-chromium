@@ -22,6 +22,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
 
 #include "avformat.h"
@@ -103,13 +104,14 @@ static int lmlm4_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     frame_size  = packet_size - 8;
     if ((ret = av_get_packet(pb, pkt, frame_size)) <= 0)
-        return ret < 0 ? ret : AVERROR(EIO);
+        return ret < 0 ? ret : AVERROR_INVALIDDATA;
 
     avio_skip(pb, padding);
 
     switch (frame_type) {
     case LMLM4_I_FRAME:
         pkt->flags = AV_PKT_FLAG_KEY;
+        av_fallthrough;
     case LMLM4_P_FRAME:
     case LMLM4_B_FRAME:
         pkt->stream_index = 0;

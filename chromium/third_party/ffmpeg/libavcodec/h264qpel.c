@@ -20,6 +20,7 @@
  */
 
 #include "libavutil/attributes.h"
+#include "libavutil/common.h"
 #include "h264qpel.h"
 
 #define pixeltmp int16_t
@@ -52,7 +53,6 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
 #define FUNCC(f, depth) f ## _ ## depth ## _c
 
 #define dspfunc2(PFX, IDX, NUM, depth)                                  \
-    c->PFX ## _pixels_tab[IDX][ 0] = FUNCC(PFX ## NUM ## _mc00, depth); \
     c->PFX ## _pixels_tab[IDX][ 1] = FUNCC(PFX ## NUM ## _mc10, depth); \
     c->PFX ## _pixels_tab[IDX][ 2] = FUNCC(PFX ## NUM ## _mc20, depth); \
     c->PFX ## _pixels_tab[IDX][ 3] = FUNCC(PFX ## NUM ## _mc30, depth); \
@@ -69,30 +69,36 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
     c->PFX ## _pixels_tab[IDX][14] = FUNCC(PFX ## NUM ## _mc23, depth); \
     c->PFX ## _pixels_tab[IDX][15] = FUNCC(PFX ## NUM ## _mc33, depth)
 
-#define SET_QPEL(depth)                         \
-    dspfunc2(put_h264_qpel, 0, 16, depth);      \
-    dspfunc2(put_h264_qpel, 1,  8, depth);      \
-    dspfunc2(put_h264_qpel, 2,  4, depth);      \
-    dspfunc2(put_h264_qpel, 3,  2, depth);      \
-    dspfunc2(avg_h264_qpel, 0, 16, depth);      \
-    dspfunc2(avg_h264_qpel, 1,  8, depth);      \
-    dspfunc2(avg_h264_qpel, 2,  4, depth)
+#define SET_QPEL(M, depth)               \
+    M(put_h264_qpel, 0, 16, depth);      \
+    M(put_h264_qpel, 1,  8, depth);      \
+    M(put_h264_qpel, 2,  4, depth);      \
+    M(avg_h264_qpel, 0, 16, depth);      \
+    M(avg_h264_qpel, 1,  8, depth);      \
+    M(avg_h264_qpel, 2,  4, depth)
+
+#define FPEL(PFX, IDX, NUM, depth) c->PFX ## _pixels_tab[IDX][0] = FUNCC(PFX ## NUM ## _mc00, depth);
+    if (bit_depth <= 8) {
+        SET_QPEL(FPEL, 8);
+    } else {
+        SET_QPEL(FPEL, 16);
+    }
 
     switch (bit_depth) {
     default:
-        SET_QPEL(8);
+        SET_QPEL(dspfunc2, 8);
         break;
     case 9:
-        SET_QPEL(9);
+        SET_QPEL(dspfunc2, 9);
         break;
     case 10:
-        SET_QPEL(10);
+        SET_QPEL(dspfunc2, 10);
         break;
     case 12:
-        SET_QPEL(12);
+        SET_QPEL(dspfunc2, 12);
         break;
     case 14:
-        SET_QPEL(14);
+        SET_QPEL(dspfunc2, 14);
         break;
     }
 
@@ -104,7 +110,7 @@ av_cold void ff_h264qpel_init(H264QpelContext *c, int bit_depth)
     ff_h264qpel_init_ppc(c, bit_depth);
 #elif ARCH_RISCV
     ff_h264qpel_init_riscv(c, bit_depth);
-#elif ARCH_X86
+#elif ARCH_X86 && HAVE_X86ASM
     ff_h264qpel_init_x86(c, bit_depth);
 #elif ARCH_MIPS
     ff_h264qpel_init_mips(c, bit_depth);

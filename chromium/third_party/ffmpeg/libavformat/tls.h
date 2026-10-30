@@ -33,18 +33,28 @@
  */
 #define MAX_CERTIFICATE_SIZE 8192
 
-enum DTLSState {
-    DTLS_STATE_NONE,
-
-    /* Whether DTLS handshake is finished. */
-    DTLS_STATE_FINISHED,
-    /* Whether DTLS session is closed. */
-    DTLS_STATE_CLOSED,
-    /* Whether DTLS handshake is failed. */
-    DTLS_STATE_FAILED,
-};
+/**
+ * The DTLS content type.
+ * See https://tools.ietf.org/html/rfc2246#section-6.2.1
+ * change_cipher_spec(20), alert(21), handshake(22), application_data(23)
+ */
+#define DTLS_CONTENT_TYPE_CHANGE_CIPHER_SPEC 20
+/**
+ * The DTLS record layer header has a total size of 13 bytes, consisting of
+ * ContentType (1 byte), ProtocolVersion (2 bytes), Epoch (2 bytes),
+ * SequenceNumber (6 bytes), and Length (2 bytes).
+ * See https://datatracker.ietf.org/doc/html/rfc9147#section-4
+ */
+#define DTLS_RECORD_LAYER_HEADER_LEN 13
+/**
+ * The DTLS version number, which is 0xfeff for DTLS 1.0, or 0xfefd for DTLS 1.2.
+ * See https://datatracker.ietf.org/doc/html/rfc9147#name-the-dtls-record-layer
+ */
+#define DTLS_VERSION_10 0xfeff
+#define DTLS_VERSION_12 0xfefd
 
 typedef struct TLSShared {
+    const AVClass *class;
     char *ca_file;
     int verify;
     char *cert_file;
@@ -62,8 +72,7 @@ typedef struct TLSShared {
     URLContext *tcp;
 
     int is_dtls;
-
-    enum DTLSState state;
+    int use_srtp;
 
     /* The certificate and private key content used for DTLS handshake */
     char* cert_buf;
@@ -81,19 +90,25 @@ typedef struct TLSShared {
 #define FF_TLS_CLIENT_OPTIONS(pstruct, options_field) \
     {"ca_file",    "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     {"cafile",     "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
-    {"tls_verify", "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"tls_verify", "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"verify",     "Verify the peer certificate",         offsetof(pstruct, options_field . verify),    AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, .flags = TLS_OPTFL }, \
     {"cert_file",  "Certificate file",                    offsetof(pstruct, options_field . cert_file), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"cert",       "Certificate file",                    offsetof(pstruct, options_field . cert_file), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     {"key_file",   "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
+    {"key",        "Private key file",                    offsetof(pstruct, options_field . key_file),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     {"verifyhost", "Verify against a specific hostname",  offsetof(pstruct, options_field . host),      AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }
 
 #define TLS_COMMON_OPTIONS(pstruct, options_field) \
     {"listen",     "Listen for incoming connections",     offsetof(pstruct, options_field . listen),    AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
     {"http_proxy", "Set proxy to tunnel through",         offsetof(pstruct, options_field . http_proxy), AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
-    {"external_sock", "Use external socket",              offsetof(pstruct, options_field . external_sock), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"external_sock", "Use external socket",              offsetof(pstruct, options_field . external_sock), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
+    {"use_srtp",   "Enable use_srtp DTLS extension",      offsetof(pstruct, options_field . use_srtp),  AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, .flags = TLS_OPTFL }, \
     {"mtu", "Maximum Transmission Unit", offsetof(pstruct, options_field . mtu), AV_OPT_TYPE_INT,  { .i64 = 0 }, 0, INT_MAX, .flags = TLS_OPTFL}, \
     {"cert_pem",   "Certificate PEM string",              offsetof(pstruct, options_field . cert_buf),  AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     {"key_pem",    "Private key PEM string",              offsetof(pstruct, options_field . key_buf),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \
     FF_TLS_CLIENT_OPTIONS(pstruct, options_field)
+
+int ff_tls_parse_host(TLSShared *s, char *hostname, int hostname_size, int *port_ptr, const char *uri);
 
 int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AVDictionary **options);
 
@@ -103,8 +118,6 @@ int ff_tls_set_external_socket(URLContext *h, URLContext *sock);
 
 int ff_dtls_export_materials(URLContext *h, char *dtls_srtp_materials, size_t materials_sz);
 
-int ff_dtls_state(URLContext *h);
-
 int ff_ssl_read_key_cert(char *key_url, char *cert_url, char *key_buf, size_t key_sz, char *cert_buf, size_t cert_sz, char **fingerprint);
 
 int ff_ssl_gen_key_cert(char *key_buf, size_t key_sz, char *cert_buf, size_t cert_sz, char **fingerprint);
@@ -112,7 +125,9 @@ int ff_ssl_gen_key_cert(char *key_buf, size_t key_sz, char *cert_buf, size_t cer
 void ff_gnutls_init(void);
 void ff_gnutls_deinit(void);
 
-int ff_openssl_init(void);
-void ff_openssl_deinit(void);
+/**
+ * Whether the packet is a DTLS packet, as defined by RFC 5764 Section 5.1.2.
+ */
+int ff_is_dtls_packet(const uint8_t *buf, int size);
 
 #endif /* AVFORMAT_TLS_H */

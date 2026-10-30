@@ -145,7 +145,7 @@ static void srt_text_cb(void *priv, const char *text, int len)
 
 static void srt_new_line_cb(void *priv, int forced)
 {
-    srt_print(priv, "\r\n");
+    srt_print(priv, "\n");
 }
 
 static void srt_style_cb(void *priv, char style, int close)
@@ -275,7 +275,7 @@ static int text_encode_frame(AVCodecContext *avctx,
     return encode_frame(avctx, buf, bufsize, sub, &text_callbacks);
 }
 
-static int srt_encode_close(AVCodecContext *avctx)
+static av_cold int srt_encode_close(AVCodecContext *avctx)
 {
     SRTContext *s = avctx->priv_data;
     ff_ass_split_free(s->ass_ctx);

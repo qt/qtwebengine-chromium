@@ -64,6 +64,7 @@
 
 #include "config_components.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/ffmath.h"
@@ -190,7 +191,7 @@ static int query_formats(const AVFilterContext *ctx,
         sample_fmts_list = auto_sample_fmts;
         break;
     }
-    ret = ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, sample_fmts_list);
+    ret = ff_set_sample_formats_from_list2(ctx, cfg_in, cfg_out, sample_fmts_list);
     if (ret < 0)
         return ret;
 
@@ -857,6 +858,7 @@ static int config_filter(AVFilterLink *outlink, int reset)
         break;
     case bass:
         beta = sqrt((A * A + 1) - (A - 1) * (A - 1));
+        av_fallthrough;
     case tiltshelf:
     case lowshelf:
         if (s->poles == 1) {
@@ -884,6 +886,7 @@ static int config_filter(AVFilterLink *outlink, int reset)
         break;
     case treble:
         beta = sqrt((A * A + 1) - (A - 1) * (A - 1));
+        av_fallthrough;
     case highshelf:
         if (s->poles == 1) {
             double A = ff_exp10(gain / 20);
@@ -1242,8 +1245,8 @@ static int filter_channel(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
     AVFrame *buf = td->in;
     AVFrame *out_buf = td->out;
     BiquadsContext *s = ctx->priv;
-    const int start = (buf->ch_layout.nb_channels * jobnr) / nb_jobs;
-    const int end = (buf->ch_layout.nb_channels * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(buf->ch_layout.nb_channels, jobnr, nb_jobs);
+    const int end = ff_slice_pos(buf->ch_layout.nb_channels, jobnr + 1, nb_jobs);
     int ch;
 
     for (ch = start; ch < end; ch++) {

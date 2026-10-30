@@ -49,6 +49,7 @@ typedef struct D3D12VAFramesContext {
     ID3D12GraphicsCommandList *command_list;
     AVD3D12VASyncContext       sync_ctx;
     UINT                       luma_component_size;
+    int                        nb_surfaces_used;
 } D3D12VAFramesContext;
 
 typedef struct D3D12VADevicePriv {
@@ -69,6 +70,7 @@ static const struct {
 } supported_formats[] = {
     { DXGI_FORMAT_NV12, AV_PIX_FMT_NV12 },
     { DXGI_FORMAT_P010, AV_PIX_FMT_P010 },
+    { DXGI_FORMAT_P016, AV_PIX_FMT_P012 },
 };
 
 static void d3d12va_default_lock(void *ctx)
@@ -143,7 +145,7 @@ static int d3d12va_create_helper_objects(AVHWFramesContext *ctx)
         .NodeMask = 0,
     };
 
-    s->luma_component_size = FFALIGN(ctx->width * (frames_hwctx->format == DXGI_FORMAT_P010 ? 2 : 1),
+    s->luma_component_size = FFALIGN(ctx->width * (frames_hwctx->format != DXGI_FORMAT_NV12 ? 2 : 1),
                                      D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) * ctx->height;
 
     DX_CHECK(ID3D12Device_CreateFence(device_hwctx->device, 0, D3D12_FENCE_FLAG_NONE,
@@ -174,7 +176,8 @@ fail:
 
 static void d3d12va_frames_uninit(AVHWFramesContext *ctx)
 {
-    D3D12VAFramesContext *s = ctx->hwctx;
+    D3D12VAFramesContext   *s     = ctx->hwctx;
+    AVD3D12VAFramesContext *hwctx = ctx->hwctx;
 
     D3D12_OBJECT_RELEASE(s->sync_ctx.fence);
     if (s->sync_ctx.event)
@@ -185,6 +188,9 @@ static void d3d12va_frames_uninit(AVHWFramesContext *ctx)
     D3D12_OBJECT_RELEASE(s->command_allocator);
     D3D12_OBJECT_RELEASE(s->command_list);
     D3D12_OBJECT_RELEASE(s->command_queue);
+
+    if (hwctx->texture_array)
+        D3D12_OBJECT_RELEASE(hwctx->texture_array);
 }
 
 static int d3d12va_frames_get_constraints(AVHWDeviceContext *ctx, const void *hwconfig, AVHWFramesConstraints *constraints)
@@ -220,12 +226,50 @@ static void free_texture(void *opaque, uint8_t *data)
 {
     AVD3D12VAFrame *frame = (AVD3D12VAFrame *)data;
 
-    D3D12_OBJECT_RELEASE(frame->texture);
+    if (!(frame->flags & AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY))
+        D3D12_OBJECT_RELEASE(frame->texture);
+
     D3D12_OBJECT_RELEASE(frame->sync_ctx.fence);
     if (frame->sync_ctx.event)
         CloseHandle(frame->sync_ctx.event);
 
     av_freep(&data);
+}
+
+static AVBufferRef *d3d12va_pool_alloc_texture_array(AVHWFramesContext *ctx)
+{
+    AVD3D12VAFrame         *frame  = av_mallocz(sizeof(*frame));
+    D3D12VAFramesContext   *s     = ctx->hwctx;
+    AVD3D12VAFramesContext *hwctx = ctx->hwctx;
+    AVD3D12VADeviceContext *device_hwctx = ctx->device_ctx->hwctx;
+    AVBufferRef *buf;
+
+    frame->flags |= AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY;
+
+    DX_CHECK(ID3D12Device_CreateFence(device_hwctx->device, 0, D3D12_FENCE_FLAG_NONE,
+                                      &IID_ID3D12Fence, (void **)&frame->sync_ctx.fence));
+    frame->sync_ctx.event = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (!frame->sync_ctx.event)
+        goto fail;
+
+    if (s->nb_surfaces_used >= ctx->initial_pool_size) {
+        av_log(ctx, AV_LOG_ERROR, "Static surface pool size exceeded.\n");
+        goto fail;
+    }
+
+    frame->texture = hwctx->texture_array;
+    frame->subresource_index = s->nb_surfaces_used;
+
+    buf = av_buffer_create((uint8_t *)frame, sizeof(*frame), free_texture, NULL, 0);
+
+    if (!buf)
+        goto fail;
+
+    s->nb_surfaces_used++;
+    return buf;
+fail:
+    free_texture(NULL, (uint8_t *)frame);
+    return NULL;
 }
 
 static AVBufferRef *d3d12va_pool_alloc(void *opaque, size_t size)
@@ -236,6 +280,10 @@ static AVBufferRef *d3d12va_pool_alloc(void *opaque, size_t size)
 
     AVBufferRef *buf;
     AVD3D12VAFrame *frame;
+
+    if (ctx->initial_pool_size > 0 && hwctx->flags & AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY)
+        return d3d12va_pool_alloc_texture_array(ctx);
+
     D3D12_HEAP_PROPERTIES props = { .Type = D3D12_HEAP_TYPE_DEFAULT };
     D3D12_RESOURCE_DESC desc = {
         .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
@@ -247,14 +295,14 @@ static AVBufferRef *d3d12va_pool_alloc(void *opaque, size_t size)
         .Format           = hwctx->format,
         .SampleDesc       = {.Count = 1, .Quality = 0 },
         .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        .Flags            = hwctx->flags,
+        .Flags            = hwctx->resource_flags,
     };
 
     frame = av_mallocz(sizeof(AVD3D12VAFrame));
     if (!frame)
         return NULL;
 
-    if (FAILED(ID3D12Device_CreateCommittedResource(device_hwctx->device, &props, D3D12_HEAP_FLAG_NONE, &desc,
+    if (FAILED(ID3D12Device_CreateCommittedResource(device_hwctx->device, &props, hwctx->heap_flags, &desc,
         D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&frame->texture))) {
         av_log(ctx, AV_LOG_ERROR, "Could not create the texture\n");
         goto fail;
@@ -267,7 +315,7 @@ static AVBufferRef *d3d12va_pool_alloc(void *opaque, size_t size)
     if (!frame->sync_ctx.event)
         goto fail;
 
-    buf = av_buffer_create((uint8_t *)frame, sizeof(frame), free_texture, NULL, 0);
+    buf = av_buffer_create((uint8_t *)frame, sizeof(*frame), free_texture, NULL, 0);
     if (!buf)
         goto fail;
 
@@ -278,9 +326,38 @@ fail:
     return NULL;
 }
 
+static int d3d12va_texture_array_init(AVHWFramesContext *ctx)
+{
+    AVD3D12VAFramesContext *hwctx        = ctx->hwctx;
+    AVD3D12VADeviceContext *device_hwctx = ctx->device_ctx->hwctx;
+
+    D3D12_HEAP_PROPERTIES props = { .Type = D3D12_HEAP_TYPE_DEFAULT };
+
+    D3D12_RESOURCE_DESC desc = {
+        .Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        .Alignment        = 0,
+        .Width            = ctx->width,
+        .Height           = ctx->height,
+        .DepthOrArraySize = ctx->initial_pool_size,
+        .MipLevels        = 1,
+        .Format           = hwctx->format,
+        .SampleDesc       = {.Count = 1, .Quality = 0 },
+        .Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        .Flags            = hwctx->resource_flags,
+    };
+
+    if (FAILED(ID3D12Device_CreateCommittedResource(device_hwctx->device, &props, hwctx->heap_flags, &desc,
+        D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, (void **)&hwctx->texture_array))) {
+        av_log(ctx, AV_LOG_ERROR, "Could not create the texture array\n");
+        return AVERROR(EINVAL);
+    }
+    return 0;
+}
+
 static int d3d12va_frames_init(AVHWFramesContext *ctx)
 {
-    AVD3D12VAFramesContext *hwctx = ctx->hwctx;
+    AVD3D12VAFramesContext *hwctx        = ctx->hwctx;
+    AVD3D12VADeviceContext *device_hwctx = ctx->device_ctx->hwctx;
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(supported_formats); i++) {
@@ -292,10 +369,20 @@ static int d3d12va_frames_init(AVHWFramesContext *ctx)
             break;
         }
     }
+
     if (i == FF_ARRAY_ELEMS(supported_formats)) {
         av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s\n",
                av_get_pix_fmt_name(ctx->sw_format));
         return AVERROR(EINVAL);
+    }
+
+    hwctx->resource_flags |= device_hwctx->resource_flags;
+    hwctx->heap_flags     |= device_hwctx->heap_flags;
+
+    if (ctx->initial_pool_size > 0 && hwctx->flags & AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY) {
+        int err = d3d12va_texture_array_init(ctx);
+        if (err < 0)
+            return err;
     }
 
     ffhwframesctx(ctx)->pool_internal = av_buffer_pool_init2(sizeof(AVD3D12VAFrame),
@@ -404,7 +491,7 @@ static int d3d12va_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
     }
 
     for (int i = 0; i < 4; i++)
-        linesizes[i] = FFALIGN(frame->width * (frames_hwctx->format == DXGI_FORMAT_P010 ? 2 : 1),
+        linesizes[i] = FFALIGN(frame->width * (frames_hwctx->format != DXGI_FORMAT_NV12 ? 2 : 1),
                                D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
 
     staging_y_location = (D3D12_TEXTURE_COPY_LOCATION) {
@@ -412,7 +499,7 @@ static int d3d12va_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
         .PlacedFootprint = {
             .Offset = 0,
             .Footprint = {
-                .Format   = frames_hwctx->format == DXGI_FORMAT_P010 ?
+                .Format   = frames_hwctx->format != DXGI_FORMAT_NV12 ?
                                                     DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM,
                 .Width    = ctx->width,
                 .Height   = ctx->height,
@@ -427,7 +514,7 @@ static int d3d12va_transfer_data(AVHWFramesContext *ctx, AVFrame *dst,
         .PlacedFootprint = {
             .Offset = s->luma_component_size,
             .Footprint = {
-                .Format   = frames_hwctx->format == DXGI_FORMAT_P010 ?
+                .Format   = frames_hwctx->format != DXGI_FORMAT_NV12 ?
                                                     DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM,
                 .Width    = ctx->width  >> 1,
                 .Height   = ctx->height >> 1,
@@ -561,9 +648,11 @@ static int d3d12va_load_functions(AVHWDeviceContext *hwdev)
 #endif
     return 0;
 
+#if !HAVE_UWP
 fail:
     av_log(hwdev, AV_LOG_ERROR, "Failed to load D3D12 library or its functions\n");
     return AVERROR_UNKNOWN;
+#endif
 }
 
 static void d3d12va_device_free(AVHWDeviceContext *hwdev)
@@ -660,7 +749,7 @@ static int d3d12va_device_create(AVHWDeviceContext *hwdev, const char *device,
             DXGI_ADAPTER_DESC desc;
             hr = IDXGIAdapter2_GetDesc(pAdapter, &desc);
             if (!FAILED(hr)) {
-                av_log(ctx, AV_LOG_INFO, "Using device %04x:%04x (%ls).\n",
+                av_log(hwdev, AV_LOG_INFO, "Using device %04x:%04x (%ls).\n",
                        desc.VendorId, desc.DeviceId, desc.Description);
             }
         }
@@ -668,10 +757,19 @@ static int d3d12va_device_create(AVHWDeviceContext *hwdev, const char *device,
         hr = priv->create_device((IUnknown *)pAdapter, D3D_FEATURE_LEVEL_12_0, &IID_ID3D12Device, (void **)&ctx->device);
         D3D12_OBJECT_RELEASE(pAdapter);
         if (FAILED(hr)) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to create Direct 3D 12 device (%lx)\n", (long)hr);
+            av_log(hwdev, AV_LOG_ERROR, "Failed to create Direct 3D 12 device (%lx)\n", (long)hr);
             return AVERROR_UNKNOWN;
         }
     }
+
+    if (av_dict_get(opts, "UAV", NULL, 0))
+        ctx->resource_flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    if (av_dict_get(opts, "RTV", NULL, 0))
+        ctx->resource_flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    if (av_dict_get(opts, "SHARED", NULL, 0))
+        ctx->heap_flags |= D3D12_HEAP_FLAG_SHARED;
 
     return 0;
 }

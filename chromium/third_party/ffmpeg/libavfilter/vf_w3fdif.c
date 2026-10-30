@@ -317,7 +317,7 @@ static int config_input(AVFilterLink *inlink)
         s->dsp.filter_scale        = filter16_scale;
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_w3fdif_init_x86(&s->dsp, depth);
 #endif
 
@@ -378,8 +378,8 @@ static int deinterlace_plane_slice(AVFilterContext *ctx, void *arg,
     const int cur_line_stride = cur->linesize[plane];
     const int adj_line_stride = adj->linesize[plane];
     const int dst_line_stride = out->linesize[plane];
-    const int start = (height * jobnr) / nb_jobs;
-    const int end = (height * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(height, jobnr, nb_jobs);
+    const int end = ff_slice_pos(height, jobnr + 1, nb_jobs);
     const int max = s->max;
     const int interlaced = !!(cur->flags & AV_FRAME_FLAG_INTERLACED);
     const int tff = s->field == (s->parity == -1 ? interlaced ? !!(cur->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST) : 1 :

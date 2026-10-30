@@ -28,6 +28,7 @@
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "parser.h"
+#include "parser_internal.h"
 #include "vc1.h"
 #include "get_bits.h"
 #include "vc1dsp.h"
@@ -53,6 +54,7 @@ typedef struct VC1ParseContext {
     ParseContext pc;
     VC1Context v;
     uint8_t prev_start_code;
+    uint8_t extradata_parsed;
     size_t bytes_to_skip;
     uint8_t unesc_buffer[UNESCAPED_LIMIT];
     size_t unesc_index;
@@ -124,6 +126,32 @@ static void vc1_extract_header(AVCodecParserContext *s, AVCodecContext *avctx,
     }
 }
 
+/**
+ * Seed the parse context from extradata, the way the decoder does at init.
+ *
+ * libavformat closes and reopens the parser on every reposition
+ * (ff_read_frame_flush()), so each seek starts from a zeroed VC1Context: profile
+ * reads as simple, and max_coded_width/max_coded_height as zero, until an
+ * in-stream sequence header happens to pass. An entry point reaching a context in
+ * that state is read at the wrong bit offset, because whether hrd_full[] precedes
+ * coded_size_flag is a property of the sequence header, and the size it then
+ * falls back to is the zero pair.
+ *
+ * Unlike the decoder, a parser that learns nothing here still runs: it keeps
+ * reading headers out of the stream as it did before.
+ */
+static void vc1_parse_extradata(AVCodecParserContext *s, AVCodecContext *avctx)
+{
+    VC1ParseContext *vpc = s->priv_data;
+    int seq_initialized, ep_initialized;
+
+    if (!avctx->extradata || avctx->extradata_size < 16)
+        return;
+
+    vpc->v.s.avctx = avctx;
+    ff_vc1_decode_extradata(avctx, &vpc->v, &seq_initialized, &ep_initialized);
+}
+
 static int vc1_parse(AVCodecParserContext *s,
                            AVCodecContext *avctx,
                            const uint8_t **poutbuf, int *poutbuf_size,
@@ -140,6 +168,11 @@ static int vc1_parse(AVCodecParserContext *s,
     int start_code_found = 0;
     int next = END_NOT_FOUND;
     int i = vpc->bytes_to_skip;
+
+    if (!vpc->extradata_parsed) {
+        vpc->extradata_parsed = 1;
+        vc1_parse_extradata(s, avctx);
+    }
 
     if (pic_found && buf_size == 0) {
         /* EOF considered as end of frame */
@@ -179,6 +212,7 @@ static int vc1_parse(AVCodecParserContext *s,
             // start codes if we know it contains a complete frame and
             // we've already unescaped all we need of the frame header
             vc1_extract_header(s, avctx, unesc_buffer, unesc_index);
+            unesc_index = 0;
             break;
         }
         if (unesc_index >= UNESCAPED_THRESHOLD && !start_code_found) {
@@ -215,7 +249,8 @@ static int vc1_parse(AVCodecParserContext *s,
                 if (!pic_found && (b == (VC1_CODE_FRAME & 0xFF) || b == (VC1_CODE_FIELD & 0xFF))) {
                     pic_found = 1;
                 }
-                else if (pic_found && b != (VC1_CODE_FIELD & 0xFF) && b != (VC1_CODE_SLICE & 0xFF)) {
+                else if (pic_found && b != (VC1_CODE_FIELD & 0xFF) && b != (VC1_CODE_SLICE & 0xFF)
+                                   && b != (VC1_CODE_ENDOFSEQ & 0xFF)) {
                     next = i - 4;
                     pic_found = b == (VC1_CODE_FRAME & 0xFF);
                     break;
@@ -258,10 +293,16 @@ static int vc1_parse(AVCodecParserContext *s,
 static av_cold int vc1_parse_init(AVCodecParserContext *s)
 {
     VC1ParseContext *vpc = s->priv_data;
+    /* Report no picture type until a frame header has actually been read.
+     * av_parser_init() leaves pict_type at AV_PICTURE_TYPE_I, and libavformat
+     * marks a packet a key frame from that default; a track whose frames carry
+     * no start codes yields no header to this parser at all. */
+    s->pict_type = AV_PICTURE_TYPE_NONE;
     vpc->v.s.slice_context_count = 1;
     vpc->v.first_pic_header_flag = 1;
     vpc->v.parse_only = 1;
     vpc->prev_start_code = 0;
+    vpc->extradata_parsed = 0;
     vpc->bytes_to_skip = 0;
     vpc->unesc_index = 0;
     vpc->search_state = NO_MATCH;
@@ -269,10 +310,10 @@ static av_cold int vc1_parse_init(AVCodecParserContext *s)
     return 0;
 }
 
-const AVCodecParser ff_vc1_parser = {
-    .codec_ids      = { AV_CODEC_ID_VC1 },
+const FFCodecParser ff_vc1_parser = {
+    PARSER_CODEC_LIST(AV_CODEC_ID_VC1),
     .priv_data_size = sizeof(VC1ParseContext),
-    .parser_init    = vc1_parse_init,
-    .parser_parse   = vc1_parse,
-    .parser_close   = ff_parse_close,
+    .init           = vc1_parse_init,
+    .parse          = vc1_parse,
+    .close          = ff_parse_close,
 };

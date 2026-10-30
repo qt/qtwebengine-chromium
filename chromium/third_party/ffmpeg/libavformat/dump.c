@@ -342,7 +342,7 @@ static void dump_mastering_display_metadata(void *ctx, const AVPacketSideData *s
 {
     const AVMasteringDisplayMetadata *metadata =
         (const AVMasteringDisplayMetadata *)sd->data;
-    av_log(ctx, log_level, "Mastering Display Metadata, "
+    av_log(ctx, log_level,
            "has_primaries:%d has_luminance:%d "
            "r(%5.4f,%5.4f) g(%5.4f,%5.4f) b(%5.4f %5.4f) wp(%5.4f, %5.4f) "
            "min_luminance=%f, max_luminance=%f",
@@ -362,16 +362,16 @@ static void dump_content_light_metadata(void *ctx, const AVPacketSideData *sd,
 {
     const AVContentLightMetadata *metadata =
         (const AVContentLightMetadata *)sd->data;
-    av_log(ctx, log_level, "Content Light Level Metadata, "
+    av_log(ctx, log_level,
            "MaxCLL=%d, MaxFALL=%d",
            metadata->MaxCLL, metadata->MaxFALL);
 }
 
-static void dump_ambient_viewing_environment_metadata(void *ctx, const AVPacketSideData *sd)
+static void dump_ambient_viewing_environment_metadata(void *ctx, const AVPacketSideData *sd, int log_level)
 {
     const AVAmbientViewingEnvironment *ambient =
         (const AVAmbientViewingEnvironment *)sd->data;
-    av_log(ctx, AV_LOG_INFO, "Ambient Viewing Environment, "
+    av_log(ctx, log_level,
            "ambient_illuminance=%f, ambient_light_x=%f, ambient_light_y=%f",
            av_q2d(ambient->ambient_illuminance),
            av_q2d(ambient->ambient_light_x),
@@ -402,9 +402,7 @@ static void dump_spherical(void *ctx, int w, int h,
         size_t l, t, r, b;
         av_spherical_tile_bounds(spherical, w, h,
                                  &l, &t, &r, &b);
-        av_log(ctx, log_level,
-               "[%"SIZE_SPECIFIER", %"SIZE_SPECIFIER", %"SIZE_SPECIFIER", %"SIZE_SPECIFIER"] ",
-               l, t, r, b);
+        av_log(ctx, log_level, "[%zu, %zu, %zu, %zu] ", l, t, r, b);
     } else if (spherical->projection == AV_SPHERICAL_CUBEMAP) {
         av_log(ctx, log_level, "[pad %"PRIu32"] ", spherical->padding);
     }
@@ -445,12 +443,12 @@ static void dump_s12m_timecode(void *ctx, AVRational avg_frame_rate, const AVPac
     }
 }
 
-static void dump_cropping(void *ctx, const AVPacketSideData *sd)
+static void dump_cropping(void *ctx, const AVPacketSideData *sd, int log_level)
 {
     uint32_t top, bottom, left, right;
 
     if (sd->size < sizeof(uint32_t) * 4) {
-        av_log(ctx, AV_LOG_ERROR, "invalid data\n");
+        av_log(ctx, log_level, "invalid data\n");
         return;
     }
 
@@ -459,15 +457,15 @@ static void dump_cropping(void *ctx, const AVPacketSideData *sd)
     left   = AV_RL32(sd->data +  8);
     right  = AV_RL32(sd->data + 12);
 
-    av_log(ctx, AV_LOG_INFO, "%d/%d/%d/%d", left, right, top, bottom);
+    av_log(ctx, log_level, "%"PRIu32"/%"PRIu32"/%"PRIu32"/%"PRIu32"", left, right, top, bottom);
 }
 
-static void dump_tdrdi(void *ctx, const AVPacketSideData *sd)
+static void dump_tdrdi(void *ctx, const AVPacketSideData *sd, int log_level)
 {
     const AV3DReferenceDisplaysInfo *tdrdi =
         (const AV3DReferenceDisplaysInfo *)sd->data;
 
-    av_log(ctx, AV_LOG_INFO, "number of reference displays: %u", tdrdi->num_ref_displays);
+    av_log(ctx, log_level, "number of reference displays: %u", tdrdi->num_ref_displays);
 }
 
 static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_side_data,
@@ -481,81 +479,65 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
 
     for (i = 0; i < nb_side_data; i++) {
         const AVPacketSideData *sd = &side_data[i];
-        av_log(ctx, log_level, "%s  ", indent);
+        const char *name = av_packet_side_data_name(sd->type);
 
+        av_log(ctx, log_level, "%s  ", indent);
+        if (name)
+            av_log(ctx, log_level, "%s: ", name);
         switch (sd->type) {
-        case AV_PKT_DATA_PALETTE:
-            av_log(ctx, log_level, "palette");
-            break;
-        case AV_PKT_DATA_NEW_EXTRADATA:
-            av_log(ctx, log_level, "new extradata");
-            break;
         case AV_PKT_DATA_PARAM_CHANGE:
-            av_log(ctx, log_level, "paramchange: ");
             dump_paramchange(ctx, sd, log_level);
             break;
-        case AV_PKT_DATA_H263_MB_INFO:
-            av_log(ctx, log_level, "H.263 macroblock info");
-            break;
         case AV_PKT_DATA_REPLAYGAIN:
-            av_log(ctx, log_level, "replaygain: ");
             dump_replaygain(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_DISPLAYMATRIX:
-            av_log(ctx, log_level, "displaymatrix: rotation of %.2f degrees",
+            av_log(ctx, log_level, "rotation of %.2f degrees",
                    av_display_rotation_get((const int32_t *)sd->data));
             break;
         case AV_PKT_DATA_STEREO3D:
-            av_log(ctx, log_level, "stereo3d: ");
             dump_stereo3d(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_AUDIO_SERVICE_TYPE:
-            av_log(ctx, log_level, "audio service type: ");
             dump_audioservicetype(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_QUALITY_STATS:
-            av_log(ctx, log_level, "quality factor: %"PRId32", pict_type: %c",
+            av_log(ctx, log_level, "%"PRId32", pict_type: %c",
                    AV_RL32(sd->data), av_get_picture_type_char(sd->data[4]));
             break;
         case AV_PKT_DATA_CPB_PROPERTIES:
-            av_log(ctx, log_level, "cpb: ");
             dump_cpb(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_MASTERING_DISPLAY_METADATA:
             dump_mastering_display_metadata(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_SPHERICAL:
-            av_log(ctx, log_level, "spherical: ");
             dump_spherical(ctx, w, h, sd, log_level);
             break;
         case AV_PKT_DATA_CONTENT_LIGHT_LEVEL:
             dump_content_light_metadata(ctx, sd, log_level);
             break;
-        case AV_PKT_DATA_ICC_PROFILE:
-            av_log(ctx, log_level, "ICC Profile");
-            break;
         case AV_PKT_DATA_DOVI_CONF:
-            av_log(ctx, log_level, "DOVI configuration record: ");
             dump_dovi_conf(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_S12M_TIMECODE:
-            av_log(ctx, log_level, "SMPTE ST 12-1:2014: ");
             dump_s12m_timecode(ctx, avg_frame_rate, sd, log_level);
             break;
         case AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT:
-            dump_ambient_viewing_environment_metadata(ctx, sd);
+            dump_ambient_viewing_environment_metadata(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_FRAME_CROPPING:
-            av_log(ctx, AV_LOG_INFO, "Frame cropping: ");
-            dump_cropping(ctx, sd);
+            dump_cropping(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_3D_REFERENCE_DISPLAYS:
-            av_log(ctx, log_level, "3D Reference Displays Information: ");
-            dump_tdrdi(ctx, sd);
+            dump_tdrdi(ctx, sd, log_level);
             break;
         default:
-            av_log(ctx, log_level, "unknown side data type %d "
-                   "(%"SIZE_SPECIFIER" bytes)", sd->type, sd->size);
+            if (name)
+                av_log(ctx, log_level, "(%zu bytes)", sd->size);
+            else
+                av_log(ctx, log_level, "unknown side data type %d "
+                       "(%zu bytes)", sd->type, sd->size);
             break;
         }
 
@@ -633,11 +615,6 @@ static void dump_stream_format(const AVFormatContext *ic, int i,
 
     // Fields which are missing from AVCodecParameters need to be taken from the AVCodecContext
     if (sti->avctx) {
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-        avctx->properties   = sti->avctx->properties;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         avctx->codec        = sti->avctx->codec;
         avctx->qmin         = sti->avctx->qmin;
         avctx->qmax         = sti->avctx->qmax;
@@ -693,7 +670,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
     if (st->start_time != AV_NOPTS_VALUE && st->start_time != 0 && st->time_base.den && st->time_base.num) {
         const double stream_start = av_q2d(st->time_base) * st->start_time;
-        av_log(NULL, AV_LOG_INFO, ", start %.6f", stream_start);
+        av_log(NULL, log_level, ", start %.6f", stream_start);
     }
 
     dump_disposition(st->disposition, log_level);
@@ -828,16 +805,19 @@ static void dump_stream_group(const AVFormatContext *ic, uint8_t *printed,
         }
         break;
     }
+    case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:
     case AV_STREAM_GROUP_PARAMS_LCEVC: {
-        const AVStreamGroupLCEVC *lcevc = stg->params.lcevc;
+        const AVStreamGroupLayeredVideo *layered_video = stg->params.layered_video;
         AVCodecContext *avctx = avcodec_alloc_context3(NULL);
         const char *ptr = NULL;
-        av_log(NULL, AV_LOG_INFO, " LCEVC:");
-        if (avctx && stg->nb_streams && !avcodec_parameters_to_context(avctx, stg->streams[0]->codecpar)) {
-            avctx->width  = lcevc->width;
-            avctx->height = lcevc->height;
-            avctx->coded_width  = lcevc->width;
-            avctx->coded_height = lcevc->height;
+        av_log(NULL, AV_LOG_INFO, " %s:", stg->type == AV_STREAM_GROUP_PARAMS_DOLBY_VISION ?
+                                          "Dolby Vision" : "LCEVC");
+        if (avctx && stg->nb_streams == 2 &&
+            !avcodec_parameters_to_context(avctx, stg->streams[!layered_video->el_index]->codecpar)) {
+            avctx->width  = layered_video->width;
+            avctx->height = layered_video->height;
+            avctx->coded_width  = layered_video->width;
+            avctx->coded_height = layered_video->height;
             if (ic->dump_separator)
                 av_opt_set(avctx, "dump_separator", ic->dump_separator, 0);
             buf[0] = 0;
@@ -851,6 +831,15 @@ static void dump_stream_group(const AVFormatContext *ic, uint8_t *printed,
         for (int i = 0; i < stg->nb_streams; i++) {
             const AVStream *st = stg->streams[i];
             dump_stream_format(ic, st->index, i, index, is_output, AV_LOG_VERBOSE);
+            printed[st->index] = 1;
+        }
+        break;
+    }
+    case AV_STREAM_GROUP_PARAMS_TREF: {
+        av_log(NULL, AV_LOG_INFO, " Track Reference:\n");
+        for (int i = 0; i < stg->nb_streams; i++) {
+            const AVStream *st = stg->streams[i];
+            dump_stream_format(ic, st->index, i, index, is_output, AV_LOG_INFO);
             printed[st->index] = 1;
         }
         break;

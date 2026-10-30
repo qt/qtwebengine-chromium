@@ -728,6 +728,7 @@ static int config_input(AVFilterLink *inlink)
     FilterLink *l = ff_filter_link(inlink);
     AVFilterContext *ctx = inlink->dst;
     FIREqualizerContext *s = ctx->priv;
+    const double delay_samples = inlink->sample_rate * s->delay;
     float iscale, scale = 1.f;
     int rdft_bits, ret;
 
@@ -736,7 +737,11 @@ static int config_input(AVFilterLink *inlink)
     s->next_pts = 0;
     s->frame_nsamples_max = 0;
 
-    s->fir_len = FFMAX(2 * (int)(inlink->sample_rate * s->delay) + 1, 3);
+    if (!isfinite(delay_samples) || delay_samples >= (INT_MAX + 1.0) / 2) {
+        av_log(ctx, AV_LOG_ERROR, "too large or non-finite delay, please decrease it.\n");
+        return AVERROR(EINVAL);
+    }
+    s->fir_len = FFMAX(2 * (int)delay_samples + 1, 3);
     s->remaining = s->fir_len - 1;
 
     for (rdft_bits = RDFT_BITS_MIN; rdft_bits <= RDFT_BITS_MAX; rdft_bits++) {
@@ -808,6 +813,8 @@ static int config_input(AVFilterLink *inlink)
         if ((ret = av_tx_init(&s->analysis_rdft, &s->analysis_rdft_fn, AV_TX_FLOAT_RDFT, 0, 1 << rdft_bits, &scale, 0)) < 0)
             return ret;
         s->dump_buf = av_malloc_array(s->analysis_rdft_len + 2, sizeof(*s->dump_buf));
+        if (!s->dump_buf)
+            return AVERROR(ENOMEM);
     }
 
     s->analysis_buf = av_malloc_array((s->analysis_rdft_len + 2), sizeof(*s->analysis_buf));

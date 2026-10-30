@@ -22,18 +22,20 @@
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
-#include "av1.h"
-#include "av1_parse.h"
-#include "bsf.h"
-#include "bsf_internal.h"
-#include "bytestream.h"
-#include "h2645_parse.h"
-#include "h264.h"
-#include "startcode.h"
-#include "vc1_common.h"
-#include "vvc.h"
+#include "libavcodec/av1.h"
+#include "libavcodec/av1_parse.h"
+#include "libavcodec/bsf.h"
+#include "libavcodec/bsf_internal.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/h2645_parse.h"
+#include "libavcodec/h264.h"
+#include "libavcodec/lcevc.h"
+#include "libavcodec/lcevc_parse.h"
+#include "libavcodec/startcode.h"
+#include "libavcodec/vc1_common.h"
+#include "libavcodec/vvc.h"
 
-#include "hevc/hevc.h"
+#include "libavcodec/hevc/hevc.h"
 
 typedef struct ExtractExtradataContext {
     const AVClass *class;
@@ -110,7 +112,7 @@ static int extract_extradata_av1(AVBSFContext *ctx, AVPacket *pkt,
             extradata_size += obu->raw_size;
             if (obu->type == AV1_OBU_SEQUENCE_HEADER)
                 has_seq = 1;
-        } else if (s->remove) {
+        } else {
             filtered_size += obu->raw_size;
         }
     }
@@ -179,6 +181,7 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
     int extradata_size = 0, filtered_size = 0;
     const int *extradata_nal_types;
     size_t nb_extradata_nal_types;
+    int filtered_nb_nals = 0;
     int i, has_sps = 0, has_vps = 0, ret = 0;
 
     if (ctx->par_in->codec_id == AV_CODEC_ID_VVC) {
@@ -200,7 +203,7 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
     for (i = 0; i < s->h2645_pkt.nb_nals; i++) {
         H2645NAL *nal = &s->h2645_pkt.nals[i];
         if (val_in_array(extradata_nal_types, nb_extradata_nal_types, nal->type)) {
-            extradata_size += nal->raw_size + 3;
+            extradata_size += nal->raw_size + 4;
             if (ctx->par_in->codec_id == AV_CODEC_ID_VVC) {
                 if (nal->type == VVC_SPS_NUT) has_sps = 1;
                 if (nal->type == VVC_VPS_NUT) has_vps = 1;
@@ -210,8 +213,9 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
             } else {
                 if (nal->type == H264_NAL_SPS) has_sps = 1;
             }
-        } else if (s->remove) {
-            filtered_size += nal->raw_size + 3;
+        } else {
+            filtered_size += nal->raw_size + 3 +
+                             ff_h2645_unit_requires_zero_byte(ctx->par_in->codec_id, nal->type, filtered_nb_nals++);
         }
     }
 
@@ -244,19 +248,236 @@ static int extract_extradata_h2645(AVBSFContext *ctx, AVPacket *pkt,
         if (s->remove)
             bytestream2_init_writer(&pb_filtered_data, filtered_buf->data, filtered_size);
 
+        filtered_nb_nals = 0;
         for (i = 0; i < s->h2645_pkt.nb_nals; i++) {
             H2645NAL *nal = &s->h2645_pkt.nals[i];
             if (val_in_array(extradata_nal_types, nb_extradata_nal_types,
                              nal->type)) {
-                bytestream2_put_be24u(&pb_extradata, 1); //startcode
+                bytestream2_put_be32u(&pb_extradata, 1); //startcode
                 bytestream2_put_bufferu(&pb_extradata, nal->raw_data, nal->raw_size);
             } else if (s->remove) {
+                if (ff_h2645_unit_requires_zero_byte(ctx->par_in->codec_id, nal->type, filtered_nb_nals++))
+                    bytestream2_put_byteu(&pb_filtered_data, 0); // zero_byte
                 bytestream2_put_be24u(&pb_filtered_data, 1); // startcode
                 bytestream2_put_bufferu(&pb_filtered_data, nal->raw_data, nal->raw_size);
             }
         }
 
         if (s->remove) {
+            av_buffer_unref(&pkt->buf);
+            pkt->buf  = filtered_buf;
+            pkt->data = filtered_buf->data;
+            pkt->size = filtered_size;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Rewrite the NALu stripping the unneeded blocks.
+ * Given that length fields coded inside the NALu are not aware of any emulation_3bytes
+ * present in the bitstream, we need to keep track of the raw buffer as we navigate
+ * the stripped buffer.
+ */
+static int process_lcevc_nalu(PutByteContext *extradata, PutByteContext *data,
+                              int *extradata_sizep, int *data_sizep, const H2645NAL *nal)
+{
+    GetByteContext gbc, raw_gbc;
+    int sc = 0, gc = 0;
+    int skipped_byte_pos = 0;
+    int extradata_size = 0, data_size = 0;
+
+    if (nal->size < 2)
+        return AVERROR_INVALIDDATA;
+
+    bytestream2_init(&gbc,     nal->data,     nal->size);
+    bytestream2_init(&raw_gbc, nal->raw_data, nal->raw_size);
+
+    unsigned nalu_header = bytestream2_get_be16u(&gbc);
+
+    if (data)
+        bytestream2_put_be16u(data, nalu_header);
+    data_size += 2;
+    bytestream2_skipu(&raw_gbc, 2);
+
+    while (bytestream2_get_bytes_left(&gbc) > 1) {
+        GetBitContext gb;
+        int payload_size_type, payload_type;
+        uint64_t payload_size;
+        int block_size, raw_block_size, block_end;
+
+        av_unused int ret = init_get_bits8(&gb, gbc.buffer, bytestream2_get_bytes_left(&gbc));
+        av_assert1(ret >= 0); // h2645_parse already opened a GetBitContext with this data
+
+        payload_size_type = get_bits(&gb, 3);
+        payload_type      = get_bits(&gb, 5);
+        payload_size      = payload_size_type;
+        if (payload_size_type == 6)
+            return AVERROR_INVALIDDATA;
+        if (payload_size_type == 7)
+            payload_size = get_mb(&gb);
+
+        if (payload_size > INT_MAX - (get_bits_count(&gb) >> 3))
+            return AVERROR_INVALIDDATA;
+
+        block_size = raw_block_size = payload_size + (get_bits_count(&gb) >> 3);
+        if (block_size >= bytestream2_get_bytes_left(&gbc))
+            return AVERROR_INVALIDDATA;
+
+        block_end = bytestream2_tell(&gbc) + block_size;
+        // Take into account removed emulation 3bytes, as payload_size in
+        // the bitstream is not aware of them.
+        for (; skipped_byte_pos < nal->skipped_bytes; skipped_byte_pos++) {
+            if (nal->skipped_bytes_pos[skipped_byte_pos] >= block_end)
+                break;
+            raw_block_size++;
+        }
+        if (raw_block_size > bytestream2_get_bytes_left(&raw_gbc))
+            return AVERROR_INVALIDDATA;
+
+        switch (payload_type) {
+        case LCEVC_PAYLOAD_TYPE_SEQUENCE_CONFIG:
+        case LCEVC_PAYLOAD_TYPE_GLOBAL_CONFIG:
+        case LCEVC_PAYLOAD_TYPE_ADDITIONAL_INFO:
+            if (!extradata_size) {
+                extradata_size = 2;
+                if (extradata)
+                    bytestream2_put_be16u(extradata, nalu_header);
+            }
+            if (extradata)
+                bytestream2_put_bufferu(extradata, raw_gbc.buffer, raw_block_size);
+            extradata_size += raw_block_size;
+            sc |= payload_type == LCEVC_PAYLOAD_TYPE_SEQUENCE_CONFIG;
+            gc |= payload_type == LCEVC_PAYLOAD_TYPE_GLOBAL_CONFIG;
+            break;
+        default:
+            if (data)
+                bytestream2_put_bufferu(data, raw_gbc.buffer, raw_block_size);
+            data_size += raw_block_size;
+            break;
+        }
+
+        bytestream2_skip(&gbc, block_size);
+        bytestream2_skip(&raw_gbc, raw_block_size);
+    }
+
+    ++data_size;
+    *data_sizep = data_size;
+    if (data)
+        bytestream2_put_byteu(data, 0x80); // rbsp_alignment bits
+    if (extradata_size > 0) {
+        if (!sc && !gc)
+            return AVERROR_INVALIDDATA;
+
+        ++extradata_size;
+        if (extradata) {
+            bytestream2_put_byteu(extradata, 0x80); // rbsp_alignment bits
+        } else
+            *extradata_sizep = extradata_size;
+        return 1; // has extradata
+    }
+    return 0; // no extradata
+}
+
+static int extract_extradata_lcevc(AVBSFContext *ctx, AVPacket *pkt,
+                                   uint8_t **data, int *size)
+{
+    static const int extradata_nal_types[] = {
+        LCEVC_IDR_NUT, LCEVC_NON_IDR_NUT,
+    };
+
+    ExtractExtradataContext *s = ctx->priv_data;
+    unsigned extradata_size = 0, filtered_size = 0;
+    size_t nb_extradata_nal_types = FF_ARRAY_ELEMS(extradata_nal_types);
+    int i, ret = 0;
+
+    ret = ff_h2645_packet_split(&s->h2645_pkt, pkt->data, pkt->size,
+                                ctx, 0, AV_CODEC_ID_LCEVC, H2645_FLAG_SMALL_PADDING);
+    if (ret < 0)
+        return ret;
+
+    for (i = 0; i < s->h2645_pkt.nb_nals; i++) {
+        H2645NAL *nal = &s->h2645_pkt.nals[i];
+        unsigned start_code_size = 3 + !filtered_size;
+
+        if (val_in_array(extradata_nal_types, nb_extradata_nal_types, nal->type)) {
+            int extra_size, data_size;
+            ret = process_lcevc_nalu(NULL, NULL, &extra_size, &data_size, nal);
+            if (ret < 0)
+                return ret;
+            if (ret > 0) { // has extradata
+                unsigned extra_start_code_size = 3 + !extradata_size;
+                extradata_size += extra_start_code_size + extra_size;
+                if (extradata_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+                    return AVERROR_INVALIDDATA;
+            }
+            filtered_size += start_code_size + data_size;
+        } else
+            filtered_size += start_code_size + nal->raw_size;
+        if (filtered_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+            return AVERROR_INVALIDDATA;
+    }
+
+    if (extradata_size) {
+        AVBufferRef *filtered_buf = NULL;
+        PutByteContext pb_extradata;
+        PutByteContext pb_filtered_data;
+        uint8_t *extradata;
+
+        if (s->remove) {
+            ret = av_buffer_realloc(&filtered_buf, filtered_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (ret < 0)
+                return ret;
+            bytestream2_init_writer(&pb_filtered_data, filtered_buf->data, filtered_size);
+            // this is the first byte of a four-byte startcode; we write it here
+            // so that we only need to write three-byte startcodes below
+            bytestream2_put_byteu(&pb_filtered_data, 0x00);
+        }
+
+        extradata = av_malloc(extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!extradata) {
+            av_buffer_unref(&filtered_buf);
+            return AVERROR(ENOMEM);
+        }
+
+        *data = extradata;
+        *size = extradata_size;
+
+        bytestream2_init_writer(&pb_extradata, extradata, extradata_size);
+        // We write the startcodes before the actual units because we do not
+        // know in advance whether a given unit will contribute to extradata,
+        // but we know when we have encountered the last unit containing
+        // extradata. (The alternative is writing it and then undoing this
+        // if the NALU did not contain extradata.)
+        bytestream2_put_be32u(&pb_extradata, 0x00000001);
+
+        for (i = 0; i < s->h2645_pkt.nb_nals; i++) {
+            H2645NAL *nal = &s->h2645_pkt.nals[i];
+            if (s->remove)
+                bytestream2_put_be24u(&pb_filtered_data, 0x000001);
+            if (val_in_array(extradata_nal_types, nb_extradata_nal_types,
+                             nal->type)) {
+                int dummy;
+                ret = process_lcevc_nalu(&pb_extradata, s->remove ? &pb_filtered_data : NULL,
+                                         NULL, &dummy, nal);
+                av_assert1(ret >= 0); // already checked in the first pass
+                if (ret > 0) {// NALU contained extradata
+                    if (extradata_size != bytestream2_tell_p(&pb_extradata)) {
+                        // There will be another NALU containing extradata.
+                        // Already write the next start code.
+                        bytestream2_put_be24u(&pb_extradata, 0x000001);
+                    }
+                }
+            } else if (s->remove) {
+                bytestream2_put_bufferu(&pb_filtered_data, nal->raw_data, nal->raw_size);
+            }
+        }
+        av_assert1(bytestream2_tell_p(&pb_extradata) == extradata_size);
+
+        if (s->remove) {
+            av_assert1(bytestream2_tell_p(&pb_filtered_data) == filtered_size);
+            memset(filtered_buf->data + filtered_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
             av_buffer_unref(&pkt->buf);
             pkt->buf  = filtered_buf;
             pkt->data = filtered_buf->data;
@@ -371,6 +592,7 @@ static const struct {
     { AV_CODEC_ID_CAVS,       extract_extradata_mpeg4   },
     { AV_CODEC_ID_H264,       extract_extradata_h2645   },
     { AV_CODEC_ID_HEVC,       extract_extradata_h2645   },
+    { AV_CODEC_ID_LCEVC,      extract_extradata_lcevc   },
     { AV_CODEC_ID_MPEG1VIDEO, extract_extradata_mpeg12  },
     { AV_CODEC_ID_MPEG2VIDEO, extract_extradata_mpeg12  },
     { AV_CODEC_ID_MPEG4,      extract_extradata_mpeg4   },
@@ -441,6 +663,7 @@ static const enum AVCodecID codec_ids[] = {
     AV_CODEC_ID_CAVS,
     AV_CODEC_ID_H264,
     AV_CODEC_ID_HEVC,
+    AV_CODEC_ID_LCEVC,
     AV_CODEC_ID_MPEG1VIDEO,
     AV_CODEC_ID_MPEG2VIDEO,
     AV_CODEC_ID_MPEG4,

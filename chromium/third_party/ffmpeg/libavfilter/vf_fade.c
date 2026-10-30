@@ -151,20 +151,37 @@ static int query_formats(const AVFilterContext *ctx,
         AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_NONE
     };
+    const static int straight_alpha[] = {
+        AVALPHA_MODE_UNSPECIFIED,
+        AVALPHA_MODE_STRAIGHT,
+        -1,
+    };
     const enum AVPixelFormat *pixel_fmts;
+    int need_straight = 0;
+    int ret;
 
     if (s->alpha) {
         if (s->black_fade)
             pixel_fmts = pix_fmts_alpha;
         else
             pixel_fmts = pix_fmts_rgba;
+        need_straight = 1;
     } else {
         if (s->black_fade)
             pixel_fmts = pix_fmts;
-        else
+        else {
             pixel_fmts = pix_fmts_rgb;
+            need_straight = 1;
+        }
     }
-    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pixel_fmts);
+
+    if (need_straight) {
+        ret = ff_set_common_alpha_modes_from_list2(ctx, cfg_in, cfg_out, straight_alpha);
+        if (ret < 0)
+            return ret;
+    }
+
+    return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, pixel_fmts);
 }
 
 const static enum AVPixelFormat studio_level_pix_fmts[] = {
@@ -236,8 +253,8 @@ static int filter_slice_rgb(AVFilterContext *ctx, void *arg, int jobnr,
 {
     FadeContext *s = ctx->priv;
     AVFrame *frame = arg;
-    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
-    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+    int slice_start = ff_slice_pos(frame->height, jobnr, nb_jobs);
+    int slice_end   = ff_slice_pos(frame->height, jobnr + 1, nb_jobs);
 
     if      (s->is_planar && s->alpha)
                           filter_rgb_planar(s, frame, slice_start, slice_end, 1);
@@ -256,8 +273,8 @@ static int filter_slice_luma(AVFilterContext *ctx, void *arg, int jobnr,
 {
     FadeContext *s = ctx->priv;
     AVFrame *frame = arg;
-    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
-    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+    int slice_start = ff_slice_pos(frame->height, jobnr, nb_jobs);
+    int slice_end   = ff_slice_pos(frame->height, jobnr + 1, nb_jobs);
     int i, j;
 
     for (int k = 0; k < 1 + 2 * (s->is_planar && s->is_rgb); k++) {
@@ -281,8 +298,8 @@ static int filter_slice_luma16(AVFilterContext *ctx, void *arg, int jobnr,
 {
     FadeContext *s = ctx->priv;
     AVFrame *frame = arg;
-    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
-    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+    int slice_start = ff_slice_pos(frame->height, jobnr, nb_jobs);
+    int slice_end   = ff_slice_pos(frame->height, jobnr + 1, nb_jobs);
     int i, j;
 
     for (int k = 0; k < 1 + 2 * (s->is_planar && s->is_rgb); k++) {
@@ -309,8 +326,8 @@ static int filter_slice_chroma(AVFilterContext *ctx, void *arg, int jobnr,
     int i, j, plane;
     const int width = AV_CEIL_RSHIFT(frame->width, s->hsub);
     const int height= AV_CEIL_RSHIFT(frame->height, s->vsub);
-    int slice_start = (height *  jobnr   ) / nb_jobs;
-    int slice_end   = FFMIN(((height * (jobnr+1)) / nb_jobs), frame->height);
+    int slice_start = ff_slice_pos(height, jobnr, nb_jobs);
+    int slice_end   = FFMIN((ff_slice_pos(height, jobnr + 1, nb_jobs)), frame->height);
 
     for (plane = 1; plane < 3; plane++) {
         for (i = slice_start; i < slice_end; i++) {
@@ -338,8 +355,8 @@ static int filter_slice_chroma16(AVFilterContext *ctx, void *arg, int jobnr,
     const int height= AV_CEIL_RSHIFT(frame->height, s->vsub);
     const int mid = 1 << (s->depth - 1);
     const int add = ((mid << 1) + 1) << 15;
-    int slice_start = (height *  jobnr   ) / nb_jobs;
-    int slice_end   = FFMIN(((height * (jobnr+1)) / nb_jobs), frame->height);
+    int slice_start = ff_slice_pos(height, jobnr, nb_jobs);
+    int slice_end   = FFMIN((ff_slice_pos(height, jobnr + 1, nb_jobs)), frame->height);
 
     for (plane = 1; plane < 3; plane++) {
         for (i = slice_start; i < slice_end; i++) {
@@ -360,8 +377,8 @@ static int filter_slice_alpha(AVFilterContext *ctx, void *arg, int jobnr,
     FadeContext *s = ctx->priv;
     AVFrame *frame = arg;
     int plane = s->is_packed_rgb ? 0 : A;
-    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
-    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+    int slice_start = ff_slice_pos(frame->height, jobnr, nb_jobs);
+    int slice_end   = ff_slice_pos(frame->height, jobnr + 1, nb_jobs);
     int i, j;
 
     for (i = slice_start; i < slice_end; i++) {
@@ -385,8 +402,8 @@ static int filter_slice_alpha16(AVFilterContext *ctx, void *arg, int jobnr,
     FadeContext *s = ctx->priv;
     AVFrame *frame = arg;
     int plane = s->is_packed_rgb ? 0 : A;
-    int slice_start = (frame->height *  jobnr   ) / nb_jobs;
-    int slice_end   = (frame->height * (jobnr+1)) / nb_jobs;
+    int slice_start = ff_slice_pos(frame->height, jobnr, nb_jobs);
+    int slice_end   = ff_slice_pos(frame->height, jobnr + 1, nb_jobs);
     int i, j;
 
     for (i = slice_start; i < slice_end; i++) {
@@ -430,7 +447,7 @@ static int config_input(AVFilterLink *inlink)
 
     /* use CCIR601/709 black level for studio-level pixel non-alpha components */
     s->black_level =
-            ff_fmt_is_in(inlink->format, studio_level_pix_fmts) && !s->alpha ? 16 * (1 << (s->depth - 8)): 0;
+            ff_pixfmt_is_in(inlink->format, studio_level_pix_fmts) && !s->alpha ? 16 * (1 << (s->depth - 8)): 0;
     /* 32768 = 1 << 15, it is an integer representation
      * of 0.5 and is for rounding. */
     s->black_level_scaled = (s->black_level << 16) + 32768;

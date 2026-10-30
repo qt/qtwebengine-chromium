@@ -44,6 +44,45 @@
 #include "threadprogress.h"
 #include "wmv2dec.h"
 
+#define H264_CHROMA_MC(OPNAME, OP)\
+static void OPNAME ## h264_chroma_mc1(uint8_t *dst /*align 8*/, const uint8_t *src /*align 1*/, ptrdiff_t stride, int h, int x, int y)\
+{\
+    const int A = (8-x) * (8-y);\
+    const int B = (  x) * (8-y);\
+    const int C = (8-x) * (  y);\
+    const int D = (  x) * (  y);\
+    \
+    av_assert2(x < 8 && y < 8 && x >= 0 && y >= 0);\
+\
+    if (D) {\
+        for (int i = 0; i < h; ++i) {\
+            OP(dst[0], (A*src[0] + B*src[1] + C*src[stride+0] + D*src[stride+1]));\
+            dst += stride;\
+            src += stride;\
+        }\
+    } else if (B + C) {\
+        const int E    = B + C;\
+        const int step = C ? stride : 1;\
+        for (int i = 0; i < h; ++i) {\
+            OP(dst[0], (A*src[0] + E*src[step+0]));\
+            dst += stride;\
+            src += stride;\
+        }\
+    } else {\
+        for (int i = 0; i < h; ++i) {\
+            OP(dst[0], (A*src[0]));\
+            dst += stride;\
+            src += stride;\
+        }\
+    }\
+}\
+
+#define op_avg(a, b) a = (((a)+(((b) + 32)>>6)+1)>>1)
+#define op_put(a, b) a = (((b) + 32)>>6)
+
+H264_CHROMA_MC(put_, op_put)
+H264_CHROMA_MC(avg_, op_avg)
+
 av_cold int ff_mpv_decode_init(MpegEncContext *s, AVCodecContext *avctx)
 {
     enum ThreadingStatus thread_status;
@@ -62,6 +101,14 @@ av_cold int ff_mpv_decode_init(MpegEncContext *s, AVCodecContext *avctx)
     ff_mpv_idct_init(s);
 
     ff_h264chroma_init(&s->h264chroma, 8); //for lowres
+    // lowres may use the following width 2 functions with a height of 1,
+    // yet the H.264 decoder uses them with at least two rows.
+    // Override them with the C versions so that ASM functions can process
+    // two rows at a time.
+    s->h264chroma.avg_h264_chroma_pixels_tab[2] = ff_avg_h264_chroma_mc2_8_c;
+    s->h264chroma.put_h264_chroma_pixels_tab[2] = ff_put_h264_chroma_mc2_8_c;
+    s->h264chroma.avg_h264_chroma_pixels_tab[3] = avg_h264_chroma_mc1;
+    s->h264chroma.put_h264_chroma_pixels_tab[3] = put_h264_chroma_mc1;
 
     if (s->picture_pool)  // VC-1 can call this multiple times
         return 0;
@@ -557,7 +604,7 @@ static av_always_inline void mpeg_motion_lowres(MpegEncContext *s,
     ptr_cr = ref_picture[2] + uvsrc_y * uvlinesize + uvsrc_x;
 
     if ((unsigned) src_x > FFMAX( h_edge_pos - (!!sx) - 2 * block_s,       0) || uvsrc_y<0 ||
-        (unsigned) src_y > FFMAX((v_edge_pos >> field_based) - (!!sy) - FFMAX(h, hc<<s->chroma_y_shift), 0)) {
+        (unsigned) src_y > FFMAX((v_edge_pos >> field_based) - (!!sy) - FFMAX(h, field_select + hc<<s->chroma_y_shift), 0)) {
         s->vdsp.emulated_edge_mc(s->sc.edge_emu_buffer, ptr_y,
                                  linesize >> field_based, linesize >> field_based,
                                  17, 17 + field_based,

@@ -21,7 +21,7 @@
 
 #include "attributes.h"
 
-#if (AV_GCC_VERSION_AT_LEAST(4,0) || defined(__clang__)) && (defined(__ELF__) || defined(__MACH__))
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__ELF__) || defined(__MACH__))
 #    define attribute_visibility_hidden __attribute__((visibility("hidden")))
 #    define FF_VISIBILITY_PUSH_HIDDEN   _Pragma("GCC visibility push(hidden)")
 #    define FF_VISIBILITY_POP_HIDDEN    _Pragma("GCC visibility pop")
@@ -32,5 +32,14 @@
 #endif
 
 #define EXTERN extern attribute_visibility_hidden
+
+#if (AV_HAS_ATTRIBUTE(nonstring) && (AV_GCC_VERSION_AT_LEAST(15,1) || defined(__clang__)))
+// Attribute to mark a variable initialized via a string literal as not
+// containing string data to suppress warnings about unterminated strings
+// in situations like char fourcc[4] = "TALB".
+#define attribute_nonstring __attribute__((nonstring))
+#else
+#define attribute_nonstring
+#endif
 
 #endif /* AVUTIL_ATTRIBUTES_INTERNAL_H */

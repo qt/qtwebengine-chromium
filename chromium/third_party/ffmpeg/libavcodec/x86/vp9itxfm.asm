@@ -24,36 +24,36 @@
 %include "libavutil/x86/x86util.asm"
 %include "vp9itxfm_template.asm"
 
-SECTION_RODATA 32
+SECTION_RODATA 16
 
 %macro VP9_IDCT_COEFFS 2-3 0
 const pw_m%1_%2
-times 8 dw -%1,  %2
+times 4 dw -%1,  %2
 const pw_%2_%1
-times 8 dw  %2,  %1
+times 4 dw  %2,  %1
 
 %if %3 == 1
 const pw_m%2_m%1
-times 8 dw -%2, -%1
+times 4 dw -%2, -%1
 %if %1 != %2
 const pw_m%2_%1
-times 8 dw -%2,  %1
+times 4 dw -%2,  %1
 const pw_%1_%2
-times 8 dw  %1,  %2
+times 4 dw  %1,  %2
 %endif
 %endif
 
 %if %1 < 11585
-pw_m%1x2:   times 16 dw -%1*2
+pw_m%1x2:   times 8 dw -%1*2
 %elif %1 > 11585
-pw_%1x2:    times 16 dw  %1*2
+pw_%1x2:    times 8 dw  %1*2
 %else
 const pw_%1x2
-times 16 dw %1*2
+times 8 dw %1*2
 %endif
 
 %if %2 != %1
-pw_%2x2:    times 16 dw  %2*2
+pw_%2x2:    times 8 dw  %2*2
 %endif
 %endmacro
 
@@ -102,6 +102,15 @@ cextern pd_8192
 
 SECTION .text
 
+%macro NEGATE 2 ; dst/src, pw_m1
+%if cpuflag(ssse3)
+    psignw     %1, %2
+%else
+    pxor       %1, %2
+    psubw      %1, %2
+%endif
+%endmacro
+
 %macro VP9_UNPACK_MULSUB_2D_4X 6 ; dst1 [src1], dst2 [src2], dst3, dst4, mul1, mul2
     punpckhwd          m%4, m%2, m%1
     punpcklwd          m%2, m%1
@@ -127,24 +136,13 @@ SECTION .text
 %endmacro
 
 %macro VP9_STORE_2X 5-6 dstq ; reg1, reg2, tmp1, tmp2, zero, dst
-%if mmsize == 32
-    pmovzxbw           m%3, [%6]
-    pmovzxbw           m%4, [%6+strideq]
-%else
     movh               m%3, [%6]
     movh               m%4, [%6+strideq]
     punpcklbw          m%3, m%5
     punpcklbw          m%4, m%5
-%endif
     paddw              m%3, m%1
     paddw              m%4, m%2
-%if mmsize == 32
-    packuswb           m%3, m%4
-    ; Intel...
-    vpermq             m%3, m%3, q3120
-    mova              [%6], xm%3
-    vextracti128 [%6+strideq], m%3, 1
-%elif mmsize == 16
+%if mmsize == 16
     packuswb           m%3, m%4
     movh              [%6], m%3
     movhps    [%6+strideq], m%3
@@ -234,49 +232,28 @@ cglobal vp9_iwht_iwht_4x4_add, 3, 3, 0, dst, stride, block, eob
     VP9_STORE_2X         2,  3,  6,  7,  4
 %endmacro
 
-%macro IDCT_4x4_FN 1
-INIT_MMX %1
+INIT_MMX ssse3
 cglobal vp9_idct_idct_4x4_add, 4, 4, 0, dst, stride, block, eob
 
-%if cpuflag(ssse3)
     cmp eobd, 4 ; 2x2 or smaller
     jg .idctfull
 
     cmp eobd, 1 ; faster path for when only DC is set
     jne .idct2x2
-%else
-    cmp eobd, 1
-    jg .idctfull
-%endif
 
-%if cpuflag(ssse3)
     movd                m0, [blockq]
     mova                m5, [pw_11585x2]
     pmulhrsw            m0, m5
     pmulhrsw            m0, m5
-%else
-    DEFINE_ARGS dst, stride, block, coef
-    movsx            coefd, word [blockq]
-    imul             coefd, 11585
-    add              coefd, 8192
-    sar              coefd, 14
-    imul             coefd, 11585
-    add              coefd, (8 << 14) + 8192
-    sar              coefd, 14 + 4
-    movd                m0, coefd
-%endif
     pshufw              m0, m0, 0
     pxor                m4, m4
     movh          [blockq], m4
-%if cpuflag(ssse3)
     pmulhrsw            m0, [pw_2048]       ; (x*2048 + (1<<14))>>15 <=> (x+8)>>4
-%endif
     VP9_STORE_2X         0,  0,  6,  7,  4
     lea               dstq, [dstq+2*strideq]
     VP9_STORE_2X         0,  0,  6,  7,  4
     RET
 
-%if cpuflag(ssse3)
 ; faster path for when only top left 2x2 block is set
 .idct2x2:
     movd                m0, [blockq+0]
@@ -296,16 +273,13 @@ cglobal vp9_idct_idct_4x4_add, 4, 4, 0, dst, stride, block, eob
     movh       [blockq+ 8], m4
     VP9_IDCT4_WRITEOUT
     RET
-%endif
 
 .idctfull: ; generic full 4x4 idct/idct
     mova                m0, [blockq+ 0]
     mova                m1, [blockq+ 8]
     mova                m2, [blockq+16]
     mova                m3, [blockq+24]
-%if cpuflag(ssse3)
     mova                m6, [pw_11585x2]
-%endif
     mova                m7, [pd_8192]       ; rounding
     VP9_IDCT4_1D
     TRANSPOSE4x4W  0, 1, 2, 3, 4
@@ -317,10 +291,6 @@ cglobal vp9_idct_idct_4x4_add, 4, 4, 0, dst, stride, block, eob
     mova       [blockq+24], m4
     VP9_IDCT4_WRITEOUT
     RET
-%endmacro
-
-IDCT_4x4_FN mmxext
-IDCT_4x4_FN ssse3
 
 ;-------------------------------------------------------------------------------------------
 ; void vp9_iadst_iadst_4x4_add_<opt>(uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
@@ -474,7 +444,6 @@ IADST4_FN iadst, IADST4, iadst, IADST4, ssse3
     pmulhrsw            m7, W_11585x2_REG                   ; m7=t5
     pmulhrsw            m5, W_11585x2_REG                   ; m5=t6
     SWAP                 5,  1
-    ; merged VP9_IDCT8_1D_FINALIZE to make register-sharing w/ avx easier
     psubw               m6, m0, m3                          ; m6=t0-t7
     paddw               m3, m0                              ; m3=t0+t7
     psubw               m2, m0, m1                          ; m2=t1-t6
@@ -722,7 +691,6 @@ cglobal vp9_idct_idct_8x8_add, 4, 4, %2, dst, stride, block, eob
 
 VP9_IDCT_IDCT_8x8_ADD_XMM sse2, 12
 VP9_IDCT_IDCT_8x8_ADD_XMM ssse3, 13
-VP9_IDCT_IDCT_8x8_ADD_XMM avx, 13
 
 ;---------------------------------------------------------------------------------------------
 ; void vp9_iadst_iadst_8x8_add_<opt>(uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
@@ -776,7 +744,7 @@ VP9_IDCT_IDCT_8x8_ADD_XMM avx, 13
     SCRATCH                  1, 12, blockq+ 0*16
     VP9_RND_SH_SUMSUB_BA     5,  7,  4,  3, 1, D_8192_REG
     UNSCRATCH                1, 12, blockq+ 0*16
-    PSIGNW                  m5, W_M1_REG                    ; m5=out1[w], m7=t6[w]
+    NEGATE                  m5, W_M1_REG                    ; m5=out1[w], m7=t6[w]
     VP9_RND_SH_SUMSUB_BA     2,  0,  6,  1, 3, D_8192_REG   ; m2=out6[w], m0=t7[w]
 
     UNSCRATCH                1,  8, blockq+16*1
@@ -787,7 +755,7 @@ VP9_IDCT_IDCT_8x8_ADD_XMM avx, 13
 
     SUMSUB_BA                w,  6,  4, 2                   ; m6=out0[w], m4=t2[w]
     SUMSUB_BA                w,  1,  3, 2
-    PSIGNW                  m1, W_M1_REG                    ; m1=out7[w], m3=t3[w]
+    NEGATE                  m1, W_M1_REG                    ; m1=out7[w], m3=t3[w]
 
     ; m6=out0, m5=out1, m4=t2, m3=t3, m7=t6, m0=t7, m2=out6, m1=out7
 
@@ -805,8 +773,8 @@ VP9_IDCT_IDCT_8x8_ADD_XMM avx, 13
     VP9_UNPACK_MULSUB_2W_4X  7, 0, 11585, 11585, D_8192_REG, 2, 5
     UNSCRATCH                5,  9, blockq+16*1
 %endif
-    PSIGNW                  m3, W_M1_REG                    ; out3
-    PSIGNW                  m7, W_M1_REG                    ; out5
+    NEGATE                  m3, W_M1_REG                    ; out3
+    NEGATE                  m7, W_M1_REG                    ; out5
 
     ; m6=out0, m5=out1, m0=out2, m3=out3, m4=out4, m7=out5, m2=out6, m1=out7
 
@@ -854,7 +822,7 @@ cglobal vp9_%1_%3_8x8_add, 3, 3, %6, dst, stride, block, eob
     mova               m15, [pw_11585x2]    ; often used
 %endif
     mova               m13, [pd_8192]       ; rounding
-    mova               m14, [pw_m1]
+    pcmpeqw            m14, m14             ; pw_m1
 %define W_11585x2_REG m15
 %define D_8192_REG m13
 %define W_M1_REG m14
@@ -896,11 +864,8 @@ IADST8_FN idct,  IDCT8,  iadst, IADST8, sse2, 15
 IADST8_FN iadst, IADST8, idct,  IDCT8,  sse2, 15
 IADST8_FN iadst, IADST8, iadst, IADST8, sse2, 15
 IADST8_FN idct,  IDCT8,  iadst, IADST8, ssse3, 16
-IADST8_FN idct,  IDCT8,  iadst, IADST8, avx, 16
 IADST8_FN iadst, IADST8, idct,  IDCT8,  ssse3, 16
-IADST8_FN iadst, IADST8, idct,  IDCT8,  avx, 16
 IADST8_FN iadst, IADST8, iadst, IADST8, ssse3, 16
-IADST8_FN iadst, IADST8, iadst, IADST8, avx, 16
 
 ;---------------------------------------------------------------------------------------------
 ; void vp9_idct_idct_16x16_add_<opt>(uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
@@ -1438,7 +1403,6 @@ cglobal vp9_idct_idct_16x16_add, 4, 6, 16, 512, dst, stride, block, eob
 
 VP9_IDCT_IDCT_16x16_ADD_XMM sse2
 VP9_IDCT_IDCT_16x16_ADD_XMM ssse3
-VP9_IDCT_IDCT_16x16_ADD_XMM avx
 
 %macro VP9_IDCT16_YMM_1D 0
     VP9_UNPACK_MULSUB_2W_4X  1,  15, 16305,  1606, [pd_8192], 0, 4 ; t8,  t15
@@ -1533,83 +1497,6 @@ VP9_IDCT_IDCT_16x16_ADD_XMM avx
     vextracti128  [dstq+strideq], m%2, 1
     vextracti128 [dstq+stride3q], m%4, 1
 %endmacro
-
-%if ARCH_X86_64 && HAVE_AVX2_EXTERNAL
-INIT_YMM avx2
-cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
-    cmp eobd, 1 ; faster path for when only DC is set
-    jg .idctfull
-
-    ; dc-only
-    mova                m1, [pw_11585x2]
-    vpbroadcastw        m0, [blockq]
-    pmulhrsw            m0, m1
-    pmulhrsw            m0, m1
-    pxor                m5, m5
-    pmulhrsw            m0, [pw_512]
-    movd          [blockq], xm5
-
-    DEFINE_ARGS dst, stride, stride3, cnt
-    mov               cntd, 4
-    lea           stride3q, [strideq*3]
-.loop_dc:
-    VP9_STORE_YMM_DC_4X  0, 1, 2, 3, 4, 5
-    lea               dstq, [dstq+4*strideq]
-    dec               cntd
-    jg .loop_dc
-    RET
-
-    DEFINE_ARGS dst, stride, block, eob
-.idctfull:
-    mova                m1, [blockq+ 32]
-    mova                m2, [blockq+ 64]
-    mova                m3, [blockq+ 96]
-    mova                m5, [blockq+160]
-    mova                m6, [blockq+192]
-    mova                m7, [blockq+224]
-    mova                m8, [blockq+256]
-    mova                m9, [blockq+288]
-    mova               m10, [blockq+320]
-    mova               m11, [blockq+352]
-    mova               m12, [blockq+384]
-    mova               m13, [blockq+416]
-    mova               m14, [blockq+448]
-    mova               m15, [blockq+480]
-
-    VP9_IDCT16_YMM_1D
-    TRANSPOSE16x16W      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, \
-                         [blockq+192], [blockq+128], 1
-    mova      [blockq+  0], m0
-    VP9_IDCT16_YMM_1D
-
-    mova      [blockq+224], m7
-
-    ; store
-    VP9_IDCT8_WRITEx2    0,  1, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    2,  3, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    4,  5, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    mova                m6, [blockq+192]
-    mova                m7, [blockq+224]
-    VP9_IDCT8_WRITEx2    6,  7, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    8,  9, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   10, 11, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   12, 13, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   14, 15, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-
-    ; at the end of the loop, m0 should still be zero
-    ; use that to zero out block coefficients
-    pxor                m0, m0
-    ZERO_BLOCK      blockq, 32, 16, m0
-    RET
-%endif
 
 ;---------------------------------------------------------------------------------------------
 ; void vp9_iadst_iadst_16x16_add_<opt>(uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
@@ -1715,7 +1602,7 @@ cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
     UNSCRATCH            7, 15, tmpq+12*%%str
 
     SUMSUB_BA                w,  3,  7,  1
-    PSIGNW                  m3, [pw_m1]                     ; m3=out1[w], m7=t10[w]
+    NEGATE                  m3, [pw_m1]                     ; m3=out1[w], m7=t10[w]
     SUMSUB_BA                w,  2,  6,  1                  ; m2=out14[w], m6=t11[w]
 
     ; unfortunately, the code below overflows in some cases, e.g.
@@ -1741,7 +1628,7 @@ cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
     VP9_RND_SH_SUMSUB_BA     5,  6,  1,  3,  0, [pd_8192]   ; m5=out2[w], m6=t14[w]
     UNSCRATCH            0, 9, tmpq+ 2*%%str
     VP9_RND_SH_SUMSUB_BA     4,  7,  0,  2,  1, [pd_8192]
-    PSIGNW                  m4, [pw_m1]                     ; m4=out13[w], m7=t15[w]
+    NEGATE                  m4, [pw_m1]                     ; m4=out13[w], m7=t15[w]
 
     ; unfortunately, the code below overflows in some cases
 %if 0; cpuflag(ssse3)
@@ -1749,7 +1636,7 @@ cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
     pmulhrsw                m7, [pw_m11585x2]               ; m7=out5[w]
     pmulhrsw                m6, [pw_11585x2]                ; m6=out10[w]
 %else
-    PSIGNW                  m7, [pw_m1]
+    NEGATE                  m7, [pw_m1]
     VP9_UNPACK_MULSUB_2W_4X  7,  6, 11585, 11585, [pd_8192], 1, 0
 %endif
 
@@ -1785,7 +1672,7 @@ cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
     SCRATCH                  6, 10, tmpq+ 0*%%str
     VP9_RND_SH_SUMSUB_BA     0,  3,  1,  5,  6, [pd_8192]
     UNSCRATCH                6, 10, tmpq+ 0*%%str
-    PSIGNW                  m0, [pw_m1]                     ; m0=out3[w], m3=t6[w]
+    NEGATE                  m0, [pw_m1]                     ; m0=out3[w], m3=t6[w]
     VP9_RND_SH_SUMSUB_BA     4,  2,  6,  7,  5, [pd_8192]   ; m9=out12[w], m2=t7[w]
 
     UNSCRATCH                1,  8, tmpq+10*%%str
@@ -1796,7 +1683,7 @@ cglobal vp9_idct_idct_16x16_add, 4, 4, 16, dst, stride, block, eob
 
     SUMSUB_BA                w,  1,  6,  4                  ; m13=out0[w], m1=t2[w]
     SUMSUB_BA                w,  5,  7,  4
-    PSIGNW                  m5, [pw_m1]                     ; m12=out15[w], m8=t3[w]
+    NEGATE                  m5, [pw_m1]                     ; m12=out15[w], m8=t3[w]
 
     ; unfortunately, the code below overflows in some cases, e.g.
     ; http://downloads.webmproject.org/test_data/libvpx/vp90-2-14-resize-fp-tiles-16-8-4-2-1.webm
@@ -1982,9 +1869,6 @@ IADST16_FN iadst, IADST16, iadst, IADST16, sse2
 IADST16_FN idct,  IDCT16,  iadst, IADST16, ssse3
 IADST16_FN iadst, IADST16, idct,  IDCT16,  ssse3
 IADST16_FN iadst, IADST16, iadst, IADST16, ssse3
-IADST16_FN idct,  IDCT16,  iadst, IADST16, avx
-IADST16_FN iadst, IADST16, idct,  IDCT16,  avx
-IADST16_FN iadst, IADST16, iadst, IADST16, avx
 
 ; in: data in m[0-15] except m0/m4, which are in [blockq+0] and [blockq+128]
 ; out: m[0-15] except m6, which is in [blockq+192]
@@ -2053,12 +1937,12 @@ IADST16_FN iadst, IADST16, iadst, IADST16, avx
     VP9_UNPACK_MULSUB_2D_4X  2, 13,  1,  6,  6270, 15137    ; m2/x=t14[d], m13/x=t15[d]
     VP9_RND_SH_SUMSUB_BA     2,  0,  1, 12, 14, [pd_8192]   ; m2=out2[w], m0=t14a[w]
     VP9_RND_SH_SUMSUB_BA    13, 15,  6,  9, 14, [pd_8192]
-    PSIGNW                 m13, [pw_m1]                     ; m13=out13[w], m15=t15a[w]
+    NEGATE                 m13, [pw_m1]                     ; m13=out13[w], m15=t15a[w]
 
     VP9_UNPACK_MULSUB_2D_4X  8,  7, 12,  9, 15137,  6270    ; m8/x=t5[d], m7/x=t4[d]
     VP9_UNPACK_MULSUB_2D_4X  5, 10,  1,  6,  6270, 15137    ; m5/x=t6[d], m10/x=t7[d]
     VP9_RND_SH_SUMSUB_BA     5,  7,  1,  9, 14, [pd_8192]
-    PSIGNW                  m5, [pw_m1]                     ; m5=out3[w], m7=t6[w]
+    NEGATE                  m5, [pw_m1]                     ; m5=out3[w], m7=t6[w]
     VP9_RND_SH_SUMSUB_BA    10,  8,  6, 12, 14, [pd_8192]   ; m10=out12[w], m8=t7[w]
 
     mova                    m1, [blockq+  0]
@@ -2071,19 +1955,19 @@ IADST16_FN iadst, IADST16, iadst, IADST16, avx
 
     SUMSUB_BA            w, 14, 12,  5                      ; m14=out0, m12=t2a
     SUMSUB_BA            w,  1,  3,  5
-    PSIGNW                  m1, [pw_m1]                     ; m1=out15, m3=t3a
+    NEGATE                  m1, [pw_m1]                     ; m1=out15, m3=t3a
 
     SUMSUB_BA            w,  9, 11,  5
-    PSIGNW                  m9, [pw_m1]                     ; m9=out1, m11=t10
+    NEGATE                  m9, [pw_m1]                     ; m9=out1, m11=t10
     SUMSUB_BA            w,  6,  4,  5                      ; m6=out14, m4=t11
 
     VP9_UNPACK_MULSUB_2W_4X  4, 11, 11585, 11585, [pd_8192],  5, 10 ; m4=out9, m11=out6
     mova                    m5, [blockq+128]
     mova          [blockq+192], m11
-    PSIGNW                 m15, [pw_m1]
+    NEGATE                 m15, [pw_m1]
     VP9_UNPACK_MULSUB_2W_4X 15,  0, 11585, 11585, [pd_8192], 10, 11 ; m15=out5, m0=out10
 
-    PSIGNW                  m3, [pw_m1]
+    NEGATE                  m3, [pw_m1]
     VP9_UNPACK_MULSUB_2W_4X  3, 12, 11585, 11585, [pd_8192], 10, 11 ; m3=out7,m12=out8
     VP9_UNPACK_MULSUB_2W_4X  8,  7, 11585, 11585, [pd_8192], 10, 11 ; m8=out11,m7=out4
 
@@ -2093,65 +1977,6 @@ IADST16_FN iadst, IADST16, iadst, IADST16, avx
     SWAP                     1,  9, 15,  4,  7,  3,  5
     SWAP                     5,  9, 15
 %endmacro
-
-%if ARCH_X86_64 && HAVE_AVX2_EXTERNAL
-%macro IADST16_YMM_FN 4
-INIT_YMM avx2
-cglobal vp9_%1_%3_16x16_add, 4, 4, 16, dst, stride, block, eob
-    mova                m1, [blockq+ 32]
-    mova                m2, [blockq+ 64]
-    mova                m3, [blockq+ 96]
-    mova                m5, [blockq+160]
-    mova                m6, [blockq+192]
-    mova                m7, [blockq+224]
-    mova                m8, [blockq+256]
-    mova                m9, [blockq+288]
-    mova               m10, [blockq+320]
-    mova               m11, [blockq+352]
-    mova               m12, [blockq+384]
-    mova               m13, [blockq+416]
-    mova               m14, [blockq+448]
-    mova               m15, [blockq+480]
-
-    VP9_%2_YMM_1D
-    TRANSPOSE16x16W      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, \
-                         [blockq+192], [blockq+128], 1
-    mova      [blockq+  0], m0
-    VP9_%4_YMM_1D
-
-    mova      [blockq+224], m7
-
-    ; store
-    VP9_IDCT8_WRITEx2    0,  1, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    2,  3, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    4,  5, 6, 7, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    mova                m6, [blockq+192]
-    mova                m7, [blockq+224]
-    VP9_IDCT8_WRITEx2    6,  7, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2    8,  9, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   10, 11, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   12, 13, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-    VP9_IDCT8_WRITEx2   14, 15, 1, 2, unused, [pw_512], 6
-    lea               dstq, [dstq+2*strideq]
-
-    ; at the end of the loop, m0 should still be zero
-    ; use that to zero out block coefficients
-    pxor                m0, m0
-    ZERO_BLOCK      blockq, 32, 16, m0
-    RET
-%endmacro
-
-IADST16_YMM_FN idct,  IDCT16,  iadst, IADST16
-IADST16_YMM_FN iadst, IADST16, idct,  IDCT16
-IADST16_YMM_FN iadst, IADST16, iadst, IADST16
-%endif
 
 ;---------------------------------------------------------------------------------------------
 ; void vp9_idct_idct_32x32_add_<opt>(uint8_t *dst, ptrdiff_t stride, int16_t *block, int eob);
@@ -2468,115 +2293,6 @@ IADST16_YMM_FN iadst, IADST16, iadst, IADST16
     SUMSUB_BA             w,  5, 13,  8
     mova                m10, [tmpq+28*%%str] ; t7
     SUMSUB_BA             w,  4, 10,  8
-%if cpuflag(avx2)
-    ; the "shitty" about this idct is that the final pass does the outermost
-    ; interleave sumsubs (t0/31, t1/30, etc) but the tN for the 16x16 need
-    ; to be sequential, which means I need to load/store half of the sumsub
-    ; intermediates back to/from memory to get a 16x16 transpose going...
-    ; This would be easier if we had more (e.g. 32) YMM regs here.
-    mova    [tmpq+ 7*%%str], m9
-    mova    [tmpq+11*%%str], m12
-    mova    [tmpq+15*%%str], m11
-    mova    [tmpq+19*%%str], m2
-    mova    [tmpq+23*%%str], m3
-    mova    [tmpq+27*%%str], m13
-    mova    [tmpq+31*%%str], m10
-    mova    [tmpq+12*%%str], m5
-
-    mova                m13, [tmpq+30*%%str] ; t8
-    mova                m12, [tmpq+26*%%str] ; t9
-    mova                m11, [tmpq+22*%%str] ; t10
-    mova                m10, [tmpq+18*%%str] ; t11
-    mova                 m9, [tmpq+17*%%str] ; t20
-    mova                 m8, [tmpq+ 1*%%str] ; t21
-    mova                 m3, [tmpq+25*%%str] ; t22
-    mova                 m2, [tmpq+ 5*%%str] ; t23
-
-    SUMSUB_BA             w,  9, 10, 5
-    SUMSUB_BA             w,  8, 11, 5
-    SUMSUB_BA             w,  3, 12, 5
-    SUMSUB_BA             w,  2, 13, 5
-    mova    [tmpq+ 1*%%str], m10
-    mova    [tmpq+ 5*%%str], m11
-    mova    [tmpq+17*%%str], m12
-    mova    [tmpq+25*%%str], m13
-
-    mova                m13, [tmpq+14*%%str] ; t12
-    mova                m12, [tmpq+10*%%str] ; t13
-    mova                m11, [tmpq+ 9*%%str] ; t18
-    mova                m10, [tmpq+13*%%str] ; t19
-
-    SUMSUB_BA             w, 11, 12, 5
-    SUMSUB_BA             w, 10, 13, 5
-    mova    [tmpq+ 9*%%str], m13
-    mova    [tmpq+13*%%str], m12
-    mova    [tmpq+10*%%str], m10
-    mova    [tmpq+14*%%str], m11
-
-    mova                m13, [tmpq+ 6*%%str] ; t14
-    mova                m12, [tmpq+ 2*%%str] ; t15
-    mova                m11, [tmpq+21*%%str] ; t16
-    mova                m10, [tmpq+29*%%str] ; t17
-    SUMSUB_BA             w, 11, 12, 5
-    SUMSUB_BA             w, 10, 13, 5
-    mova    [tmpq+21*%%str], m12
-    mova    [tmpq+29*%%str], m13
-    mova                m12, [tmpq+10*%%str]
-    mova                m13, [tmpq+14*%%str]
-
-    TRANSPOSE16x16W       6,  0, 15, 14,  1,  7,  5,  4, \
-                          2,  3,  8,  9, 12, 13, 10, 11, \
-            [tmpq+12*%%str], [tmpq+ 8*%%str], 1
-    mova    [tmpq+ 0*%%str], m6
-    mova    [tmpq+ 2*%%str], m0
-    mova    [tmpq+ 4*%%str], m15
-    mova    [tmpq+ 6*%%str], m14
-    mova    [tmpq+10*%%str], m7
-    mova    [tmpq+12*%%str], m5
-    mova    [tmpq+14*%%str], m4
-    mova    [tmpq+16*%%str], m2
-    mova    [tmpq+18*%%str], m3
-    mova    [tmpq+20*%%str], m8
-    mova    [tmpq+22*%%str], m9
-    mova    [tmpq+24*%%str], m12
-    mova    [tmpq+26*%%str], m13
-    mova    [tmpq+28*%%str], m10
-    mova    [tmpq+30*%%str], m11
-
-    mova                 m0, [tmpq+21*%%str]
-    mova                 m1, [tmpq+29*%%str]
-    mova                 m2, [tmpq+13*%%str]
-    mova                 m3, [tmpq+ 9*%%str]
-    mova                 m4, [tmpq+ 1*%%str]
-    mova                 m5, [tmpq+ 5*%%str]
-    mova                 m7, [tmpq+25*%%str]
-    mova                 m8, [tmpq+31*%%str]
-    mova                 m9, [tmpq+27*%%str]
-    mova                m10, [tmpq+23*%%str]
-    mova                m11, [tmpq+19*%%str]
-    mova                m12, [tmpq+15*%%str]
-    mova                m13, [tmpq+11*%%str]
-    mova                m14, [tmpq+ 7*%%str]
-    mova                m15, [tmpq+ 3*%%str]
-    TRANSPOSE16x16W       0,  1,  2,  3,  4,  5,  6,  7, \
-                          8,  9, 10, 11, 12, 13, 14, 15, \
-            [tmpq+17*%%str], [tmpq+ 9*%%str], 1
-    mova    [tmpq+ 1*%%str], m0
-    mova    [tmpq+ 3*%%str], m1
-    mova    [tmpq+ 5*%%str], m2
-    mova    [tmpq+ 7*%%str], m3
-    mova    [tmpq+11*%%str], m5
-    mova    [tmpq+13*%%str], m6
-    mova    [tmpq+15*%%str], m7
-    mova    [tmpq+17*%%str], m8
-    mova    [tmpq+19*%%str], m9
-    mova    [tmpq+21*%%str], m10
-    mova    [tmpq+23*%%str], m11
-    mova    [tmpq+25*%%str], m12
-    mova    [tmpq+27*%%str], m13
-    mova    [tmpq+29*%%str], m14
-    mova    [tmpq+31*%%str], m15
-%else ; !avx2
     TRANSPOSE8x8W         6, 0, 15, 14, 1, 7, 5, 4, 8
     mova    [tmpq+ 0*%%str], m6
     mova    [tmpq+ 4*%%str], m0
@@ -2645,7 +2361,6 @@ IADST16_YMM_FN iadst, IADST16, iadst, IADST16
     mova    [tmpq+22*%%str], m13
     mova    [tmpq+26*%%str], m14
     mova    [tmpq+30*%%str], m15
-%endif ; avx2
 %else
     mova                 m2, [tmpq+24*%%str] ; t6
     mova                 m3, [tmpq+28*%%str] ; t7
@@ -3093,107 +2808,3 @@ cglobal vp9_idct_idct_32x32_add, 0, 6 + ARCH_X86_64 * 3, 16, 2048, dst, stride, 
 
 VP9_IDCT_IDCT_32x32_ADD_XMM sse2
 VP9_IDCT_IDCT_32x32_ADD_XMM ssse3
-VP9_IDCT_IDCT_32x32_ADD_XMM avx
-
-; this is almost identical to VP9_STORE_2X, but it does two rows
-; for slightly improved interleaving, and it omits vpermq since the
-; input is DC so all values are identical
-%macro VP9_STORE_YMM_DC_2X2 6 ; reg, tmp1, tmp2, tmp3, tmp4, zero
-    mova               m%2, [dstq]
-    mova               m%4, [dstq+strideq]
-    punpckhbw          m%3, m%2, m%6
-    punpcklbw          m%2, m%6
-    punpckhbw          m%5, m%4, m%6
-    punpcklbw          m%4, m%6
-    paddw              m%3, m%1
-    paddw              m%2, m%1
-    paddw              m%5, m%1
-    paddw              m%4, m%1
-    packuswb           m%2, m%3
-    packuswb           m%4, m%5
-    mova  [dstq+strideq*0], m%2
-    mova  [dstq+strideq*1], m%4
-%endmacro
-
-%if ARCH_X86_64 && HAVE_AVX2_EXTERNAL
-INIT_YMM avx2
-cglobal vp9_idct_idct_32x32_add, 4, 9, 16, 2048, dst, stride, block, eob
-    cmp eobd, 135
-    jg .idctfull
-    cmp eobd, 1
-    jg .idct16x16
-
-    ; dc-only case
-    mova                m1, [pw_11585x2]
-    vpbroadcastw        m0, [blockq]
-    pmulhrsw            m0, m1
-    pmulhrsw            m0, m1
-    pxor                m5, m5
-    pmulhrsw            m0, [pw_512]
-    movd          [blockq], xm5
-
-    DEFINE_ARGS dst, stride, cnt
-    mov               cntd, 16
-.loop_dc:
-    VP9_STORE_YMM_DC_2X2 0, 1, 2, 3, 4, 5
-    lea               dstq, [dstq+2*strideq]
-    dec               cntd
-    jg .loop_dc
-    RET
-
-    DEFINE_ARGS dst_bak, stride, block, cnt, dst, stride30, dst_end, stride2, tmp
-.idct16x16:
-    mov               tmpq, rsp
-    VP9_IDCT32_1D   blockq, 1, 16
-
-    mov          stride30q, strideq         ; stride
-    lea           stride2q, [strideq*2]     ; stride*2
-    shl          stride30q, 5               ; stride*32
-    mov               cntd, 2
-    sub          stride30q, stride2q        ; stride*30
-.loop2_16x16:
-    mov               dstq, dst_bakq
-    lea           dst_endq, [dstq+stride30q]
-    VP9_IDCT32_1D     tmpq, 2, 16
-    add           dst_bakq, 16
-    add               tmpq, 32
-    dec               cntd
-    jg .loop2_16x16
-
-    ; at the end of the loop, m1 should still be zero
-    ; use that to zero out block coefficients
-    ZERO_BLOCK      blockq, 64, 16, m1
-    RET
-
-.idctfull:
-    mov               cntd, 2
-    mov               tmpq, rsp
-.loop1_full:
-    VP9_IDCT32_1D   blockq, 1
-    add             blockq, 32
-    add               tmpq, 1024
-    dec               cntd
-    jg .loop1_full
-
-    sub             blockq, 64
-
-    mov          stride30q, strideq         ; stride
-    lea           stride2q, [strideq*2]     ; stride*2
-    shl          stride30q, 5               ; stride*32
-    mov               cntd, 2
-    mov               tmpq, rsp
-    sub          stride30q, stride2q        ; stride*30
-.loop2_full:
-    mov               dstq, dst_bakq
-    lea           dst_endq, [dstq+stride30q]
-    VP9_IDCT32_1D     tmpq, 2
-    add           dst_bakq, 16
-    add               tmpq, 32
-    dec               cntd
-    jg .loop2_full
-
-    ; at the end of the loop, m1 should still be zero
-    ; use that to zero out block coefficients
-    ZERO_BLOCK      blockq, 64, 32, m1
-    RET
-%endif

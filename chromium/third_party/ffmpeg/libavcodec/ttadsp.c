@@ -20,9 +20,9 @@
 #include "ttadsp.h"
 #include "config.h"
 
-static void tta_filter_process_c(int32_t *qmi, int32_t *dx, int32_t *dl,
-                                 int32_t *error, int32_t *in, int32_t shift,
-                                 int32_t round)
+static int32_t tta_filter_process_c(int32_t *qmi, int32_t *dx, int32_t *dl,
+                                    int32_t *error, int32_t in, int32_t shift,
+                                    int32_t round)
 {
     uint32_t *qm = qmi;
 
@@ -45,19 +45,21 @@ static void tta_filter_process_c(int32_t *qmi, int32_t *dx, int32_t *dl,
     dx[6] = ((dl[6] >> 30) | 2) & ~1;
     dx[7] = ((dl[7] >> 30) | 4) & ~3;
 
-    *error = *in;
-    *in += (round >> shift);
+    *error = in;
+    in += (round >> shift);
 
     dl[4] = -(unsigned)dl[5]; dl[5] = -(unsigned)dl[6];
-    dl[6] = *in -(unsigned)dl[7]; dl[7] = *in;
+    dl[6] = in -(unsigned)dl[7]; dl[7] = in;
     dl[5] += (unsigned)dl[6]; dl[4] += (unsigned)dl[5];
+
+    return in;
 }
 
 av_cold void ff_ttadsp_init(TTADSPContext *c)
 {
     c->filter_process = tta_filter_process_c;
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_ttadsp_init_x86(c);
 #endif
 }

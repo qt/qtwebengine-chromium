@@ -25,6 +25,7 @@
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
+#include "parser_internal.h"
 
 /* Parser (mostly) copied from dvdsub.c */
 
@@ -103,7 +104,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
         }
     }
 
-    if (buf_size - buf_pos + pc->packet_index > PARSE_BUF_SIZE)
+    if (buf_size - buf_pos > PARSE_BUF_SIZE - pc->packet_index)
         return buf_size;
 
 /* if not currently in a packet, pass data */
@@ -163,8 +164,8 @@ static int dvbsub_parse(AVCodecParserContext *s,
     return buf_size;
 }
 
-const AVCodecParser ff_dvbsub_parser = {
-    .codec_ids      = { AV_CODEC_ID_DVB_SUBTITLE },
+const FFCodecParser ff_dvbsub_parser = {
+    PARSER_CODEC_LIST(AV_CODEC_ID_DVB_SUBTITLE),
     .priv_data_size = sizeof(DVBSubParseContext),
-    .parser_parse   = dvbsub_parse,
+    .parse          = dvbsub_parse,
 };

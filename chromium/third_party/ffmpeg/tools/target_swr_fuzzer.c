@@ -67,6 +67,16 @@ static const AVChannelLayout layouts[]={
     AV_CHANNEL_LAYOUT_5POINT1POINT2_BACK ,
 };
 
+static void reset_cpu_flags(void)
+{
+    static int default_cpu_flags = -1;
+
+    if (default_cpu_flags < 0)
+        default_cpu_flags = av_get_cpu_flags();
+
+    av_force_cpu_flags(default_cpu_flags);
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct SwrContext * swr= NULL;
     AVChannelLayout in_ch_layout = AV_CHANNEL_LAYOUT_MONO, out_ch_layout = AV_CHANNEL_LAYOUT_MONO;
@@ -84,6 +94,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     int out_sample_nb = size;
     int count;
     int ret;
+
+    reset_cpu_flags();
 
     if (size > 128) {
         GetByteContext gbc;
@@ -110,9 +122,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     av_channel_layout_describe(& in_ch_layout,  in_layout_string, sizeof( in_layout_string));
     av_channel_layout_describe(&out_ch_layout, out_layout_string, sizeof(out_layout_string));
 
-    fprintf(stderr, "%s %d %s -> %s %d %s\n",
-            av_get_sample_fmt_name( in_sample_fmt),  in_sample_rate,  in_layout_string,
-            av_get_sample_fmt_name(out_sample_fmt), out_sample_rate, out_layout_string);
+    // fprintf(stderr, "%s %d %s -> %s %d %s\n",
+    //         av_get_sample_fmt_name( in_sample_fmt),  in_sample_rate,  in_layout_string,
+    //         av_get_sample_fmt_name(out_sample_fmt), out_sample_rate, out_layout_string);
 
     if (swr_alloc_set_opts2(&swr, &out_ch_layout, out_sample_fmt, out_sample_rate,
                                   &in_ch_layout,   in_sample_fmt,  in_sample_rate,

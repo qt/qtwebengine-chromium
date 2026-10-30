@@ -163,6 +163,13 @@ static int handle_chunk_size(URLContext *s, RTMPPacket *pkt);
 static int handle_window_ack_size(URLContext *s, RTMPPacket *pkt);
 static int handle_set_peer_bw(URLContext *s, RTMPPacket *pkt);
 
+static size_t zstrlen(const char *c)
+{
+    if(c)
+        return strlen(c);
+    return 0;
+}
+
 static int add_tracked_method(RTMPContext *rt, const char *name, int id)
 {
     int err;
@@ -327,7 +334,16 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
     int ret;
 
     if ((ret = ff_rtmp_packet_create(&pkt, RTMP_SYSTEM_CHANNEL, RTMP_PT_INVOKE,
-                                     0, 4096 + APP_MAX_LENGTH)) < 0)
+                                     0, 4096 + APP_MAX_LENGTH
+                                     + strlen(rt->auth_params) + strlen(rt->flashver)
+                                     + zstrlen(rt->enhanced_codecs)/5*7
+                                     + zstrlen(rt->swfurl)
+                                     + zstrlen(rt->swfverify)
+                                     + zstrlen(rt->tcurl)
+                                     + zstrlen(rt->auth_params)
+                                     + zstrlen(rt->pageurl)
+                                     + zstrlen(rt->conn)*3
+                                     )) < 0)
         return ret;
 
     p = pkt.data;
@@ -346,7 +362,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
         // check the string, fourcc + ',' + ...  + end fourcc correct length should be (4+1)*n+4
         if ((fourcc_str_len + 1) % 5 != 0) {
             av_log(s, AV_LOG_ERROR, "Malformed rtmp_enhanched_codecs, "
-                   "should be of the form hvc1[,av01][,vp09][,...]\n");
+                   "should be of the form hvc1[,av01][,vp09][,vvc1][,...]\n");
             ff_rtmp_packet_destroy(&pkt);
             return AVERROR(EINVAL);
         }
@@ -363,6 +379,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
                 !strncmp(fourcc_data, "ec-3", 4) ||
                 !strncmp(fourcc_data, "fLaC", 4) ||
                 !strncmp(fourcc_data, "hvc1", 4) ||
+                !strncmp(fourcc_data, "vvc1", 4) ||
                 !strncmp(fourcc_data, ".mp3", 4) ||
                 !strncmp(fourcc_data, "mp4a", 4) ||
                 !strncmp(fourcc_data, "Opus", 4) ||
@@ -1192,6 +1209,10 @@ static int rtmp_calc_swfhash(URLContext *s)
     if (!memcmp(in_data, "CWS", 3)) {
 #if CONFIG_ZLIB
         int64_t out_size;
+        if (in_size < 8) {
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
+        }
         /* Decompress the SWF player file using Zlib. */
         if (!(out_data = av_malloc(8))) {
             ret = AVERROR(ENOMEM);
@@ -1256,7 +1277,10 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
     int i;
     int server_pos, client_pos;
     uint8_t digest[32], signature[32];
-    int ret, type = 0;
+    int ret;
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+    int type = 0;
+#endif
 
     av_log(s, AV_LOG_DEBUG, "Handshaking...\n");
 
@@ -1265,7 +1289,8 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
     for (i = 9; i <= RTMP_HANDSHAKE_PACKET_SIZE; i++)
         tosend[i] = av_lfg_get(&rnd) >> 24;
 
-    if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+    if (rt->encrypted) {
         /* When the client wants to use RTMPE, we have to change the command
          * byte to 0x06 which means to use encrypted data and we have to set
          * the flash version to at least 9.0.115.0. */
@@ -1280,6 +1305,7 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if ((ret = ff_rtmpe_gen_pub_key(rt->stream, tosend + 1)) < 0)
             return ret;
     }
+#endif
 
     client_pos = rtmp_handshake_imprint_with_digest(tosend + 1, rt->encrypted);
     if (client_pos < 0)
@@ -1313,7 +1339,9 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
             return server_pos;
 
         if (!server_pos) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
             type = 1;
+#endif
             server_pos = rtmp_validate_digest(serverdata + 1, 8);
             if (server_pos < 0)
                 return server_pos;
@@ -1343,7 +1371,8 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if (ret < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Compute the shared secret key sent by the server and initialize
              * the RC4 encryption. */
             if ((ret = ff_rtmpe_compute_secret_key(rt->stream, serverdata + 1,
@@ -1353,6 +1382,7 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
             /* Encrypt the signature received by the server. */
             ff_rtmpe_encrypt_sig(rt->stream, signature, digest, serverdata[0]);
         }
+#endif
 
         if (memcmp(signature, clientdata + RTMP_HANDSHAKE_PACKET_SIZE - 32, 32)) {
             av_log(s, AV_LOG_ERROR, "Signature mismatch\n");
@@ -1373,25 +1403,30 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
         if (ret < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Encrypt the signature to be send to the server. */
             ff_rtmpe_encrypt_sig(rt->stream, tosend +
                                  RTMP_HANDSHAKE_PACKET_SIZE - 32, digest,
                                  serverdata[0]);
         }
+#endif
 
         // write reply back to the server
         if ((ret = ffurl_write(rt->stream, tosend,
                                RTMP_HANDSHAKE_PACKET_SIZE)) < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Set RC4 keys for encryption and update the keystreams. */
             if ((ret = ff_rtmpe_update_keystream(rt->stream)) < 0)
                 return ret;
         }
+#endif
     } else {
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Compute the shared secret key sent by the server and initialize
              * the RC4 encryption. */
             if ((ret = ff_rtmpe_compute_secret_key(rt->stream, serverdata + 1,
@@ -1404,16 +1439,19 @@ static int rtmp_handshake(URLContext *s, RTMPContext *rt)
                                      serverdata[0]);
             }
         }
+#endif
 
         if ((ret = ffurl_write(rt->stream, serverdata + 1,
                                RTMP_HANDSHAKE_PACKET_SIZE)) < 0)
             return ret;
 
-        if (CONFIG_FFRTMPCRYPT_PROTOCOL && rt->encrypted) {
+#if CONFIG_FFRTMPCRYPT_PROTOCOL
+        if (rt->encrypted) {
             /* Set RC4 keys for encryption and update the keystreams. */
             if ((ret = ff_rtmpe_update_keystream(rt->stream)) < 0)
                 return ret;
         }
+#endif
     }
 
     return 0;
@@ -1909,7 +1947,9 @@ static int write_status(URLContext *s, RTMPPacket *pkt,
 
     if ((ret = ff_rtmp_packet_create(&spkt, RTMP_SYSTEM_CHANNEL,
                                      RTMP_PT_INVOKE, 0,
-                                     RTMP_PKTDATA_DEFAULT_SIZE)) < 0) {
+                                     RTMP_PKTDATA_DEFAULT_SIZE
+                                     + strlen(status) + strlen(description)
+                                     + zstrlen(details))) < 0) {
         av_log(s, AV_LOG_ERROR, "Unable to create response packet\n");
         return ret;
     }
@@ -2233,9 +2273,14 @@ static int update_offset(RTMPContext *rt, int size)
 {
     int old_flv_size;
 
+    if (size < 0)
+        return AVERROR(EINVAL);
+
     // generate packet header and put data into buffer for FLV demuxer
     if (rt->flv_off < rt->flv_size) {
         // There is old unread data in the buffer, thus append at the end
+        if (rt->flv_size > INT_MAX - size)
+            return AVERROR(ERANGE);
         old_flv_size  = rt->flv_size;
         rt->flv_size += size;
     } else {
@@ -2262,7 +2307,11 @@ static int append_flv_data(RTMPContext *rt, RTMPPacket *pkt, int skip)
         rt->has_video = 1;
     }
 
+    if (size > INT_MAX - 15)
+        return AVERROR(ERANGE);
     old_flv_size = update_offset(rt, size + 15);
+    if (old_flv_size < 0)
+        return old_flv_size;
 
     if ((ret = av_reallocp(&rt->flv_data, rt->flv_size)) < 0) {
         rt->flv_size = rt->flv_off = 0;
@@ -2392,48 +2441,50 @@ static int rtmp_parse_result(URLContext *s, RTMPContext *rt, RTMPPacket *pkt)
 static int handle_metadata(RTMPContext *rt, RTMPPacket *pkt)
 {
     int ret, old_flv_size, type;
-    const uint8_t *next;
-    uint8_t *p;
+    PutByteContext pbc;
+    GetByteContext gbc;
     uint32_t size;
     uint32_t ts, cts, pts = 0;
 
     old_flv_size = update_offset(rt, pkt->size);
+    if (old_flv_size < 0)
+        return old_flv_size;
 
     if ((ret = av_reallocp(&rt->flv_data, rt->flv_size)) < 0) {
         rt->flv_size = rt->flv_off = 0;
         return ret;
     }
 
-    next = pkt->data;
-    p    = rt->flv_data + old_flv_size;
+    bytestream2_init(&gbc, pkt->data, pkt->size);
+    bytestream2_init_writer(&pbc, rt->flv_data, rt->flv_size);
+    bytestream2_skip_p(&pbc, old_flv_size);
 
     /* copy data while rewriting timestamps */
     ts = pkt->timestamp;
 
-    while (next - pkt->data < pkt->size - RTMP_HEADER) {
-        type = bytestream_get_byte(&next);
-        size = bytestream_get_be24(&next);
-        cts  = bytestream_get_be24(&next);
-        cts |= bytestream_get_byte(&next) << 24;
+    while (bytestream2_get_bytes_left(&gbc) > RTMP_HEADER) {
+        type = bytestream2_get_byte(&gbc);
+        size = bytestream2_get_be24(&gbc);
+        cts  = bytestream2_get_be24(&gbc);
+        cts |= bytestream2_get_byte(&gbc) << 24;
         if (!pts)
             pts = cts;
         ts += cts - pts;
         pts = cts;
-        if (size + 3 + 4 > pkt->data + pkt->size - next)
+        if (size + 3 + 4 > bytestream2_get_bytes_left(&gbc))
             break;
-        bytestream_put_byte(&p, type);
-        bytestream_put_be24(&p, size);
-        bytestream_put_be24(&p, ts);
-        bytestream_put_byte(&p, ts >> 24);
-        memcpy(p, next, size + 3 + 4);
-        p    += size + 3;
-        bytestream_put_be32(&p, size + RTMP_HEADER);
-        next += size + 3 + 4;
+        bytestream2_put_byte(&pbc, type);
+        bytestream2_put_be24(&pbc, size);
+        bytestream2_put_be24(&pbc, ts);
+        bytestream2_put_byte(&pbc, ts >> 24);
+        bytestream2_copy_buffer(&pbc, &gbc, size + 3);
+        bytestream2_skip(&gbc, 4);
+        bytestream2_put_be32(&pbc, size + RTMP_HEADER);
     }
-    if (p != rt->flv_data + rt->flv_size) {
+    if (bytestream2_tell_p(&pbc) != rt->flv_size) {
         av_log(rt, AV_LOG_WARNING, "Incomplete flv packets in "
                                      "RTMP_PT_METADATA packet\n");
-        rt->flv_size = p - rt->flv_data;
+        rt->flv_size = bytestream2_tell_p(&pbc);
     }
 
     return 0;
@@ -2700,7 +2751,8 @@ static int rtmp_open(URLContext *s, const char *uri, int flags, AVDictionary **o
         if (rt->listen)
             ff_url_join(buf, sizeof(buf), "tcp", NULL, hostname, port,
                         "?listen&listen_timeout=%d&tcp_nodelay=%d",
-                        rt->listen_timeout * 1000, rt->tcp_nodelay);
+                        rt->listen_timeout < 0 ? -1 : rt->listen_timeout * 1000,
+                        rt->tcp_nodelay);
         else
             ff_url_join(buf, sizeof(buf), "tcp", NULL, hostname, port, "?tcp_nodelay=%d", rt->tcp_nodelay);
     }
@@ -2841,6 +2893,12 @@ reconnect:
             snprintf(rt->flashver, FLASHVER_MAX_LENGTH,
                     "FMLE/3.0 (compatible; %s)", LIBAVFORMAT_IDENT);
         }
+    }
+    if (   strlen(rt->flashver) > FLASHVER_MAX_LENGTH
+        || strlen(rt->tcurl   ) >    TCURL_MAX_LENGTH
+    ) {
+        ret = AVERROR(EINVAL);
+        goto fail;
     }
 
     rt->receive_report_size = 1048576;

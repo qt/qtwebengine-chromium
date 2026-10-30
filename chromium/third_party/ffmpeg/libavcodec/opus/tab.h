@@ -28,6 +28,8 @@
 #include "libavutil/attributes_internal.h"
 
 FF_VISIBILITY_PUSH_HIDDEN
+extern const uint16_t ff_opus_frame_duration[32];
+
 extern const uint8_t  ff_celt_band_end[];
 
 extern const uint8_t  ff_opus_default_coupled_streams[];
@@ -61,7 +63,8 @@ extern const uint16_t ff_silk_model_pitch_contour_nb10ms[];
 extern const uint16_t ff_silk_model_pitch_contour_nb20ms[];
 extern const uint16_t ff_silk_model_pitch_contour_mbwb10ms[];
 extern const uint16_t ff_silk_model_pitch_contour_mbwb20ms[];
-
+extern const uint16_t ff_silk_model_lsf_weight_nbmb[32][10];
+extern const uint16_t ff_silk_model_lsf_weight_wb[32][16];
 extern const uint16_t ff_silk_model_ltp_filter[];
 extern const uint16_t ff_silk_model_ltp_filter0_sel[];
 extern const uint16_t ff_silk_model_ltp_filter1_sel[];
@@ -159,7 +162,7 @@ extern const float    ff_celt_postfilter_taps[3][3];
 extern const float    ff_celt_window2[120];
 
 extern const float    ff_celt_window_padded[];
-static const float *const ff_celt_window = &ff_celt_window_padded[8];
+#define ff_celt_window (ff_celt_window_padded + 8)
 
 extern const float    ff_opus_deemph_weights[];
 

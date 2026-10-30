@@ -2,7 +2,79 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- ASTC image encoding and decoding via libastcenc, with .astc and KTX 1.0 muxers and demuxers
+- extensively improved AAC encoder
+- APV Vulkan encoder
+- iTerm2 inline image protocol muxer
+- LCEVC payload merging bitstream filter
+- MVR demuxer
+- latticepal filter
+- DVD-Audio LPCM decoder and demuxing support
+- AVFoundation input device selection by unique ID and USB serial number
+- NVIDIA optical flow accelerated interpolation filter (vf_fruc_vulkan)
+- H.264 data partitioning support
+- DSD (dsd_msbf) encoder
+- Rhetorex ADPCM decoder
+
+
+version 9.0:
+- Extend AMF Color Converter (vf_vpp_amf) HDR capabilities
+- LCEVC track muxing support in MP4 muxer
+- Playdate video encoder and muxer
+- Add v360_vulkan filter
+- HE-AAC 960 decoding (DAB+)
+- transpose_cuda filter
+- Add AMF Frame Rate Converter (vf_frc_amf) filter
+- SMPTE 2094-50 metadata support and passthrough
+- ProRes RAW VideoToolbox hwaccel
+- APV Vulkan hwaccel
+- Animated WebP decoder
+- Animated WebP demuxer
+- Remove CELT decoding support (doesn't affect Opus CELT)
+- Remove ogg/celt parsing
+- Bitstream filter to split Dolby Vision multi-layer HEVC
+- Add AMF hardware memory mapping support.
+- ONNX Runtime DNN backend with GPU execution provider support
+- Remove deprecated NVENC options and support for pre-11.1 SDK versions
+- Add AMF Video Quality Enhancer (vf_vqe_amf) filter
+
+
+version 8.1:
+- ffprobe -codec option
+- EXIF Metadata Parsing
+- gfxcapture: Windows.Graphics.Capture based window/monitor capture
+- hxvs demuxer for HXVS/HXVT IP camera format
+- MPEG-H 3D Audio decoding via mpeghdec
+- D3D12 H.264 encoder
+- drawvg filter via libcairo
+- ffmpeg CLI tiled HEIF support
+- D3D12 AV1 encoder
+- ProRes Vulkan hwaccel
+- DPX Vulkan hwaccel
+- Rockchip H.264/HEVC hardware encoder
+- Add vf_scale_d3d12 filter
+- JPEG-XS parser
+- JPEG-XS decoder and encoder through libsvtjpegxs
+- JPEG-XS raw bitstream muxer and demuxer
+- IAMF Projection mode Ambisonic Audio Elements muxing and demuxing
+- Add vf_mestimate_d3d12 filter
+- xHE-AAC Mps212 decoding support (experimental)
+- Remove the old HLS protocol handler
+- Vulkan compute codec optimizations
+- swscale Vulkan support
+- LCEVC metadata bitstream filter
+- Add vf_deinterlace_d3d12 filter
+- ffprobe: only show refs field in stream section when reading frames
+- ProRes Vulkan encoder
+- LCEVC parser
+- LCEVC enhancement layer exporting in MPEG-TS
+
+
+version 8.0:
+- Whisper filter
 - Drop support for OpenSSL < 1.1.0
+- Enable TLS peer certificate verification by default (on next major version bump)
+- Drop support for OpenSSL < 1.1.1
 - yasm support dropped, users need to use nasm
 - VVC VAAPI decoder
 - RealVideo 6.0 decoder
@@ -22,7 +94,17 @@ version <next>:
 - G.728 decoder
 - pad_cuda filter
 - Sanyo LD-ADPCM decoder
-- APV in MP4/ISOBMFF demuxing
+- APV in MP4/ISOBMFF muxing and demuxing
+- OpenHarmony hardware decoder/encoder
+- Colordetect filter
+- Add vf_scale_d3d11 filter
+- No longer disabling GCC autovectorization, on X86, ARM and AArch64
+- VP9 Vulkan hwaccel
+- AV1 Vulkan encoder
+- ProRes RAW decoder
+- ProRes RAW Vulkan hwaccel
+- ffprobe -codec option
+- HDR10+ metadata passthrough when decoding/encoding with libaom-av1
 
 
 version 7.1:
@@ -153,6 +235,7 @@ version 6.1:
   variable-fields elements within the same parent element
 - ffprobe -output_format option added as an alias of -of
 
+# codespell:off
 
 version 6.0:
 - Radiance HDR image support

@@ -137,7 +137,7 @@ static int eval_expr(AVFilterContext *ctx)
     var_values[VAR_OVERLAY_X] =
     var_values[VAR_OX]        = av_expr_eval(ox_expr, var_values, NULL);
 
-    /* calc overlay_w and overlay_h again incase relative to ox,oy */
+    /* calc overlay_w and overlay_h again in case relative to ox,oy */
     var_values[VAR_OVERLAY_W] =
     var_values[VAR_OW]        = av_expr_eval(ow_expr, var_values, NULL);
     var_values[VAR_OVERLAY_H] =
@@ -388,12 +388,12 @@ static int overlay_qsv_query_formats(const AVFilterContext *ctx,
     };
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        ret = ff_formats_ref(ff_make_format_list(main_in_fmts), &cfg_in[i]->formats);
+        ret = ff_formats_ref(ff_make_pixel_format_list(main_in_fmts), &cfg_in[i]->formats);
         if (ret < 0)
             return ret;
     }
 
-    ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &cfg_out[0]->formats);
+    ret = ff_formats_ref(ff_make_pixel_format_list(out_pix_fmts), &cfg_out[0]->formats);
     if (ret < 0)
         return ret;
 

@@ -65,7 +65,7 @@ static const char *const slave_bsfs_spec_sep = "/";
 static const char *const slave_select_sep = ",";
 
 #define OFFSET(x) offsetof(TeeContext, x)
-static const AVOption options[] = {
+static const AVOption tee_options[] = {
         {"use_fifo", "Use fifo pseudo-muxer to separate actual muxers from encoder",
          OFFSET(use_fifo), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, AV_OPT_FLAG_ENCODING_PARAM},
         {"fifo_options", "fifo pseudo-muxer options", OFFSET(fifo_options),
@@ -76,7 +76,7 @@ static const AVOption options[] = {
 static const AVClass tee_muxer_class = {
     .class_name = "Tee muxer",
     .item_name  = av_default_item_name,
-    .option = options,
+    .option     = tee_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
@@ -166,6 +166,8 @@ static int open_slave(AVFormatContext *avf, char *slave, TeeSlave *tee_slave)
 
     if ((ret = ff_tee_parse_slave_options(avf, slave, &options, &filename)) < 0)
         return ret;
+
+    tee_slave->on_fail = DEFAULT_SLAVE_FAILURE_POLICY;
 
 #define CONSUME_OPTION(option, field, action) do {                      \
         AVDictionaryEntry *en = av_dict_get(options, option, NULL, 0);  \
@@ -288,6 +290,14 @@ static int open_slave(AVFormatContext *avf, char *slave, TeeSlave *tee_slave)
         st2 = ff_stream_clone(avf2, st);
         if (!st2) {
             ret = AVERROR(ENOMEM);
+            goto end;
+        }
+    }
+
+    for (unsigned i = 0; i < avf->nb_programs; i++) {
+        ret = av_program_copy(avf2, (const AVFormatContext *)avf, avf->programs[i]->id, 0);
+        if (ret < 0) {
+            av_log(avf, AV_LOG_ERROR, "unable to transfer program %d to child muxer\n", avf->programs[i]->id);
             goto end;
         }
     }

@@ -117,12 +117,12 @@ static int query_formats(const AVFilterContext *ctx,
     AVFilterFormats *pix_formats = NULL, *map_formats = NULL;
     int ret;
 
-    pix_formats = ff_make_format_list(s->format ? gray_pix_fmts : pix_fmts);
+    pix_formats = ff_make_pixel_format_list(s->format ? gray_pix_fmts : pix_fmts);
     if ((ret = ff_formats_ref(pix_formats, &cfg_in[0]->formats)) < 0 ||
         (ret = ff_formats_ref(pix_formats, &cfg_out[0]->formats)) < 0)
         return ret;
 
-    map_formats = ff_make_format_list(map_fmts);
+    map_formats = ff_make_pixel_format_list(map_fmts);
     if ((ret = ff_formats_ref(map_formats, &cfg_in[1]->formats)) < 0)
         return ret;
     return ff_formats_ref(map_formats, &cfg_in[2]->formats);
@@ -143,8 +143,8 @@ static int remap_planar##bits##_##name##_slice(AVFilterContext *ctx, void *arg, 
     const AVFrame *xin = td->xin;                                                           \
     const AVFrame *yin = td->yin;                                                           \
     const AVFrame *out = td->out;                                                           \
-    const int slice_start = (out->height *  jobnr   ) / nb_jobs;                            \
-    const int slice_end   = (out->height * (jobnr+1)) / nb_jobs;                            \
+    const int slice_start = ff_slice_pos(out->height, jobnr, nb_jobs);                      \
+    const int slice_end   = ff_slice_pos(out->height, jobnr + 1, nb_jobs);                  \
     const int xlinesize = xin->linesize[0] / 2;                                             \
     const int ylinesize = yin->linesize[0] / 2;                                             \
     int x , y, plane;                                                                       \
@@ -194,8 +194,8 @@ static int remap_packed##bits##_##name##_slice(AVFilterContext *ctx, void *arg, 
     const AVFrame *xin = td->xin;                                                           \
     const AVFrame *yin = td->yin;                                                           \
     const AVFrame *out = td->out;                                                           \
-    const int slice_start = (out->height *  jobnr   ) / nb_jobs;                            \
-    const int slice_end   = (out->height * (jobnr+1)) / nb_jobs;                            \
+    const int slice_start = ff_slice_pos(out->height, jobnr, nb_jobs);                      \
+    const int slice_end   = ff_slice_pos(out->height, jobnr + 1, nb_jobs);                  \
     const int dlinesize  = out->linesize[0] / div;                                          \
     const int slinesize  = in->linesize[0] / div;                                           \
     const int xlinesize  = xin->linesize[0] / 2;                                            \

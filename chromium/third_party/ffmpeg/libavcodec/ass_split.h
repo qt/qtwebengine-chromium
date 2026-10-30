@@ -1,5 +1,5 @@
 /*
- * SSA/ASS spliting functions
+ * SSA/ASS splitting functions
  * Copyright (c) 2010  Aurelien Jacobs <aurel@gnuage.org>
  *
  * This file is part of FFmpeg.
@@ -157,6 +157,14 @@ typedef struct {
      */
     void (*move)(void *priv, int x1, int y1, int x2, int y2, int t1, int t2);
     void (*origin)(void *priv, int x, int y);
+    /** @} */
+
+    /**
+     * @defgroup ass_karaoke      ASS karaoke
+     * @{
+     */
+    /* duration is in centiseconds */
+    void (*karaoke)(void *priv, unsigned int duration);
     /** @} */
 
     /**

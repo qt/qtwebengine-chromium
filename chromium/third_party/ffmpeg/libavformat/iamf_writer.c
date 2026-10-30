@@ -106,11 +106,17 @@ static int populate_audio_roll_distance(IAMFCodecConfig *codec_config)
 }
 
 static int fill_codec_config(IAMFContext *iamf, const AVStreamGroup *stg,
-                             IAMFCodecConfig *codec_config)
+                             IAMFCodecConfig *codec_config, void *log_ctx)
 {
     const AVStream *st = stg->streams[0];
     IAMFCodecConfig **tmp;
     int j, ret = 0;
+
+    if (!st->codecpar->frame_size) {
+        av_log(log_ctx, AV_LOG_ERROR, "frame_size is unset for stream id %d\n",
+               st->id);
+        return AVERROR(EINVAL);
+    }
 
     codec_config->codec_id = st->codecpar->codec_id;
     codec_config->codec_tag = st->codecpar->codec_tag;
@@ -126,9 +132,14 @@ static int fill_codec_config(IAMFContext *iamf, const AVStreamGroup *stg,
     }
     populate_audio_roll_distance(codec_config);
     if (st->codecpar->extradata_size) {
-        codec_config->extradata = av_memdup(st->codecpar->extradata, st->codecpar->extradata_size);
+        if (st->codecpar->extradata_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+            return AVERROR_INVALIDDATA;
+
+        codec_config->extradata = av_malloc(st->codecpar->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!codec_config->extradata)
             return AVERROR(ENOMEM);
+        memcpy(codec_config->extradata, st->codecpar->extradata, st->codecpar->extradata_size);
+        memset(codec_config->extradata + st->codecpar->extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         codec_config->extradata_size = st->codecpar->extradata_size;
         ret = update_extradata(codec_config);
         if (ret < 0)
@@ -235,8 +246,8 @@ int ff_iamf_add_audio_element(IAMFContext *iamf, const AVStreamGroup *stg, void 
             av_log(log_ctx, AV_LOG_ERROR, "Invalid channel layout for SCENE_BASED audio element\n");
             return AVERROR(EINVAL);
         }
-        if (layer->ambisonics_mode >= AV_IAMF_AMBISONICS_MODE_PROJECTION) {
-            av_log(log_ctx, AV_LOG_ERROR, "Unsuported ambisonics mode %d\n", layer->ambisonics_mode);
+        if (layer->ambisonics_mode > AV_IAMF_AMBISONICS_MODE_PROJECTION) {
+            av_log(log_ctx, AV_LOG_ERROR, "Unsupported ambisonics mode %d\n", layer->ambisonics_mode);
             return AVERROR_PATCHWELCOME;
         }
         for (int i = 0; i < stg->nb_streams; i++) {
@@ -309,7 +320,7 @@ int ff_iamf_add_audio_element(IAMFContext *iamf, const AVStreamGroup *stg, void 
     if (!codec_config)
         return AVERROR(ENOMEM);
 
-    ret = fill_codec_config(iamf, stg, codec_config);
+    ret = fill_codec_config(iamf, stg, codec_config, log_ctx);
     if (ret < 0) {
         av_free(codec_config);
         return ret;
@@ -659,18 +670,31 @@ static int ambisonics_config(const IAMFAudioElement *audio_element,
                              AVIOContext *dyn_bc)
 {
     const AVIAMFAudioElement *element = audio_element->celement;
+    const IAMFLayer *ilayer = &audio_element->layers[0];
     const AVIAMFLayer *layer = element->layers[0];
 
-    ffio_write_leb(dyn_bc, 0); // ambisonics_mode
-    ffio_write_leb(dyn_bc, layer->ch_layout.nb_channels); // output_channel_count
-    ffio_write_leb(dyn_bc, audio_element->nb_substreams); // substream_count
+    if (audio_element->nb_substreams != ilayer->substream_count)
+        return AVERROR(EINVAL);
 
-    if (layer->ch_layout.order == AV_CHANNEL_ORDER_AMBISONIC)
-        for (int i = 0; i < layer->ch_layout.nb_channels; i++)
-            avio_w8(dyn_bc, i);
-    else
-        for (int i = 0; i < layer->ch_layout.nb_channels; i++)
-            avio_w8(dyn_bc, layer->ch_layout.u.map[i].id);
+    ffio_write_leb(dyn_bc, layer->ambisonics_mode);
+    avio_w8(dyn_bc, layer->ch_layout.nb_channels); // output_channel_count
+    avio_w8(dyn_bc, audio_element->nb_substreams); // substream_count
+
+    if (layer->ambisonics_mode == AV_IAMF_AMBISONICS_MODE_MONO) {
+        if (layer->ch_layout.order == AV_CHANNEL_ORDER_AMBISONIC)
+            for (int i = 0; i < layer->ch_layout.nb_channels; i++)
+                avio_w8(dyn_bc, i);
+        else
+            for (int i = 0; i < layer->ch_layout.nb_channels; i++)
+                avio_w8(dyn_bc, layer->ch_layout.u.map[i].id);
+    } else {
+        int nb_demixing_matrix = (ilayer->coupled_substream_count + ilayer->substream_count) * layer->ch_layout.nb_channels;
+        if (nb_demixing_matrix != layer->nb_demixing_matrix)
+            return AVERROR(EINVAL);
+        avio_w8(dyn_bc, ilayer->coupled_substream_count);
+        for (int i = 0; i < layer->nb_demixing_matrix; i++)
+            avio_wb16(dyn_bc, rescale_rational(layer->demixing_matrix[i], 1 << 15));
+    }
 
     return 0;
 }
@@ -753,8 +777,16 @@ static int iamf_write_audio_element(const IAMFContext *iamf,
         int layout = 0, expanded_layout = 0;
         get_loudspeaker_layout(element->layers[0], &layout, &expanded_layout);
         /* When the loudspeaker_layout = 15, the type PARAMETER_DEFINITION_DEMIXING SHALL NOT be present. */
-        if (layout == 15)
+        if (layout == 15) {
             param_definition_types &= ~AV_IAMF_PARAMETER_DEFINITION_DEMIXING;
+            /* expanded_loudspeaker_layout SHALL only be present when num_layers = 1 and loudspeaker_layout is set to 15 */
+            if (element->nb_layers > 1) {
+                av_log(log_ctx, AV_LOG_ERROR, "expanded_loudspeaker_layout present when using more than one layer in "
+                                              "Stream Group #%u\n",
+                       audio_element->audio_element_id);
+                return AVERROR(EINVAL);
+            }
+        }
         /* When the loudspeaker_layout of the (non-)scalable channel audio (i.e., num_layers = 1) is less than or equal to 3.1.2ch,
          * (i.e., Mono, Stereo, or 3.1.2ch), the type PARAMETER_DEFINITION_DEMIXING SHALL NOT be present. */
         else if (element->nb_layers == 1 && (layout == 0 || layout == 1 || layout == 8))
@@ -1125,7 +1157,7 @@ static int write_parameter_block(const IAMFContext *iamf, AVIOContext *pb,
             break;
         }
         default:
-            av_assert0(0);
+            av_unreachable("param_definition_type should have been checked above");
         }
     }
 
@@ -1216,15 +1248,17 @@ int ff_iamf_write_audio_frame(const IAMFContext *iamf, AVIOContext *pb,
                                                                AV_PKT_DATA_NEW_EXTRADATA,
                                                                &new_extradata_size);
 
-        if (!new_extradata)
+        if (!new_extradata || new_extradata_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
             return AVERROR_INVALIDDATA;
 
         av_free(codec_config->extradata);
-        codec_config->extradata = av_memdup(new_extradata, new_extradata_size);
+        codec_config->extradata = av_malloc(new_extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!codec_config->extradata) {
             codec_config->extradata_size = 0;
             return AVERROR(ENOMEM);
         }
+        memcpy(codec_config->extradata, new_extradata, new_extradata_size);
+        memset(codec_config->extradata + new_extradata_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         codec_config->extradata_size = new_extradata_size;
 
         return update_extradata(codec_config);
@@ -1240,9 +1274,10 @@ int ff_iamf_write_audio_frame(const IAMFContext *iamf, AVIOContext *pb,
 
     if (codec_config->codec_id == AV_CODEC_ID_OPUS) {
         // IAMF's num_samples_to_trim_at_start is the same as Opus's pre-skip.
-        skip_samples = pkt->dts < 0
-            ? av_rescale(-pkt->dts, 48000, pkt->time_base.den)
-            : 0;
+        if (!skip_samples)
+            skip_samples = pkt->dts < 0
+                ? av_rescale(-pkt->dts, 48000, pkt->time_base.den)
+                : 0;
         discard_padding = av_rescale(discard_padding, 48000, pkt->time_base.den);
     }
 

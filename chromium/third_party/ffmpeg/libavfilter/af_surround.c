@@ -159,7 +159,7 @@ static int query_formats(const AVFilterContext *ctx,
     AVFilterChannelLayouts *layouts = NULL;
     int ret;
 
-    ret = ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, formats);
+    ret = ff_set_sample_formats_from_list2(ctx, cfg_in, cfg_out, formats);
     if (ret)
         return ret;
 
@@ -1261,8 +1261,8 @@ static int fft_channel(AVFilterContext *ctx, AVFrame *in, int ch)
 static int fft_channels(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
 {
     AVFrame *in = arg;
-    const int start = (in->ch_layout.nb_channels * jobnr) / nb_jobs;
-    const int end = (in->ch_layout.nb_channels * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(in->ch_layout.nb_channels, jobnr, nb_jobs);
+    const int end = ff_slice_pos(in->ch_layout.nb_channels, jobnr + 1, nb_jobs);
 
     for (int ch = start; ch < end; ch++)
         fft_channel(ctx, in, ch);
@@ -1302,8 +1302,8 @@ static int ifft_channels(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs
 {
     AudioSurroundContext *s = ctx->priv;
     AVFrame *out = arg;
-    const int start = (out->ch_layout.nb_channels * jobnr) / nb_jobs;
-    const int end = (out->ch_layout.nb_channels * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(out->ch_layout.nb_channels, jobnr, nb_jobs);
+    const int end = ff_slice_pos(out->ch_layout.nb_channels, jobnr + 1, nb_jobs);
 
     for (int ch = start; ch < end; ch++) {
         if (s->upmix)

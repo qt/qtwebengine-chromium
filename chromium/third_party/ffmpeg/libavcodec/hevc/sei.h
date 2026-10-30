@@ -87,12 +87,13 @@ typedef struct HEVCSEITDRDI {
     uint16_t left_view_id[32];
     uint16_t right_view_id[32];
     uint8_t exponent_ref_display_width[32];
-    uint8_t mantissa_ref_display_width[32];
+    uint64_t mantissa_ref_display_width[32];
     uint8_t exponent_ref_viewing_distance[32];
-    uint8_t mantissa_ref_viewing_distance[32];
+    uint64_t mantissa_ref_viewing_distance[32];
     uint8_t additional_shift_present_flag[32];
     int16_t num_sample_shift[32];
     uint8_t three_dimensional_reference_displays_extension_flag;
+    int present;
 } HEVCSEITDRDI;
 
 typedef struct HEVCSEIRecoveryPoint {
@@ -126,6 +127,8 @@ int ff_hevc_decode_nal_sei(GetBitContext *gb, void *logctx, HEVCSEI *s,
  */
 static inline void ff_hevc_reset_sei(HEVCSEI *sei)
 {
+    sei->timecode.present = 0;
+    sei->tdrdi.present = 0;
     ff_h2645_sei_reset(&sei->common);
 }
 

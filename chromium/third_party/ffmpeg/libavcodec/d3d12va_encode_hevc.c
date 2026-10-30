@@ -46,6 +46,7 @@ typedef struct D3D12VAEncodeHEVCContext {
     int qp;
     int profile;
     int level;
+    int constrained_intra_pred;
 
     // Writer structures.
     FFHWBaseEncodeH265 units;
@@ -238,7 +239,6 @@ static int d3d12va_encode_hevc_init_sequence_params(AVCodecContext *avctx)
     AVD3D12VAFramesContext   *hwctx = base_ctx->input_frames->hwctx;
     H265RawSPS                *sps  = &priv->units.raw_sps;
     H265RawPPS                *pps  = &priv->units.raw_pps;
-    H265RawVUI                *vui  = &sps->vui;
     D3D12_VIDEO_ENCODER_PROFILE_HEVC profile = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
     D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC level = { 0 };
     const AVPixFmtDescriptor *desc;
@@ -251,7 +251,7 @@ static int d3d12va_encode_hevc_init_sequence_params(AVCodecContext *avctx)
         .Codec                            = D3D12_VIDEO_ENCODER_CODEC_HEVC,
         .InputFormat                      = hwctx->format,
         .RateControl                      = ctx->rc,
-        .IntraRefresh                     = D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_NONE,
+        .IntraRefresh                     = ctx->intra_refresh.Mode,
         .SubregionFrameEncoding           = D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
         .ResolutionsListCount             = 1,
         .pResolutionList                  = &ctx->resolution,
@@ -274,15 +274,38 @@ static int d3d12va_encode_hevc_init_sequence_params(AVCodecContext *avctx)
     }
 
     if (!(support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK)) {
-        av_log(avctx, AV_LOG_ERROR, "Driver does not support some request features. %#x\n",
+        av_log(avctx, AV_LOG_ERROR, "Driver does not support requested features. ValidationFlags: %#x\n",
                support.ValidationFlags);
+        ff_d3d12va_encode_check_encoder_feature_flags(avctx, support.ValidationFlags);
         return AVERROR(EINVAL);
     }
 
     if (support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS) {
-        av_log(avctx, AV_LOG_ERROR, "D3D12 video encode on this device requires texture array support, "
-               "but it's not implemented.\n");
-        return AVERROR_PATCHWELCOME;
+        ctx->is_texture_array = 1;
+        av_log(avctx, AV_LOG_DEBUG, "D3D12 video encode on this device uses texture array mode.\n");
+    }
+
+    // Check if the configuration with DELTA_QP is supported
+    if (support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_RATE_CONTROL_DELTA_QP_AVAILABLE) {
+        base_ctx->roi_allowed = 1;
+        // Store the QP map region size from resolution limits
+        ctx->qp_map_region_size = ctx->res_limits.QPMapRegionPixelsSize;
+        av_log(avctx, AV_LOG_DEBUG, "ROI encoding is supported via delta QP "
+               "(QP map region size: %d pixels).\n", ctx->qp_map_region_size);
+    } else {
+        base_ctx->roi_allowed = 0;
+        av_log(avctx, AV_LOG_DEBUG, "ROI encoding not supported by hardware for current rate control mode \n");
+    }
+
+    // Check motion estimation precision mode support
+    if (ctx->me_precision != D3D12_VIDEO_ENCODER_MOTION_ESTIMATION_PRECISION_MODE_MAXIMUM) {
+        if (!(support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_MOTION_ESTIMATION_PRECISION_MODE_LIMIT_AVAILABLE)) {
+            av_log(avctx, AV_LOG_ERROR, "Hardware does not support motion estimation "
+                "precision mode limits.\n");
+            return AVERROR(ENOTSUP);
+        }
+        av_log(avctx, AV_LOG_VERBOSE, "Hardware supports motion estimation "
+            "precision mode limits.\n");
     }
 
     desc = av_pix_fmt_desc_get(base_ctx->input_frames->sw_format);
@@ -354,6 +377,7 @@ static int d3d12va_encode_hevc_init_sequence_params(AVCodecContext *avctx)
                                                         D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_DISABLE_LOOP_FILTER_ACROSS_SLICES);
 
     pps->deblocking_filter_control_present_flag = 1;
+    pps->constrained_intra_pred_flag = priv->constrained_intra_pred;
 
     return 0;
 }
@@ -365,6 +389,7 @@ static int d3d12va_encode_hevc_get_encoder_caps(AVCodecContext *avctx)
     uint8_t min_cu_size, max_cu_size;
     FFHWBaseEncodeContext *base_ctx = avctx->priv_data;
     D3D12VAEncodeContext     *ctx = avctx->priv_data;
+    D3D12VAEncodeHEVCContext *priv = avctx->priv_data;
     D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC *config;
     D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC hevc_caps;
 
@@ -416,6 +441,16 @@ static int d3d12va_encode_hevc_get_encoder_caps(AVCodecContext *avctx)
 
     if (hevc_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_TRANSFORM_SKIP_SUPPORT)
         config->ConfigurationFlags |= D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_ENABLE_TRANSFORM_SKIPPING;
+
+    // Constrained intra prediction configuration
+    if (priv->constrained_intra_pred) {
+        if (hevc_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_CONSTRAINED_INTRAPREDICTION_SUPPORT) {
+            config->ConfigurationFlags |= D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_USE_CONSTRAINED_INTRAPREDICTION;
+        } else {
+            av_log(avctx, AV_LOG_WARNING, "Constrained intra prediction is not supported by the driver, disabling.\n");
+            priv->constrained_intra_pred = 0;
+        }
+    }
 
     if (hevc_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_P_FRAMES_IMPLEMENTED_AS_LOW_DELAY_B_FRAMES)
         ctx->bi_not_empty = 1;
@@ -540,6 +575,7 @@ static void d3d12va_encode_hevc_free_picture_params(D3D12VAEncodePicture *pic)
 static int d3d12va_encode_hevc_init_picture_params(AVCodecContext *avctx,
                                                    FFHWBaseEncodePicture *base_pic)
 {
+    FFHWBaseEncodeContext                           *base_ctx = avctx->priv_data;
     D3D12VAEncodePicture                                 *pic = base_pic->priv;
     D3D12VAEncodeHEVCPicture                            *hpic = base_pic->codec_priv;
     FFHWBaseEncodePicture                               *prev = base_pic->prev;
@@ -633,6 +669,12 @@ static int d3d12va_encode_hevc_init_picture_params(AVCodecContext *avctx,
     pic->pic_ctl.pHEVCPicData->ReferenceFramesReconPictureDescriptorsCount = idx;
     pic->pic_ctl.pHEVCPicData->pReferenceFramesReconPictureDescriptors = pd;
 
+    // Process ROI side data if present and supported
+    if (base_ctx->roi_allowed && pic->qp_map && pic->qp_map_size > 0) {
+        pic->pic_ctl.pHEVCPicData->QPMapValuesCount  = pic->qp_map_size;
+        pic->pic_ctl.pHEVCPicData->pRateControlQPMap = (INT8 *)pic->qp_map;
+    }
+
     return 0;
 }
 
@@ -706,6 +748,7 @@ static int d3d12va_encode_hevc_close(AVCodecContext *avctx)
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
 static const AVOption d3d12va_encode_hevc_options[] = {
     HW_BASE_ENCODE_COMMON_OPTIONS,
+    D3D12VA_ENCODE_COMMON_OPTIONS,
     D3D12VA_ENCODE_RC_OPTIONS,
 
     { "qp", "Constant QP (for P-frames; scaled by qfactor/qoffset for I/B)",
@@ -750,6 +793,9 @@ static const AVOption d3d12va_encode_hevc_options[] = {
     { LEVEL("6.2", 186) },
 #undef LEVEL
 
+    { "constrained_intra_pred", "Constrained intra prediction (constrained_intra_pred_flag)",
+      OFFSET(constrained_intra_pred), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+
     { NULL },
 };
 
@@ -763,6 +809,7 @@ static const FFCodecDefault d3d12va_encode_hevc_defaults[] = {
     { "b_qoffset",      "0"   },
     { "qmin",           "-1"  },
     { "qmax",           "-1"  },
+    { "refs",           "0"   },
     { NULL },
 };
 

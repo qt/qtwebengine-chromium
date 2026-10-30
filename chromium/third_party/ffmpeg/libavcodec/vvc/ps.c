@@ -20,6 +20,7 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+#include <limits.h>
 #include <stdbool.h>
 
 #include "libavcodec/cbs_h266.h"
@@ -279,18 +280,21 @@ fail:
 
 static int decode_sps(VVCParamSets *ps, AVCodecContext *c, const H266RawSPS *rsps, int is_clvss)
 {
+    VVCContext *s           = c->priv_data;
     const int sps_id        = rsps->sps_seq_parameter_set_id;
     const VVCSPS *old_sps   = ps->sps_list[sps_id];
     const VVCSPS *sps;
 
     if (is_clvss) {
         ps->sps_id_used = 0;
+        s->seq_decode = (s->seq_decode + 1) & 0xff;
     }
 
     if (old_sps) {
-        if (old_sps->r == rsps || !memcmp(old_sps->r, rsps, sizeof(*old_sps->r)))
+        if (old_sps->r == rsps || !memcmp(old_sps->r, rsps, sizeof(*old_sps->r))) {
+            ps->sps_id_used |= (1 << sps_id);
             return 0;
-        else if (ps->sps_id_used & (1 << sps_id))
+        } else if (ps->sps_id_used & (1 << sps_id))
             return AVERROR_INVALIDDATA;
     }
 
@@ -742,21 +746,16 @@ static int decode_pps(VVCParamSets *ps, const H266RawPPS *rpps)
     return ret;
 }
 
-static int decode_ps(VVCParamSets *ps, AVCodecContext *c, const CodedBitstreamH266Context *h266, int is_clvss)
+static int decode_ps(VVCParamSets *ps, AVCodecContext *c, const SliceContext *sc, int is_clvss)
 {
-    const H266RawPictureHeader *ph = h266->ph;
-    const H266RawPPS *rpps;
-    const H266RawSPS *rsps;
+    const H266RawSlice *sl = sc->ref;
+    const H266RawPPS *rpps = sl->pps;
+    const H266RawSPS *rsps = sl->sps;
     int ret;
 
-    if (!ph)
-        return AVERROR_INVALIDDATA;
-
-    rpps = h266->pps[ph->ph_pic_parameter_set_id];
     if (!rpps)
         return AVERROR_INVALIDDATA;
 
-    rsps = h266->sps[rpps->pps_seq_parameter_set_id];
     if (!rsps)
         return AVERROR_INVALIDDATA;
 
@@ -1004,23 +1003,23 @@ static int decode_ph(VVCFrameParamSets *fps, const H266RawPictureHeader *rph, vo
 }
 
 static int decode_frame_ps(VVCFrameParamSets *fps, const VVCParamSets *ps,
-    const CodedBitstreamH266Context *h266, const int poc_tid0, const int is_clvss)
+    const SliceContext *sc, const int poc_tid0, const int is_clvss, const VVCContext *s)
 {
-    const H266RawPictureHeader *ph = h266->ph;
-    const H266RawPPS *rpps;
+    const H266RawSlice *sl         = sc->ref;
+    const H266RawPictureHeader *ph = sl->ph;
+    const H266RawPPS *rpps         = sl->pps;
     int ret;
 
     if (!ph)
         return AVERROR_INVALIDDATA;
 
-    rpps = h266->pps[ph->ph_pic_parameter_set_id];
     if (!rpps)
         return AVERROR_INVALIDDATA;
 
     av_refstruct_replace(&fps->sps, ps->sps_list[rpps->pps_seq_parameter_set_id]);
     av_refstruct_replace(&fps->pps, ps->pps_list[rpps->pps_pic_parameter_set_id]);
 
-    ret = decode_ph(fps, ph, h266->ph_ref, poc_tid0, is_clvss);
+    ret = decode_ph(fps, ph, sl->ph_ref, poc_tid0, is_clvss);
     if (ret < 0)
         return ret;
 
@@ -1047,33 +1046,61 @@ static void decode_recovery_flag(VVCContext *s)
         s->no_output_before_recovery_flag = s->last_eos;
 }
 
-static void decode_recovery_poc(VVCContext *s, const VVCPH *ph)
+static int decode_recovery_poc(VVCContext *s, const VVCFrameParamSets *fps)
 {
+    const VVCPH *ph = &fps->ph;
+
+    if (IS_GDR(s)) {
+        const uint32_t recovery_poc_cnt     = ph->r->ph_recovery_poc_cnt;
+        const uint32_t max_recovery_poc_cnt = fps->sps->max_pic_order_cnt_lsb - 1;
+
+        const int64_t recovery_poc = (int64_t)ph->poc + recovery_poc_cnt;
+        if (recovery_poc < INT_MIN || recovery_poc > INT_MAX) {
+            av_log(s->avctx, AV_LOG_ERROR, "Recovery point POC out of range: %"PRId64".\n", recovery_poc);
+            return AVERROR_INVALIDDATA;
+        }
+
+        if (recovery_poc_cnt > max_recovery_poc_cnt) {
+            const int strict = s->avctx->strict_std_compliance >= FF_COMPLIANCE_STRICT;
+            av_log(s->avctx, strict ? AV_LOG_ERROR : AV_LOG_WARNING,
+                   "ph_recovery_poc_cnt out of range: %"PRIu32
+                   ", expected [0, %"PRIu32"].\n", recovery_poc_cnt, max_recovery_poc_cnt);
+            if (strict)
+                return AVERROR_INVALIDDATA;
+        }
+
+        if (s->no_output_before_recovery_flag)
+            s->gdr_recovery_point_poc = recovery_poc;
+    }
+
     if (s->no_output_before_recovery_flag) {
-        if (IS_GDR(s))
-            s->gdr_recovery_point_poc = ph->poc + ph->r->ph_recovery_poc_cnt;
         if (!GDR_IS_RECOVERED(s) && s->gdr_recovery_point_poc <= ph->poc)
             GDR_SET_RECOVERED(s);
     }
+
+    return 0;
 }
 
-int ff_vvc_decode_frame_ps(VVCFrameParamSets *fps, struct VVCContext *s)
+int ff_vvc_decode_frame_ps(struct VVCFrameContext *fc, struct VVCContext *s)
 {
     int ret = 0;
+    VVCFrameParamSets *fps                  = &fc->ps;
     VVCParamSets *ps                        = &s->ps;
-    const CodedBitstreamH266Context *h266   = s->cbc->priv_data;
+    const SliceContext *sc                  = fc->slices[0];
     int is_clvss;
 
     decode_recovery_flag(s);
     is_clvss = IS_CLVSS(s);
 
-    ret = decode_ps(ps, s->avctx, h266, is_clvss);
+    ret = decode_ps(ps, s->avctx, sc, is_clvss);
     if (ret < 0)
         return ret;
 
-    ret = decode_frame_ps(fps, ps, h266, s->poc_tid0, is_clvss);
-    decode_recovery_poc(s, &fps->ph);
-    return ret;
+    ret = decode_frame_ps(fps, ps, sc, s->poc_tid0, is_clvss, s);
+    if (ret < 0)
+        return ret;
+
+    return decode_recovery_poc(s, fps);
 }
 
 void ff_vvc_frame_ps_free(VVCFrameParamSets *fps)
@@ -1440,7 +1467,7 @@ static void sh_partition_constraints(VVCSH *sh, const H266RawSPS *sps, const H26
     sh->min_qt_size[CHROMA] = 1 << min_qt_log2_size_y[CHROMA];
 }
 
-static void sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
+static int sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
 {
     if (sps->sps_entry_point_offsets_present_flag) {
         for (int i = 1, j = 0; i < sh->num_ctus_in_curr_slice; i++) {
@@ -1451,10 +1478,14 @@ static void sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
             if (pps->ctb_to_row_bd[ctb_addr_y] != pps->ctb_to_row_bd[pre_ctb_addr_y] ||
                 pps->ctb_to_col_bd[ctb_addr_x] != pps->ctb_to_col_bd[pre_ctb_addr_x] ||
                 (ctb_addr_y != pre_ctb_addr_y && sps->sps_entropy_coding_sync_enabled_flag)) {
+                if (j >= VVC_MAX_ENTRY_POINTS)
+                    return AVERROR_INVALIDDATA;
                 sh->entry_point_start_ctu[j++] = i;
             }
         }
     }
+
+    return 0;
 }
 
 static int sh_derive(VVCSH *sh, const VVCFrameParamSets *fps)
@@ -1474,7 +1505,9 @@ static int sh_derive(VVCSH *sh, const VVCFrameParamSets *fps)
     sh_qp_y(sh, pps, ph);
     sh_deblock_offsets(sh);
     sh_partition_constraints(sh, sps, ph);
-    sh_entry_points(sh, sps, fps->pps);
+    ret = sh_entry_points(sh, sps, fps->pps);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }

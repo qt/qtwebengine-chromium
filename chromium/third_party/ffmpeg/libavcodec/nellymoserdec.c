@@ -28,7 +28,7 @@
 /**
  * @file
  * The 3 alphanumeric copyright notices are md5summed they are from the original
- * implementors. The original code is available from http://code.google.com/p/nelly2pcm/
+ * implementers. The original code is available from http://code.google.com/p/nelly2pcm/
  */
 
 #include "libavutil/channel_layout.h"
@@ -156,8 +156,8 @@ static int decode_tag(AVCodecContext *avctx, AVFrame *frame,
 
     blocks     = buf_size / NELLY_BLOCK_LEN;
 
-    if (blocks <= 0) {
-        av_log(avctx, AV_LOG_ERROR, "Packet is too small\n");
+    if (blocks <= 0 || blocks > INT_MAX / NELLY_SAMPLES) {
+        av_log(avctx, AV_LOG_ERROR, "Packet is too small or too large\n");
         return AVERROR_INVALIDDATA;
     }
 
@@ -202,5 +202,4 @@ const FFCodec ff_nellymoser_decoder = {
     .close          = decode_end,
     FF_CODEC_DECODE_CB(decode_tag),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_PARAM_CHANGE | AV_CODEC_CAP_CHANNEL_CONF,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLT),
 };

@@ -54,8 +54,8 @@ static const char *const var_names[] = {
     "STARTT",      ///< time at start of movie
     "T",           ///< original time in the file of the frame
     "TB",          ///< timebase
-    "RTCTIME",     ///< wallclock (RTC) time in micro seconds
-    "RTCSTART",    ///< wallclock (RTC) time at the start of the movie in micro seconds
+    "RTCTIME",     ///< wallclock (RTC) time in microseconds
+    "RTCSTART",    ///< wallclock (RTC) time at the start of the movie in microseconds
     "S",           //   Number of samples in the current frame
     "SR",          //   Audio sample rate
     "FR",          ///< defined only for constant frame-rate video
@@ -199,7 +199,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 
     d = eval_pts(setpts, inlink, frame, frame->pts);
     frame->pts = D2TS(d);
-    frame->duration = 0;
+    if (setpts->strip_fps)
+        frame->duration = 0;
 
     av_log(inlink->dst, AV_LOG_TRACE,
             "N:%"PRId64" PTS:%s T:%f",

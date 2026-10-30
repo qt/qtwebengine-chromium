@@ -157,6 +157,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (ctx->max_frame_size > (1 << 20) || !ctx->max_frame_size) {
         av_log(avctx, AV_LOG_ERROR, "invalid frame size %d\n",
                ctx->max_frame_size);
+        return AVERROR_INVALIDDATA;
     }
     ctx->max_frame_size = FFMAX(ctx->max_frame_size, avctx->sample_rate);
 
@@ -503,7 +504,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return avpkt->size;
 }
 
-static void decode_flush(AVCodecContext *avctx)
+static av_cold void decode_flush(AVCodecContext *avctx)
 {
     RALFContext *ctx = avctx->priv_data;
 
@@ -523,6 +524,5 @@ const FFCodec ff_ralf_decoder = {
     .flush          = decode_flush,
     .p.capabilities = AV_CODEC_CAP_CHANNEL_CONF |
                       AV_CODEC_CAP_DR1,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16P),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

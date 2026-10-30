@@ -47,6 +47,7 @@
 #include "bytestream.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "exif_internal.h"
 #include "faxcompr.h"
 #include "lzw.h"
 #include "tiff.h"
@@ -124,6 +125,8 @@ typedef struct TiffContext {
 
     int geotag_count;
     TiffGeoTag *geotags;
+
+    AVExifMetadata exif_meta;
 } TiffContext;
 
 static const float d65_white[3] = { 0.950456f, 1.f, 1.088754f };
@@ -273,9 +276,9 @@ static int add_metadata(int count, int type,
                         const char *name, const char *sep, TiffContext *s, AVFrame *frame)
 {
     switch(type) {
-    case TIFF_DOUBLE: return ff_tadd_doubles_metadata(count, name, sep, &s->gb, s->le, &frame->metadata);
-    case TIFF_SHORT : return ff_tadd_shorts_metadata(count, name, sep, &s->gb, s->le, 0, &frame->metadata);
-    case TIFF_STRING: return ff_tadd_string_metadata(count, name, &s->gb, s->le, &frame->metadata);
+    case AV_TIFF_DOUBLE: return ff_tadd_doubles_metadata(count, name, sep, &s->gb, s->le, &frame->metadata);
+    case AV_TIFF_SHORT : return ff_tadd_shorts_metadata(count, name, sep, &s->gb, s->le, 0, &frame->metadata);
+    case AV_TIFF_STRING: return ff_tadd_string_metadata(count, name, &s->gb, s->le, &frame->metadata);
     default         : return AVERROR_INVALIDDATA;
     };
 }
@@ -523,6 +526,7 @@ static int tiff_unpack_zlib(TiffContext *s, AVFrame *p, uint8_t *dst, int stride
     uint8_t *zbuf;
     unsigned long outlen;
     int ret, line;
+    int rows = is_yuv ? (lines + s->subsampling[1] - 1) / s->subsampling[1] : lines;
     outlen = width * lines;
     zbuf   = av_malloc(outlen);
     if (!zbuf)
@@ -541,6 +545,12 @@ static int tiff_unpack_zlib(TiffContext *s, AVFrame *p, uint8_t *dst, int stride
                (unsigned long)width * lines, ret);
         av_free(zbuf);
         return AVERROR_UNKNOWN;
+    }
+    if (outlen < (unsigned long)width * rows) {
+        av_log(s->avctx, AV_LOG_ERROR, "Deflated %lu bytes, but %lu are needed\n",
+               outlen, (unsigned long)width * rows);
+        av_free(zbuf);
+        return AVERROR_INVALIDDATA;
     }
     src = zbuf;
     for (line = 0; line < lines; line++) {
@@ -589,6 +599,7 @@ static int tiff_unpack_lzma(TiffContext *s, AVFrame *p, uint8_t *dst, int stride
 {
     uint64_t outlen = width * (uint64_t)lines;
     int ret, line;
+    int rows = is_yuv ? (lines + s->subsampling[1] - 1) / s->subsampling[1] : lines;
     uint8_t *buf = av_malloc(outlen);
     if (!buf)
         return AVERROR(ENOMEM);
@@ -606,6 +617,12 @@ static int tiff_unpack_lzma(TiffContext *s, AVFrame *p, uint8_t *dst, int stride
                (uint64_t)width * lines, ret);
         av_free(buf);
         return AVERROR_UNKNOWN;
+    }
+    if (outlen < (uint64_t)width * rows) {
+        av_log(s->avctx, AV_LOG_ERROR, "Uncompressed %"PRIu64" bytes, but %"PRIu64" are needed\n",
+               outlen, (uint64_t)width * rows);
+        av_free(buf);
+        return AVERROR_INVALIDDATA;
     }
     src = buf;
     for (line = 0; line < lines; line++) {
@@ -1058,6 +1075,7 @@ static int init_image(TiffContext *s, AVFrame *frame)
             s->avctx->pix_fmt = AV_PIX_FMT_MONOBLACK;
             break;
         }
+        av_fallthrough;
     case 21:
     case 41:
         s->avctx->pix_fmt = AV_PIX_FMT_PAL8;
@@ -1228,11 +1246,11 @@ static int init_image(TiffContext *s, AVFrame *frame)
     return 1;
 }
 
-static void set_sar(TiffContext *s, unsigned tag, unsigned num, unsigned den)
+static void set_sar(TiffContext *s, unsigned tag, unsigned numerator, unsigned denumerator)
 {
     int offset = tag == TIFF_YRES ? 2 : 0;
-    s->res[offset++] = num;
-    s->res[offset]   = den;
+    s->res[offset++] = numerator;
+    s->res[offset]   = denumerator;
     if (s->res[0] && s->res[1] && s->res[2] && s->res[3]) {
         uint64_t num = s->res[2] * (uint64_t)s->res[1];
         uint64_t den = s->res[0] * (uint64_t)s->res[3];
@@ -1252,7 +1270,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
     AVFrameSideData *sd;
     GetByteContext gb_temp;
     unsigned tag, type, count, off, value = 0, value2 = 1; // value2 is a denominator so init. to 1
-    int i, start;
+    int start;
     int pos;
     int ret;
     double *dp;
@@ -1271,12 +1289,12 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
     off = bytestream2_tell(&s->gb);
     if (count == 1) {
         switch (type) {
-        case TIFF_BYTE:
-        case TIFF_SHORT:
-        case TIFF_LONG:
+        case AV_TIFF_BYTE:
+        case AV_TIFF_SHORT:
+        case AV_TIFF_LONG:
             value = ff_tget(&s->gb, type, s->le);
             break;
-        case TIFF_RATIONAL:
+        case AV_TIFF_RATIONAL:
             value  = ff_tget_long(&s->gb, s->le);
             value2 = ff_tget_long(&s->gb, s->le);
             if (!value2) {
@@ -1285,10 +1303,11 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             }
 
             break;
-        case TIFF_STRING:
+        case AV_TIFF_STRING:
             if (count <= 4) {
                 break;
             }
+            av_fallthrough;
         default:
             value = UINT_MAX;
         }
@@ -1320,13 +1339,13 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             s->bpp = value;
         else {
             switch (type) {
-            case TIFF_BYTE:
-            case TIFF_SHORT:
-            case TIFF_LONG:
+            case AV_TIFF_BYTE:
+            case AV_TIFF_SHORT:
+            case AV_TIFF_LONG:
                 s->bpp = 0;
                 if (bytestream2_get_bytes_left(&s->gb) < type_sizes[type] * count)
                     return AVERROR_INVALIDDATA;
-                for (i = 0; i < count; i++)
+                for (int i = 0; i < count; i++)
                     s->bpp += ff_tget(&s->gb, type, s->le);
                 break;
             default:
@@ -1389,7 +1408,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case TIFF_ROWSPERSTRIP:
-        if (!value || (type == TIFF_LONG && value == UINT_MAX))
+        if (!value || (type == AV_TIFF_LONG && value == UINT_MAX))
             value = s->height;
         s->rps = FFMIN(value, s->height);
         break;
@@ -1470,7 +1489,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             return AVERROR_INVALIDDATA;
         s->black_level[0] = value / (float)value2;
         for (int i = 0; i < count && count > 1; i++) {
-            if (type == TIFF_RATIONAL) {
+            if (type == AV_TIFF_RATIONAL) {
                 value  = ff_tget_long(&s->gb, s->le);
                 value2 = ff_tget_long(&s->gb, s->le);
                 if (!value2) {
@@ -1479,15 +1498,15 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
                 }
 
                 s->black_level[i] = value / (float)value2;
-            } else if (type == TIFF_SRATIONAL) {
-                int value  = ff_tget_long(&s->gb, s->le);
-                int value2 = ff_tget_long(&s->gb, s->le);
-                if (!value2) {
+            } else if (type == AV_TIFF_SRATIONAL) {
+                int val  = ff_tget_long(&s->gb, s->le);
+                int val2 = ff_tget_long(&s->gb, s->le);
+                if (!val2) {
                     av_log(s->avctx, AV_LOG_WARNING, "Invalid denominator\n");
-                    value2 = 1;
+                    val2 = 1;
                 }
 
-                s->black_level[i] = value / (float)value2;
+                s->black_level[i] = val / (float)val2;
             } else {
                 s->black_level[i] = ff_tget(&s->gb, type, s->le);
             }
@@ -1565,7 +1584,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             return AVERROR_INVALIDDATA;
         }
 
-        for (i = 0; i < count / 3; i++) {
+        for (unsigned i = 0; i < count / 3; i++) {
             uint32_t p = 0xFF000000;
             p |= (ff_tget(&pal_gb[0], type, s->le) >> off) << 16;
             p |= (ff_tget(&pal_gb[1], type, s->le) >> off) << 8;
@@ -1583,7 +1602,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             av_log(s->avctx, AV_LOG_ERROR, "subsample count invalid\n");
             return AVERROR_INVALIDDATA;
         }
-        for (i = 0; i < count; i++) {
+        for (unsigned i = 0; i < count; i++) {
             s->subsampling[i] = ff_tget(&s->gb, type, s->le);
             if (s->subsampling[i] <= 0) {
                 av_log(s->avctx, AV_LOG_ERROR, "subsampling %d is invalid\n", s->subsampling[i]);
@@ -1643,7 +1662,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             s->geotag_count = 0;
             goto end;
         }
-        for (i = 0; i < s->geotag_count; i++) {
+        for (int i = 0; i < s->geotag_count; i++) {
             unsigned val;
             s->geotags[i].key    = ff_tget_short(&s->gb, s->le);
             s->geotags[i].type   = ff_tget_short(&s->gb, s->le);
@@ -1670,9 +1689,9 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
             av_log(s->avctx, AV_LOG_ERROR, "Error allocating temporary buffer\n");
             goto end;
         }
-        for (i = 0; i < count; i++)
+        for (unsigned i = 0; i < count; i++)
             dp[i] = ff_tget_double(&s->gb, s->le);
-        for (i = 0; i < s->geotag_count; i++) {
+        for (int i = 0; i < s->geotag_count; i++) {
             if (s->geotags[i].type == TIFF_GEO_DOUBLE_PARAMS) {
                 if (s->geotags[i].count == 0
                     || s->geotags[i].offset + s->geotags[i].count > count) {
@@ -1694,7 +1713,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         break;
     case TIFF_GEO_ASCII_PARAMS:
         pos = bytestream2_tell(&s->gb);
-        for (i = 0; i < s->geotag_count; i++) {
+        for (int i = 0; i < s->geotag_count; i++) {
             if (s->geotags[i].type == TIFF_GEO_ASCII_PARAMS) {
                 if (s->geotags[i].count == 0
                     || s->geotags[i].offset +  s->geotags[i].count > count) {
@@ -1786,7 +1805,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case DNG_ANALOG_BALANCE:
-        if (type != TIFF_RATIONAL)
+        if (type != AV_TIFF_RATIONAL)
             break;
 
         for (int i = 0; i < 3; i++) {
@@ -1801,7 +1820,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case DNG_AS_SHOT_NEUTRAL:
-        if (type != TIFF_RATIONAL)
+        if (type != AV_TIFF_RATIONAL)
             break;
 
         for (int i = 0; i < 3; i++) {
@@ -1816,7 +1835,7 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case DNG_AS_SHOT_WHITE_XY:
-        if (type != TIFF_RATIONAL)
+        if (type != AV_TIFF_RATIONAL)
             break;
 
         for (int i = 0; i < 2; i++) {
@@ -1838,13 +1857,13 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
     case DNG_COLOR_MATRIX2:
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
-                int value  = ff_tget_long(&s->gb, s->le);
-                int value2 = ff_tget_long(&s->gb, s->le);
-                if (!value2) {
+                int val  = ff_tget_long(&s->gb, s->le);
+                int val2 = ff_tget_long(&s->gb, s->le);
+                if (!val2) {
                     av_log(s->avctx, AV_LOG_WARNING, "Invalid denominator\n");
-                    value2 = 1;
+                    val2 = 1;
                 }
-                s->color_matrix[i][j] = value / (float)value2;
+                s->color_matrix[i][j] = val / (float)val2;
             }
             s->use_color_matrix = 1;
         }
@@ -1853,13 +1872,13 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
     case DNG_CAMERA_CALIBRATION2:
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
-                int value  = ff_tget_long(&s->gb, s->le);
-                int value2 = ff_tget_long(&s->gb, s->le);
-                if (!value2) {
+                int val  = ff_tget_long(&s->gb, s->le);
+                int val2 = ff_tget_long(&s->gb, s->le);
+                if (!val2) {
                     av_log(s->avctx, AV_LOG_WARNING, "Invalid denominator\n");
-                    value2 = 1;
+                    val2 = 1;
                 }
-                s->camera_calibration[i][j] = value / (float)value2;
+                s->camera_calibration[i][j] = val / (float)val2;
             }
         }
         break;
@@ -1930,12 +1949,17 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     int le, ret, plane, planes;
     int i, j, entries, stride;
     unsigned soff, ssize;
-    uint8_t *dst;
     GetByteContext stripsizes;
     GetByteContext stripdata;
     int retry_for_subifd, retry_for_page;
     int is_dng;
     int has_tile_bits, has_strip_bits;
+
+    av_exif_free(&s->exif_meta);
+    /* this will not parse the image data */
+    ret = av_exif_parse_buffer(avctx, avpkt->data, avpkt->size, &s->exif_meta, AV_EXIF_TIFF_HEADER);
+    if (ret < 0)
+        av_log(avctx, AV_LOG_ERROR, "could not parse EXIF data: %s\n", av_err2str(ret));
 
     bytestream2_init(&s->gb, avpkt->data, avpkt->size);
 
@@ -2003,7 +2027,7 @@ again:
 
     if (s->get_thumbnail && !s->is_thumbnail) {
         av_log(avctx, AV_LOG_INFO, "No embedded thumbnail present\n");
-        return AVERROR_EOF;
+        return 0;
     }
 
     /** whether we should process this IFD's SubIFD */
@@ -2186,8 +2210,8 @@ again:
         uint8_t *five_planes = NULL;
         int remaining = avpkt->size;
         int decoded_height;
+        uint8_t *dst = p->data[plane];
         stride = p->linesize[plane];
-        dst = p->data[plane];
         if (s->photometric == TIFF_PHOTOMETRIC_SEPARATED &&
             s->avctx->pix_fmt == AV_PIX_FMT_RGBA) {
             stride = stride * 5 / 4;
@@ -2402,6 +2426,10 @@ again:
         }
     }
 
+    ret = ff_decode_exif_attach_ifd(avctx, p, &s->exif_meta);
+    if (ret < 0)
+        av_log(avctx, AV_LOG_ERROR, "error attaching EXIF ifd: %s\n", av_err2str(ret));
+
     *got_frame = 1;
 
     return avpkt->size;
@@ -2450,6 +2478,7 @@ static av_cold int tiff_end(AVCodecContext *avctx)
     TiffContext *const s = avctx->priv_data;
 
     free_geotags(s);
+    av_exif_free(&s->exif_meta);
 
     ff_lzw_decode_close(&s->lzw);
     av_freep(&s->deinvert_buf);

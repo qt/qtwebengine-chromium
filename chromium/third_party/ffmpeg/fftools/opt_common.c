@@ -23,6 +23,7 @@
 #include <stdio.h>
 
 #include "cmdutils.h"
+#include "fopen_utf8.h"
 #include "opt_common.h"
 
 #include "libavutil/avassert.h"
@@ -65,6 +66,11 @@ enum show_muxdemuxers {
     SHOW_DEFAULT,
     SHOW_DEMUXERS,
     SHOW_MUXERS,
+};
+
+enum show_codec {
+    SHOW_DECODER,
+    SHOW_ENCODER,
 };
 
 static FILE *report_file;
@@ -195,14 +201,14 @@ static void print_program_info(int flags, int level)
 {
     const char *indent = flags & INDENT? "  " : "";
 
-    av_log(NULL, level, "%s version " FFMPEG_VERSION, program_name);
+    av_log(NULL, level, "%s version %s", program_name, FFMPEG_VERSION);
     if (flags & SHOW_COPYRIGHT)
         av_log(NULL, level, " Copyright (c) %d-%d the FFmpeg developers",
                program_birth_year, CONFIG_THIS_YEAR);
     av_log(NULL, level, "\n");
     av_log(NULL, level, "%sbuilt with %s\n", indent, CC_IDENT);
 
-    av_log(NULL, level, "%sconfiguration: " FFMPEG_CONFIGURATION "\n", indent);
+    av_log(NULL, level, "%sconfiguration: %s\n", indent, FFMPEG_CONFIGURATION);
 }
 
 static void print_buildconf(int flags, int level)
@@ -320,6 +326,12 @@ static void print_codec(const AVCodec *c)
         printf("hardware ");
     if (c->capabilities & AV_CODEC_CAP_HYBRID)
         printf("hybrid ");
+    if (c->capabilities & AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE)
+        printf("reorderedopaque ");
+    if (c->capabilities & AV_CODEC_CAP_ENCODER_FLUSH)
+        printf("flush ");
+    if (c->capabilities & AV_CODEC_CAP_ENCODER_RECON_FRAME)
+        printf("reconframe ");
     if (!c->capabilities)
         printf("none");
     printf("\n");
@@ -590,9 +602,9 @@ int show_help(void *optctx, const char *opt, const char *arg)
     if (!*topic) {
         show_help_default(topic, par);
     } else if (!strcmp(topic, "decoder")) {
-        show_help_codec(par, 0);
+        show_help_codec(par, SHOW_DECODER);
     } else if (!strcmp(topic, "encoder")) {
-        show_help_codec(par, 1);
+        show_help_codec(par, SHOW_ENCODER);
     } else if (!strcmp(topic, "demuxer")) {
         show_help_demuxer(par);
     } else if (!strcmp(topic, "muxer")) {
@@ -707,16 +719,16 @@ int show_codecs(void *optctx, const char *opt, const char *arg)
 
         /* print decoders/encoders when there's more than one or their
          * names are different from codec name */
-        while ((codec = next_codec_for_id(desc->id, &iter, 0))) {
+        while ((codec = next_codec_for_id(desc->id, &iter, SHOW_DECODER))) {
             if (strcmp(codec->name, desc->name)) {
-                print_codecs_for_id(desc->id, 0);
+                print_codecs_for_id(desc->id, SHOW_DECODER);
                 break;
             }
         }
         iter = NULL;
-        while ((codec = next_codec_for_id(desc->id, &iter, 1))) {
+        while ((codec = next_codec_for_id(desc->id, &iter, SHOW_ENCODER))) {
             if (strcmp(codec->name, desc->name)) {
-                print_codecs_for_id(desc->id, 1);
+                print_codecs_for_id(desc->id, SHOW_ENCODER);
                 break;
             }
         }
@@ -773,12 +785,12 @@ static int print_codecs(int encoder)
 
 int show_decoders(void *optctx, const char *opt, const char *arg)
 {
-    return print_codecs(0);
+    return print_codecs(SHOW_DECODER);
 }
 
 int show_encoders(void *optctx, const char *opt, const char *arg)
 {
-    return print_codecs(1);
+    return print_codecs(SHOW_ENCODER);
 }
 
 int show_bsfs(void *optctx, const char *opt, const char *arg)
@@ -808,7 +820,8 @@ int show_filters(void *optctx, const char *opt, const char *arg)
            "  A = Audio input/output\n"
            "  V = Video input/output\n"
            "  N = Dynamic number and/or type of input/output\n"
-           "  | = Source or sink filter\n");
+           "  | = Source or sink filter\n"
+           "  ------\n");
     while ((filter = av_filter_iterate(&opaque))) {
         descr_cur = descr;
         for (i = 0; i < 2; i++) {
@@ -874,7 +887,7 @@ static int show_formats_devices(void *optctx, const char *opt, const char *arg, 
         const char *name      = NULL;
         const char *long_name = NULL;
 
-        if (muxdemuxers !=SHOW_DEMUXERS) {
+        if (muxdemuxers != SHOW_DEMUXERS) {
             ofmt_opaque = NULL;
             while ((ofmt = av_muxer_iterate(&ofmt_opaque))) {
                 is_dev = is_device(ofmt->priv_class);
@@ -990,7 +1003,7 @@ int show_pix_fmts(void *optctx, const char *opt, const char *arg)
 #endif
 
     while ((pix_desc = av_pix_fmt_desc_next(pix_desc))) {
-        enum AVPixelFormat av_unused pix_fmt = av_pix_fmt_desc_get_id(pix_desc);
+        av_unused enum AVPixelFormat pix_fmt = av_pix_fmt_desc_get_id(pix_desc);
         printf("%c%c%c%c%c %-16s       %d            %3d      %d",
                sws_isSupportedInput (pix_fmt)              ? 'I' : '.',
                sws_isSupportedOutput(pix_fmt)              ? 'O' : '.',
@@ -1204,7 +1217,7 @@ int init_report(const char *env, FILE **file)
     if (!envlevel)
         report_file_level = FFMAX(report_file_level, prog_loglevel);
 
-    report_file = fopen(filename.str, "w");
+    report_file = fopen_utf8(filename.str, "w");
     if (!report_file) {
         int ret = AVERROR(errno);
         av_log(NULL, AV_LOG_ERROR, "Failed to open report \"%s\": %s\n",

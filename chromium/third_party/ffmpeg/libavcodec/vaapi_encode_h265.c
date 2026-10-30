@@ -526,7 +526,7 @@ static int vaapi_encode_h265_init_picture_params(AVCodecContext *avctx,
     priv->sei_needed = 0;
 
     // Only look for the metadata on I/IDR frame on the output. We
-    // may force an IDR frame on the output where the medadata gets
+    // may force an IDR frame on the output where the metadata gets
     // changed on the input frame.
     if ((priv->sei & SEI_MASTERING_DISPLAY) &&
         (pic->type == FF_HW_PICTURE_TYPE_I || pic->type == FF_HW_PICTURE_TYPE_IDR)) {
@@ -1184,6 +1184,7 @@ static const FFCodecDefault vaapi_encode_h265_defaults[] = {
     { "b_qoffset",      "0"   },
     { "qmin",           "-1"  },
     { "qmax",           "-1"  },
+    { "refs",           "0"   },
     { NULL },
 };
 

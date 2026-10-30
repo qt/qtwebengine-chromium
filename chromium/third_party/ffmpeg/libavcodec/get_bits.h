@@ -166,18 +166,22 @@ static inline unsigned int show_bits(GetBitContext *s, int n);
 
 #define MIN_CACHE_BITS 25
 
+#define OPEN_READER_NOSIZE_NOCACHE(name, gb)    \
+    unsigned int name ## _index = (gb)->index
+
 #define OPEN_READER_NOSIZE(name, gb)            \
-    unsigned int name ## _index = (gb)->index;  \
-    unsigned int av_unused name ## _cache
+    OPEN_READER_NOSIZE_NOCACHE(name, gb);       \
+    unsigned int name ## _cache
 
 #if UNCHECKED_BITSTREAM_READER
 #define OPEN_READER(name, gb) OPEN_READER_NOSIZE(name, gb)
-
+#define OPEN_READER_SIZE(name, gb) ((void)0)
 #define BITS_AVAILABLE(name, gb) 1
 #else
+#define OPEN_READER_SIZE(name, gb) unsigned int name ## _size_plus8 = (gb)->size_in_bits_plus8
 #define OPEN_READER(name, gb)                   \
     OPEN_READER_NOSIZE(name, gb);               \
-    unsigned int name ## _size_plus8 = (gb)->size_in_bits_plus8
+    OPEN_READER_SIZE(name, gb)
 
 #define BITS_AVAILABLE(name, gb) name ## _index < name ## _size_plus8
 #endif
@@ -378,7 +382,8 @@ static inline unsigned int show_bits(GetBitContext *s, int n)
 
 static inline void skip_bits(GetBitContext *s, int n)
 {
-    OPEN_READER(re, s);
+    OPEN_READER_NOSIZE_NOCACHE(re, s);
+    OPEN_READER_SIZE(re, s);
     LAST_SKIP_BITS(re, s, n);
     CLOSE_READER(re, s);
 }
@@ -567,71 +572,65 @@ static inline const uint8_t *align_get_bits(GetBitContext *s)
  */
 #define GET_VLC(code, name, gb, table, bits, max_depth)         \
     do {                                                        \
-        int n, nb_bits;                                         \
-        unsigned int index;                                     \
+        unsigned idx_ = SHOW_UBITS(name, gb, bits);             \
+        code          = table[idx_].sym;                        \
+        int        n_ = table[idx_].len;                        \
                                                                 \
-        index = SHOW_UBITS(name, gb, bits);                     \
-        code  = table[index].sym;                               \
-        n     = table[index].len;                               \
-                                                                \
-        if (max_depth > 1 && n < 0) {                           \
+        if (max_depth > 1 && n_ < 0) {                          \
             LAST_SKIP_BITS(name, gb, bits);                     \
             UPDATE_CACHE(name, gb);                             \
                                                                 \
-            nb_bits = -n;                                       \
+            int nb__bits = -n_;                                 \
                                                                 \
-            index = SHOW_UBITS(name, gb, nb_bits) + code;       \
-            code  = table[index].sym;                           \
-            n     = table[index].len;                           \
-            if (max_depth > 2 && n < 0) {                       \
-                LAST_SKIP_BITS(name, gb, nb_bits);              \
+            idx_ = SHOW_UBITS(name, gb, nb__bits) + code;       \
+            code = table[idx_].sym;                             \
+            n_   = table[idx_].len;                             \
+            if (max_depth > 2 && n_ < 0) {                      \
+                LAST_SKIP_BITS(name, gb, nb__bits);             \
                 UPDATE_CACHE(name, gb);                         \
                                                                 \
-                nb_bits = -n;                                   \
+                nb__bits = -n_;                                 \
                                                                 \
-                index = SHOW_UBITS(name, gb, nb_bits) + code;   \
-                code  = table[index].sym;                       \
-                n     = table[index].len;                       \
+                idx_ = SHOW_UBITS(name, gb, nb__bits) + code;   \
+                code = table[idx_].sym;                         \
+                n_   = table[idx_].len;                         \
             }                                                   \
         }                                                       \
-        SKIP_BITS(name, gb, n);                                 \
+        SKIP_BITS(name, gb, n_);                                \
     } while (0)
 
 #define GET_RL_VLC(level, run, name, gb, table, bits,  \
                    max_depth, need_update)                      \
     do {                                                        \
-        int n, nb_bits;                                         \
-        unsigned int index;                                     \
+        unsigned idx_ = SHOW_UBITS(name, gb, bits);             \
+        level         = table[idx_].level;                      \
+        int        n_ = table[idx_].len8;                       \
                                                                 \
-        index = SHOW_UBITS(name, gb, bits);                     \
-        level = table[index].level;                             \
-        n     = table[index].len8;                              \
-                                                                \
-        if (max_depth > 1 && n < 0) {                           \
+        if (max_depth > 1 && n_ < 0) {                          \
             SKIP_BITS(name, gb, bits);                          \
             if (need_update) {                                  \
                 UPDATE_CACHE(name, gb);                         \
             }                                                   \
                                                                 \
-            nb_bits = -n;                                       \
+            int nb__bits = -n_;                                 \
                                                                 \
-            index = SHOW_UBITS(name, gb, nb_bits) + level;      \
-            level = table[index].level;                         \
-            n     = table[index].len8;                          \
-            if (max_depth > 2 && n < 0) {                       \
-                LAST_SKIP_BITS(name, gb, nb_bits);              \
+            idx_  = SHOW_UBITS(name, gb, nb__bits) + level;     \
+            level = table[idx_].level;                          \
+            n_    = table[idx_].len8;                           \
+            if (max_depth > 2 && n_ < 0) {                      \
+                LAST_SKIP_BITS(name, gb, nb__bits);             \
                 if (need_update) {                              \
                     UPDATE_CACHE(name, gb);                     \
                 }                                               \
-                nb_bits = -n;                                   \
+                nb__bits = -n_;                                 \
                                                                 \
-                index = SHOW_UBITS(name, gb, nb_bits) + level;  \
-                level = table[index].level;                     \
-                n     = table[index].len8;                      \
+                idx_  = SHOW_UBITS(name, gb, nb__bits) + level; \
+                level = table[idx_].level;                      \
+                n_    = table[idx_].len8;                       \
             }                                                   \
         }                                                       \
-        run = table[index].run;                                 \
-        SKIP_BITS(name, gb, n);                                 \
+        run = table[idx_].run;                                  \
+        SKIP_BITS(name, gb, n_);                                \
     } while (0)
 
 /**
@@ -659,10 +658,10 @@ static av_always_inline int get_vlc2(GetBitContext *s, const VLCElem *table,
 }
 
 static inline int get_vlc_multi(GetBitContext *s, uint8_t *dst,
-                                const VLC_MULTI_ELEM *const Jtable,
+                                av_unused const VLC_MULTI_ELEM *const Jtable,
                                 const VLCElem *const table,
                                 const int bits, const int max_depth,
-                                const int symbols_size)
+                                av_unused const int symbols_size)
 {
     dst[0] = get_vlc2(s, table, bits, max_depth);
     return 1;

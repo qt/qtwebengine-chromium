@@ -716,7 +716,7 @@ static int next_frame_internal(AVFilterContext *avctx, ID3D11Texture2D **desktop
             goto error;
         }
 
-        // Unforunately, we can't rely on the desktop_resource's format in this case.
+        // Unfortunately, we can't rely on the desktop_resource's format in this case.
         // The API might even return it in with a format that was not in the initial
         // list of supported formats, and it can change/flicker randomly.
         // To work around this, return an internal copy of the last valid texture we got.
@@ -818,6 +818,8 @@ static av_cold int init_hwframes_ctx(AVFilterContext *avctx)
     dda->frames_ctx->format    = AV_PIX_FMT_D3D11;
     dda->frames_ctx->width     = dda->width;
     dda->frames_ctx->height    = dda->height;
+    if (avctx->extra_hw_frames > 0)
+        dda->frames_ctx->initial_pool_size = 8 + avctx->extra_hw_frames;
 
     switch (dda->raw_format) {
     case DXGI_FORMAT_B8G8R8A8_UNORM:
@@ -936,7 +938,7 @@ static int draw_mouse_pointer(AVFilterContext *avctx, AVFrame *frame)
     D3D11_RENDER_TARGET_VIEW_DESC target_desc = { 0 };
     ID3D11RenderTargetView* target_view = NULL;
     ID3D11Buffer *mouse_vertex_buffer = NULL;
-    D3D11_TEXTURE2D_DESC tex_desc;
+    D3D11_TEXTURE2D_DESC tex_desc, frame_desc;
     int num_vertices = 0;
     int x, y;
     HRESULT hr;
@@ -946,6 +948,7 @@ static int draw_mouse_pointer(AVFilterContext *avctx, AVFrame *frame)
         return 0;
 
     ID3D11Texture2D_GetDesc(dda->mouse_texture, &tex_desc);
+    ID3D11Texture2D_GetDesc(frame_tex, &frame_desc);
 
     x = dda->mouse_x - dda->offset_x;
     y = dda->mouse_y - dda->offset_y;
@@ -954,9 +957,17 @@ static int draw_mouse_pointer(AVFilterContext *avctx, AVFrame *frame)
         -x >= (int)tex_desc.Width || -y >= (int)tex_desc.Height)
         return 0;
 
-    target_desc.Format = dda->raw_format;
-    target_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-    target_desc.Texture2D.MipSlice = 0;
+    target_desc.Format = frame_desc.Format;
+
+    if (frame_desc.ArraySize > 1) {
+        target_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+        target_desc.Texture2DArray.ArraySize = 1;
+        target_desc.Texture2DArray.FirstArraySlice = (uintptr_t)frame->data[1];
+        target_desc.Texture2DArray.MipSlice = 0;
+    } else {
+        target_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        target_desc.Texture2D.MipSlice = 0;
+    }
 
     hr = ID3D11Device_CreateRenderTargetView(dda->device_hwctx->device,
         (ID3D11Resource*)frame_tex,

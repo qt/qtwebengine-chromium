@@ -59,7 +59,7 @@ int ff_spatial_idwt_init(DWTContext *d, DWTPlane *p, enum dwt_type type,
         return AVERROR_INVALIDDATA;
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     if (bit_depth == 8)
         ff_spatial_idwt_init_x86(d, type);
 #endif
@@ -73,7 +73,7 @@ void ff_spatial_idwt_slice2(DWTContext *d, int y)
     for (level = d->decomposition_count-1; level >= 0; level--) {
         int wl = d->width  >> level;
         int hl = d->height >> level;
-        int stride_l = d->stride << level;
+        ptrdiff_t stride_l = d->stride << level;
 
         while (d->cs[level].y <= FFMIN((y>>level)+support, hl))
             d->spatial_compose(d, level, wl, hl, stride_l);

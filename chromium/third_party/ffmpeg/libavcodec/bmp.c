@@ -27,6 +27,7 @@
 #include "codec_internal.h"
 #include "decode.h"
 #include "msrledec.h"
+#include "libavutil/intreadwrite.h"
 
 static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,
                             int *got_frame, AVPacket *avpkt)
@@ -129,7 +130,7 @@ static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,
         rgb[1] = bytestream_get_le32(&buf);
         rgb[2] = bytestream_get_le32(&buf);
         if (ihsize > 40)
-        alpha = bytestream_get_le32(&buf);
+            alpha = bytestream_get_le32(&buf);
     }
 
     ret = ff_set_dimensions(avctx, width, height > 0 ? height : -(unsigned)height);
@@ -207,9 +208,6 @@ static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,
         return AVERROR_INVALIDDATA;
     }
 
-    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
-        return ret;
-
     buf   = buf0 + hsize;
     dsize = buf_size - hsize;
 
@@ -225,6 +223,8 @@ static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,
         }
         av_log(avctx, AV_LOG_ERROR, "data size too small, assuming missing line alignment\n");
     }
+    if ((ret = ff_get_buffer(avctx, p, 0)) < 0)
+        return ret;
 
     // RLE may skip decoding some picture areas, so blank picture before decoding
     if (comp == BMP_RLE4 || comp == BMP_RLE8)
@@ -327,11 +327,13 @@ static int bmp_decode_frame(AVCodecContext *avctx, AVFrame *p,
             break;
         case 16:
             for (i = 0; i < avctx->height; i++) {
-                const uint16_t *src = (const uint16_t *) buf;
+                const uint8_t *src  = buf;
                 uint16_t *dst       = (uint16_t *) ptr;
 
-                for (j = 0; j < avctx->width; j++)
-                    *dst++ = av_le2ne16(*src++);
+                for (j = 0; j < avctx->width; j++) {
+                    *dst++ = AV_RL16(src);
+                    src += 2;
+                }
 
                 buf += n;
                 ptr += linesize;

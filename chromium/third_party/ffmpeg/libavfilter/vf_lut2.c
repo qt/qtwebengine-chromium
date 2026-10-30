@@ -180,9 +180,9 @@ static int query_formats(const AVFilterContext *ctx,
     int ret;
 
     if (s->tlut2 || !s->odepth)
-        return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, all_pix_fmts);
+        return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, all_pix_fmts);
 
-    ret = ff_formats_ref(ff_make_format_list(all_pix_fmts), &cfg_in[0]->formats);
+    ret = ff_formats_ref(ff_make_pixel_format_list(all_pix_fmts), &cfg_in[0]->formats);
     if (ret < 0)
         return ret;
 
@@ -196,7 +196,7 @@ static int query_formats(const AVFilterContext *ctx,
     default: av_assert0(0);
     }
 
-    return ff_formats_ref(ff_make_format_list(pix_fmts), &cfg_out[0]->formats);
+    return ff_formats_ref(ff_make_pixel_format_list(pix_fmts), &cfg_out[0]->formats);
 }
 
 static int config_inputx(AVFilterLink *inlink)
@@ -259,8 +259,8 @@ static int lut2_##zname##_##xname##_##yname(AVFilterContext *ctx,               
     int p, y, x;                                                                 \
                                                                                  \
     for (p = 0; p < s->nb_planes; p++) {                                         \
-        const int slice_start = (s->heightx[p] * jobnr) / nb_jobs;               \
-        const int slice_end = (s->heightx[p] * (jobnr+1)) / nb_jobs;             \
+        const int slice_start = ff_slice_pos(s->heightx[p], jobnr, nb_jobs);     \
+        const int slice_end = ff_slice_pos(s->heightx[p], jobnr + 1, nb_jobs);   \
         const uint16_t *lut = s->lut[p];                                         \
         const xtype *srcxx;                                                      \
         const ytype *srcyy;                                                      \

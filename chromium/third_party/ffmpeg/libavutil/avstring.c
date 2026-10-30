@@ -142,7 +142,7 @@ end:
 
 char *av_get_token(const char **buf, const char *term)
 {
-    char *out     = av_malloc(strlen(*buf) + 1);
+    char *out     = av_realloc(NULL, strlen(*buf) + 1);
     char *ret     = out, *end = out;
     const char *p = *buf;
     if (!out)
@@ -172,7 +172,8 @@ char *av_get_token(const char **buf, const char *term)
 
     *buf = p;
 
-    return ret;
+    char *small_ret = av_realloc(ret, out - ret + 2);
+    return small_ret ? small_ret : ret;
 }
 
 char *av_strtok(char *s, const char *delim, char **saveptr)
@@ -251,18 +252,13 @@ char *av_strireplace(const char *str, const char *from, const char *to)
 
 const char *av_basename(const char *path)
 {
-    char *p;
-#if HAVE_DOS_PATHS
-    char *q, *d;
-#endif
-
     if (!path || *path == '\0')
         return ".";
 
-    p = strrchr(path, '/');
+    const char *p = strrchr(path, '/');
 #if HAVE_DOS_PATHS
-    q = strrchr(path, '\\');
-    d = strchr(path, ':');
+    const char *q = strrchr(path, '\\');
+    const char *d = strchr(path, ':');
     p = FFMAX3(p, q, d);
 #endif
 

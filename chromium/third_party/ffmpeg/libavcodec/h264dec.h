@@ -28,7 +28,6 @@
 #ifndef AVCODEC_H264DEC_H
 #define AVCODEC_H264DEC_H
 
-#include "libavutil/buffer.h"
 #include "libavutil/mem_internal.h"
 
 #include "cabac.h"
@@ -41,7 +40,6 @@
 #include "h264dsp.h"
 #include "h264pred.h"
 #include "h264qpel.h"
-#include "h274.h"
 #include "mpegutils.h"
 #include "threadframe.h"
 #include "videodsp.h"
@@ -181,6 +179,15 @@ typedef struct H264SliceContext {
     const struct H264Context *h264;
     GetBitContext gb;
     ERContext *er;
+
+    /* Data partitioning: residual comes from gb_dpb (intra) or gb_dpc (inter),
+     * chosen per macroblock. Values not pointers: this struct is memcpy'd. */
+    GetBitContext gb_dpb;
+    GetBitContext gb_dpc;
+    int data_partitioning;
+    int dpb_available;
+    int dpc_available;
+    unsigned slice_id;
 
     int slice_num;
     int slice_type;
@@ -344,7 +351,6 @@ typedef struct H264Context {
     H264DSPContext h264dsp;
     H264ChromaContext h264chroma;
     H264QpelContext h264qpel;
-    H274FilmGrainDatabase h274db;
 
     H264Picture DPB[H264_MAX_PICTURE_COUNT];
     H264Picture *cur_pic_ptr;
@@ -541,7 +547,7 @@ typedef struct H264Context {
      * all subsequently output fraames are also marked as recovered
      *
      * In effect, if you want all subsequent DECODED frames marked as recovered, set frame_recovered
-     * If you want all subsequent DISPAYED frames marked as recovered, set the frame->recovered
+     * If you want all subsequent DISPLAYED frames marked as recovered, set the frame->recovered
      */
     int frame_recovered;
 
@@ -692,8 +698,18 @@ void ff_h264_draw_horiz_band(const H264Context *h, H264SliceContext *sl, int y, 
  *
  * Parse the slice header, starting a new field/frame if necessary. If any
  * slices are queued for the previous field, they are decoded.
+ *
+ * @param queued set to the queued context, or NULL if the slice was discarded
  */
-int ff_h264_queue_decode_slice(H264Context *h, const H2645NAL *nal);
+int ff_h264_queue_decode_slice(H264Context *h, const H2645NAL *nal,
+                               H264SliceContext **queued);
+
+/**
+ * Attach a slice data partition B or C to the slice started by partition A.
+ */
+int ff_h264_attach_slice_partition(const H264Context *h, H264SliceContext *sl,
+                                   const H2645NAL *nal);
+
 int ff_h264_execute_decode_slices(H264Context *h);
 int ff_h264_update_thread_context(AVCodecContext *dst,
                                   const AVCodecContext *src);

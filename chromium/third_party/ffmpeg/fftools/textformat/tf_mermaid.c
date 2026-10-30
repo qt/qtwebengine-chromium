@@ -18,19 +18,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
 #include <limits.h>
 #include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "avtextformat.h"
 #include "tf_internal.h"
 #include "tf_mermaid.h"
-#include <libavutil/mem.h>
-#include <libavutil/avassert.h>
-#include <libavutil/bprint.h>
-#include <libavutil/opt.h>
+#include "libavutil/bprint.h"
+#include "libavutil/mem.h"
+#include "libavutil/opt.h"
 
 
 static const char *init_directive = ""
@@ -241,6 +239,20 @@ static void set_str(const char **dst, const char *src)
         *dst = av_strdup(src);
 }
 
+static void mermaid_subgraph_complete_start(MermaidContext *mmc, AVTextFormatContext *tfc, int level) {
+    struct section_data parent_sec_data = mmc->section_data[level];
+    AVBPrint *parent_buf = &tfc->section_pbuf[level];
+
+    if (parent_sec_data.subgraph_start_incomplete) {
+        if (parent_buf->len > 0)
+            writer_printf(tfc, "%s", parent_buf->str);
+
+        writer_put_str(tfc, "</div>\"]\n");
+
+        mmc->section_data[level].subgraph_start_incomplete = 0;
+    }
+}
+
 #define MM_INDENT() writer_printf(tfc, "%*c", mmc->indent_level * 2, ' ')
 
 static void mermaid_print_section_header(AVTextFormatContext *tfc, const void *data)
@@ -297,19 +309,7 @@ static void mermaid_print_section_header(AVTextFormatContext *tfc, const void *d
     }
 
     if (parent_section && parent_section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SUBGRAPH) {
-
-        struct section_data parent_sec_data = mmc->section_data[tfc->level - 1];
-        AVBPrint *parent_buf = &tfc->section_pbuf[tfc->level - 1];
-
-        if (parent_sec_data.subgraph_start_incomplete) {
-
-            if (parent_buf->len > 0)
-                writer_printf(tfc, "%s", parent_buf->str);
-
-            writer_put_str(tfc, "</div>\"]\n");
-
-            mmc->section_data[tfc->level - 1].subgraph_start_incomplete = 0;
-        }
+        mermaid_subgraph_complete_start(mmc, tfc, tfc->level - 1);
     }
 
     av_freep(&mmc->section_data[tfc->level].section_id);
@@ -454,6 +454,8 @@ static void mermaid_print_section_footer(AVTextFormatContext *tfc)
         mmc->indent_level--;
 
     } else if ((section->flags & AV_TEXTFORMAT_SECTION_FLAG_IS_SUBGRAPH)) {
+
+        mermaid_subgraph_complete_start(mmc, tfc, tfc->level);
 
         MM_INDENT();
         writer_put_str(tfc, "end\n");

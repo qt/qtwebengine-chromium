@@ -111,7 +111,7 @@ static int query_formats(const AVFilterContext *ctx,
                                                    AV_PIX_FMT_YUV444P16, AV_PIX_FMT_NONE };
     int ret, sample_rates[] = { 48000, -1 };
 
-    formats = ff_make_format_list(sample_fmts);
+    formats = ff_make_sample_format_list(sample_fmts);
     if ((ret = ff_formats_ref         (formats, &cfg_out[0]->formats         )) < 0 ||
         (ret = ff_add_channel_layout  (&layout, &FF_COUNT2LAYOUT(s->channels))) < 0 ||
         (ret = ff_channel_layouts_ref (layout , &cfg_out[0]->channel_layouts)) < 0)
@@ -124,16 +124,11 @@ static int query_formats(const AVFilterContext *ctx,
     if ((ret = ff_formats_ref(formats, &cfg_out[0]->samplerates)) < 0)
         return ret;
 
-    formats = ff_make_format_list(pix_fmts);
+    formats = ff_make_pixel_format_list(pix_fmts);
     if (!formats)
         return AVERROR(ENOMEM);
-    if ((ret = ff_formats_ref(formats, &cfg_in[MAGNITUDE]->formats)) < 0)
-        return ret;
-
-    formats = ff_make_format_list(pix_fmts);
-    if (!formats)
-        return AVERROR(ENOMEM);
-    if ((ret = ff_formats_ref(formats, &cfg_in[PHASE]->formats)) < 0)
+    if ((ret = ff_formats_ref(formats, &cfg_in[MAGNITUDE]->formats)) < 0 ||
+        (ret = ff_formats_ref(formats, &cfg_in[PHASE]->formats)) < 0)
         return ret;
 
     return 0;
@@ -149,7 +144,7 @@ static int config_output(AVFilterLink *outlink)
     int height = ctx->inputs[0]->h;
     AVRational time_base  = ctx->inputs[0]->time_base;
     AVRational frame_rate = inl0->frame_rate;
-    float factor, overlap, scale;
+    float factor, overlap;
     int i, ch, ret;
 
     outlink->sample_rate = s->sample_rate;
@@ -184,7 +179,7 @@ static int config_output(AVFilterLink *outlink)
     s->win_size = s->size * 2;
     s->nb_freq = s->size;
 
-    ret = av_tx_init(&s->fft, &s->tx_fn, AV_TX_FLOAT_FFT, 1, s->win_size, &scale, 0);
+    ret = av_tx_init(&s->fft, &s->tx_fn, AV_TX_FLOAT_FFT, 1, s->win_size, NULL, 0);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "Unable to create FFT context. "
                "The window size might be too high.\n");

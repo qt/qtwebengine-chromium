@@ -966,6 +966,8 @@ static int imc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     LOCAL_ALIGNED_16(uint16_t, buf16, [(IMC_BLOCK_SIZE + AV_INPUT_BUFFER_PADDING_SIZE) / 2]);
 
+    memset(buf16 + IMC_BLOCK_SIZE/2, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+
     q->avctx = avctx;
 
     if (buf_size < IMC_BLOCK_SIZE * avctx->ch_layout.nb_channels) {
@@ -1031,7 +1033,6 @@ const FFCodec ff_imc_decoder = {
     FF_CODEC_DECODE_CB(imc_decode_frame),
     .flush          = flush,
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLTP),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
 #endif
@@ -1047,7 +1048,6 @@ const FFCodec ff_iac_decoder = {
     FF_CODEC_DECODE_CB(imc_decode_frame),
     .flush          = flush,
     .p.capabilities = AV_CODEC_CAP_DR1,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLTP),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
 #endif

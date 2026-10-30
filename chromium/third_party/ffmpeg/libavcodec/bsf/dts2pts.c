@@ -23,24 +23,36 @@
  * Derive PTS by reordering DTS from supported streams
  */
 
+#include <stdbool.h>
+
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/fifo.h"
 #include "libavutil/mem.h"
 #include "libavutil/tree.h"
-
-#include "bsf.h"
-#include "bsf_internal.h"
-#include "cbs.h"
-#include "cbs_h264.h"
-#include "h264_parse.h"
-#include "h264_ps.h"
 #include "libavutil/refstruct.h"
+
+#include "libavcodec/bsf.h"
+#include "libavcodec/bsf_internal.h"
+#include "libavcodec/cbs.h"
+#include "libavcodec/cbs_h264.h"
+#include "libavcodec/cbs_h265.h"
+#include "libavcodec/h264_parse.h"
+#include "libavcodec/h264_ps.h"
+#include "libavcodec/hevc/ps.h"
+
+// Damaged frames leave their up to 2 timestamp nodes behind unconsumed.
+// This many damaged frames are tolerated before the oldest leftovers are
+// evicted; no timestamp of a valid frame is lost below this.
+#define MAX_DAMAGED_FRAMES 32
 
 typedef struct DTS2PTSNode {
     int64_t      dts;
     int64_t duration;
     int          poc;
     int          gop;
+    int64_t   serial; // insertion order, evicting the stalest node first
+    struct DTS2PTSNode *next; // valid only during same-gop re-keying
 } DTS2PTSNode;
 
 typedef struct DTS2PTSFrame {
@@ -59,6 +71,12 @@ typedef struct DTS2PTSH264Context {
     int picture_structure;
 } DTS2PTSH264Context;
 
+typedef struct DTS2PTSHEVCContext {
+    int gop;
+    int poc_tid0;
+    int highest_poc;
+} DTS2PTSHEVCContext;
+
 typedef struct DTS2PTSContext {
     struct AVTreeNode *root;
     AVFifo *fifo;
@@ -75,8 +93,12 @@ typedef struct DTS2PTSContext {
 
     union {
         DTS2PTSH264Context h264;
+        DTS2PTSHEVCContext hevc;
     } u;
 
+    int nb_nodes;
+    int nb_pending;
+    int64_t serial;
     int nb_frame;
     int gop;
     int eof;
@@ -116,11 +138,21 @@ static int free_node(void *opaque, void *elem)
     return 0;
 }
 
+static int find_stalest(void *opaque, void *elem)
+{
+    DTS2PTSNode **stalest = opaque;
+    DTS2PTSNode *node = elem;
+    if (!*stalest || node->serial < (*stalest)->serial)
+        *stalest = node;
+    return 0;
+}
+
 // Shared functions
 static int alloc_and_insert_node(AVBSFContext *ctx, int64_t ts, int64_t duration,
                                  int poc, int poc_diff, int gop)
 {
     DTS2PTSContext *s = ctx->priv_data;
+
     for (int i = 0; i < poc_diff; i++) {
         struct AVTreeNode *node = av_tree_node_alloc();
         DTS2PTSNode *poc_node, *ret;
@@ -133,13 +165,14 @@ static int alloc_and_insert_node(AVBSFContext *ctx, int64_t ts, int64_t duration
         }
         if (i && ts != AV_NOPTS_VALUE)
             ts += duration / poc_diff;
-        *poc_node = (DTS2PTSNode) { ts, duration, poc++, gop };
+        *poc_node = (DTS2PTSNode) { ts, duration, poc++, gop, s->serial++ };
         ret = av_tree_insert(&s->root, poc_node, cmp_insert, &node);
         if (ret && ret != poc_node) {
             *ret = *poc_node;
             av_refstruct_unref(&poc_node);
             av_free(node);
-        }
+        } else
+            s->nb_nodes++;
     }
     return 0;
 }
@@ -217,6 +250,7 @@ static int h264_queue_frame(AVBSFContext *ctx, AVPacket *pkt, int poc, int *queu
     frame = (DTS2PTSFrame) { pkt, poc, poc_diff, s->gop };
     ret = av_fifo_write(s->fifo, &frame, 1);
     av_assert2(ret >= 0);
+    s->nb_pending += poc_diff;
     *queued = 1;
 
     return 0;
@@ -251,7 +285,7 @@ static int h264_filter(AVBSFContext *ctx)
             h264->poc.prev_frame_num_offset = 0;
             h264->poc.prev_poc_msb          =
             h264->poc.prev_poc_lsb          = 0;
-        // fall-through
+            av_fallthrough;
         case H264_NAL_SLICE: {
             const H264RawSlice *slice = unit->content;
             const H264RawSliceHeader *header = &slice->header;
@@ -261,6 +295,7 @@ static int h264_filter(AVBSFContext *ctx)
 
             if (!sps) {
                 av_log(ctx, AV_LOG_ERROR, "No active SPS for a slice\n");
+                ret = AVERROR_INVALIDDATA;
                 goto fail;
             }
             // Initialize the SPS struct with the fields ff_h264_init_poc() cares about
@@ -362,6 +397,211 @@ static void h264_flush(AVBSFContext *ctx)
     h264->last_poc = h264->highest_poc = INT_MIN;
 }
 
+static int hevc_init(AVBSFContext *ctx)
+{
+    DTS2PTSContext *s = ctx->priv_data;
+    DTS2PTSHEVCContext *hevc = &s->u.hevc;
+
+    hevc->gop = -1;
+    hevc->poc_tid0 = 0;
+    hevc->highest_poc = INT_MIN;
+    s->nb_frame = -ctx->par_in->video_delay;
+
+    return 0;
+}
+
+static void hevc_flush(AVBSFContext *ctx)
+{
+    hevc_init(ctx);
+}
+
+static int hevc_init_nb_frame(AVBSFContext *ctx, int poc)
+{
+    DTS2PTSContext *s = ctx->priv_data;
+    const CodedBitstreamH265Context *cbs_hevc = s->cbc->priv_data;
+    const H265RawVPS *vps = cbs_hevc->active_vps;
+
+    if (!vps)
+        return AVERROR_INVALIDDATA;
+
+    int latency = vps->vps_max_num_reorder_pics[0];
+    if (vps->vps_max_latency_increase_plus1[0])
+        latency += vps->vps_max_latency_increase_plus1[0] - 1;
+
+    s->nb_frame = poc - latency;
+    av_log(ctx, AV_LOG_DEBUG, "Latency %d, poc %d, nb_frame %d\n",
+           latency, poc, s->nb_frame);
+
+    return 0;
+}
+
+typedef struct DTS2PTSCollect {
+    int gop;
+    DTS2PTSNode *head, *tail;
+} DTS2PTSCollect;
+
+static int collect_same_gop(void *opaque, void *elem)
+{
+    DTS2PTSCollect *c = opaque;
+    DTS2PTSNode *node = elem;
+    if (node->gop == c->gop) {
+        if (c->tail)
+            c->tail->next = node;
+        else
+            c->head = node;
+        c->tail = node;
+        node->next = NULL;
+    }
+    return 0;
+}
+
+static int hevc_queue_frame(AVBSFContext *ctx, AVPacket *pkt, int poc, bool *queued)
+{
+    DTS2PTSContext *s = ctx->priv_data;
+    DTS2PTSHEVCContext *hevc = &s->u.hevc;
+    int ret;
+
+    if (hevc->gop == -1) {
+        ret = hevc_init_nb_frame(ctx, poc);
+        if (ret < 0)
+            return ret;
+        hevc->gop = s->gop;
+    }
+
+    hevc->highest_poc = FFMAX(hevc->highest_poc, poc);
+    if (s->nb_frame > hevc->highest_poc) {
+        s->nb_frame = 0;
+        s->gop = (s->gop + 1) % s->fifo_size;
+        hevc->highest_poc = poc;
+    }
+
+    if (poc < s->nb_frame && hevc->gop == s->gop) {
+        int dec = s->nb_frame - poc;
+        DTS2PTSCollect c = { s->gop, NULL, NULL };
+
+        s->nb_frame -= dec;
+
+        // Crafted streams can exceed any DPB-based estimate of the node count,
+        // so chain the matching nodes through their next pointers instead of
+        // collecting them into a fixed size array. The chain is in ascending
+        // poc order; processing it in this order keeps the new keys collision
+        // free as any potential collision partner is re-keyed first.
+        av_tree_enumerate(s->root, &c, NULL, collect_same_gop);
+        while (c.head) {
+            struct AVTreeNode *tnode = NULL;
+            DTS2PTSNode *node = c.head, *r;
+            c.head = node->next;
+            av_tree_insert(&s->root, node, cmp_insert, &tnode);
+            node->poc -= dec;
+            r = av_tree_insert(&s->root, node, cmp_insert, &tnode);
+            if (r && r != node) {
+                *r = *node;
+                av_refstruct_unref(&node);
+                av_free(tnode);
+                s->nb_nodes--;
+            }
+        }
+    }
+
+    ret = alloc_and_insert_node(ctx, pkt->dts, pkt->duration, s->nb_frame, 1, s->gop);
+    if (ret < 0)
+        return ret;
+
+    av_log(ctx, AV_LOG_DEBUG, "Queueing frame with POC %d, GOP %d, nb_frame %d, dts %"PRId64"\n",
+           poc, s->gop, s->nb_frame, pkt->dts);
+    s->nb_frame++;
+
+    DTS2PTSFrame frame = {
+            .pkt = pkt,
+            .poc = poc,
+            .poc_diff = 1,
+            .gop = s->gop,
+    };
+    ret = av_fifo_write(s->fifo, &frame, 1);
+    if (ret < 0)
+        return ret;
+    s->nb_pending += frame.poc_diff;
+
+    *queued = true;
+
+    return 0;
+}
+
+static int hevc_filter(AVBSFContext *ctx)
+{
+    DTS2PTSContext *s = ctx->priv_data;
+    DTS2PTSHEVCContext *hevc = &s->u.hevc;
+    CodedBitstreamFragment *au = &s->au;
+    AVPacket *in;
+    bool queued = 0;
+    int ret = ff_bsf_get_packet(ctx, &in);
+    if (ret < 0)
+        return ret;
+
+    ret = ff_cbs_read_packet(s->cbc, au, in);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_WARNING, "Failed to parse access unit.\n");
+        goto fail;
+    }
+
+    for (int i = 0; i < au->nb_units; i++) {
+        CodedBitstreamUnit *unit = &au->units[i];
+        CodedBitstreamUnitType type = unit->type;
+
+        bool is_slice = type <= HEVC_NAL_RASL_R || (type >= HEVC_NAL_BLA_W_LP &&
+                                                    type <= HEVC_NAL_CRA_NUT);
+        if (!is_slice)
+            continue;
+
+        const H265RawSliceHeader *slice = unit->content;
+        if (!slice->first_slice_segment_in_pic_flag)
+            continue;
+
+        const CodedBitstreamH265Context *cbs_hevc = s->cbc->priv_data;
+        const H265RawSPS *sps = cbs_hevc->active_sps;
+        if (!sps) {
+            av_log(ctx, AV_LOG_ERROR, "No active SPS for a slice\n");
+            ret = AVERROR_INVALIDDATA;
+            goto fail;
+        }
+
+        int poc;
+        if (type == HEVC_NAL_IDR_W_RADL || type == HEVC_NAL_IDR_N_LP) {
+            poc = 0;
+            hevc->gop = (hevc->gop + 1) % s->fifo_size;
+        } else {
+            unsigned log2_max_poc_lsb = sps->log2_max_pic_order_cnt_lsb_minus4 + 4;
+            int poc_lsb = slice->slice_pic_order_cnt_lsb;
+
+            poc = ff_hevc_compute_poc2(log2_max_poc_lsb, hevc->poc_tid0, poc_lsb, type);
+        }
+
+        if (slice->nal_unit_header.nuh_temporal_id_plus1 == 1 &&
+            type != HEVC_NAL_TRAIL_N && type != HEVC_NAL_TSA_N &&
+            type != HEVC_NAL_STSA_N && type != HEVC_NAL_RADL_N &&
+            type != HEVC_NAL_RASL_N && type != HEVC_NAL_RADL_R &&
+            type != HEVC_NAL_RASL_R) {
+            hevc->poc_tid0 = poc;
+        }
+
+        ret = hevc_queue_frame(ctx, in, poc, &queued);
+        if (ret < 0)
+            goto fail;
+        break;
+    }
+
+    if (!queued) {
+        av_log(ctx, AV_LOG_ERROR, "No slices in access unit\n");
+        ret = AVERROR_INVALIDDATA;
+    }
+
+fail:
+    ff_cbs_fragment_reset(au);
+    if (!queued)
+        av_packet_free(&in);
+    return ret;
+}
+
 // Core functions
 static const struct {
     enum AVCodecID id;
@@ -371,6 +611,7 @@ static const struct {
     size_t fifo_size;
 } func_tab[] = {
     { AV_CODEC_ID_H264, h264_init, h264_filter, h264_flush, H264_MAX_DPB_FRAMES * 2 * 2 },
+    { AV_CODEC_ID_HEVC, hevc_init, hevc_filter, hevc_flush, HEVC_MAX_DPB_SIZE * 2 },
 };
 
 static int dts2pts_init(AVBSFContext *ctx)
@@ -447,6 +688,7 @@ static int dts2pts_filter(AVBSFContext *ctx, AVPacket *out)
     // Fetch a packet from the FIFO
     ret = av_fifo_read(s->fifo, &frame, 1);
     av_assert2(ret >= 0);
+    s->nb_pending -= frame.poc_diff;
     av_packet_move_ref(out, frame.pkt);
     av_packet_free(&frame.pkt);
 
@@ -462,13 +704,18 @@ static int dts2pts_filter(AVBSFContext *ctx, AVPacket *out)
         if (!s->eof) {
             // Remove the found entry from the tree
             DTS2PTSFrame dup = (DTS2PTSFrame) { NULL, frame.poc + 1, frame.poc_diff, frame.gop };
+            int64_t dts = out->pts;
             for (; dup.poc_diff > 0; dup.poc++, dup.poc_diff--) {
                 struct AVTreeNode *node = NULL;
-                if (!poc_node || poc_node->dts != out->pts)
+                if (!poc_node || poc_node->dts != dts)
                     continue;
+                // 2nd field nodes were inserted with this offset added
+                if (dts != AV_NOPTS_VALUE)
+                    dts += poc_node->duration / frame.poc_diff;
                 av_tree_insert(&s->root, poc_node, cmp_insert, &node);
                 av_refstruct_unref(&poc_node);
                 av_free(node);
+                s->nb_nodes--;
                 poc_node = av_tree_find(s->root, &dup, cmp_find, NULL);
             }
         }
@@ -485,15 +732,32 @@ static int dts2pts_filter(AVBSFContext *ctx, AVPacket *out)
                 av_packet_unref(out);
                 return ret;
             }
-            if (!ret)
-                av_log(ctx, AV_LOG_DEBUG, "Queueing frame for POC %d, GOP %d, dts %"PRId64", "
-                                          "generated from POC %d, GOP %d, dts %"PRId64", duration %"PRId64"\n",
-                       frame.poc, frame.gop, out->pts,
-                       poc_node->poc, poc_node->gop, poc_node->dts, poc_node->duration);
+            av_log(ctx, AV_LOG_DEBUG, "Queueing frame for POC %d, GOP %d, dts %"PRId64", "
+                                      "generated from POC %d, GOP %d, dts %"PRId64", duration %"PRId64"\n",
+                   frame.poc, frame.gop, out->pts,
+                   poc_node->poc, poc_node->gop, poc_node->dts, poc_node->duration);
         } else
             av_log(ctx, AV_LOG_WARNING, "No timestamp for POC %d in tree\n", frame.poc);
     } else
         av_log(ctx, AV_LOG_WARNING, "No timestamp for POC %d in tree\n", frame.poc);
+
+    // The pending packets consume nb_pending nodes; frames whose lookup above
+    // missed leave nodes behind which nothing consumes anymore. Keep the
+    // leftovers of up to MAX_DAMAGED_FRAMES frames, then evict the nodes
+    // unconsumed the longest.
+    // At EOF nodes are deliberately kept to regenerate timestamps from.
+    while (!s->eof && s->nb_nodes > s->nb_pending + 2 * MAX_DAMAGED_FRAMES) {
+        DTS2PTSNode *stale = NULL;
+        struct AVTreeNode *tnode = NULL;
+        av_tree_enumerate(s->root, &stale, NULL, find_stalest);
+        av_log(ctx, AV_LOG_WARNING, "Evicting unconsumed POC %d, GOP %d\n",
+               stale->poc, stale->gop);
+        av_tree_insert(&s->root, stale, cmp_insert, &tnode);
+        av_refstruct_unref(&stale);
+        av_free(tnode);
+        s->nb_nodes--;
+    }
+
     av_log(ctx, AV_LOG_DEBUG, "Returning frame for POC %d, GOP %d, dts %"PRId64", pts %"PRId64"\n",
            frame.poc, frame.gop, out->dts, out->pts);
 
@@ -515,7 +779,9 @@ static void dts2pts_flush(AVBSFContext *ctx)
 
     av_tree_enumerate(s->root, NULL, NULL, free_node);
     av_tree_destroy(s->root);
-    s->root = NULL;
+    s->root       = NULL;
+    s->nb_nodes   = 0;
+    s->nb_pending = 0;
 
     ff_cbs_fragment_reset(&s->au);
     if (s->cbc)
@@ -536,6 +802,7 @@ static void dts2pts_close(AVBSFContext *ctx)
 
 static const enum AVCodecID dts2pts_codec_ids[] = {
     AV_CODEC_ID_H264,
+    AV_CODEC_ID_HEVC,
     AV_CODEC_ID_NONE,
 };
 

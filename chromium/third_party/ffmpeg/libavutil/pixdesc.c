@@ -2278,6 +2278,10 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         .name = "cuda",
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
     },
+    [AV_PIX_FMT_CUARRAY] = {
+        .name = "cuarray",
+        .flags = AV_PIX_FMT_FLAG_HWACCEL,
+    },
     [AV_PIX_FMT_AMF_SURFACE] = {
         .name = "amf",
         .flags = AV_PIX_FMT_FLAG_HWACCEL,
@@ -3263,6 +3267,10 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
         },
         .flags = AV_PIX_FMT_FLAG_BE,
     },
+    [AV_PIX_FMT_OHCODEC] = {
+        .name = "ohcodec",
+        .flags = AV_PIX_FMT_FLAG_HWACCEL,
+    },
 };
 
 static const char * const color_range_names[] = {
@@ -3288,6 +3296,11 @@ static const char * const color_primaries_names[AVCOL_PRI_NB] = {
     [AVCOL_PRI_EBU3213] = "ebu3213",
 };
 
+static const char * const color_primaries_names_ext[AVCOL_PRI_EXT_NB -
+                                                    AVCOL_PRI_EXT_BASE] = {
+    [AVCOL_PRI_V_GAMUT - AVCOL_PRI_EXT_BASE] = "vgamut",
+};
+
 static const char * const color_transfer_names[] = {
     [AVCOL_TRC_RESERVED0] = "reserved",
     [AVCOL_TRC_BT709] = "bt709",
@@ -3308,6 +3321,10 @@ static const char * const color_transfer_names[] = {
     [AVCOL_TRC_SMPTE2084] = "smpte2084",
     [AVCOL_TRC_SMPTE428] = "smpte428",
     [AVCOL_TRC_ARIB_STD_B67] = "arib-std-b67",
+};
+
+static const char * const color_transfer_names_ext[] = {
+    [AVCOL_TRC_V_LOG - AVCOL_TRC_EXT_BASE] = "vlog",
 };
 
 static const char * const color_space_names[] = {
@@ -3339,6 +3356,12 @@ static const char * const chroma_location_names[] = {
     [AVCHROMA_LOC_TOP] = "top",
     [AVCHROMA_LOC_BOTTOMLEFT] = "bottomleft",
     [AVCHROMA_LOC_BOTTOM] = "bottom",
+};
+
+static const char * const alpha_mode_names[] = {
+    [AVALPHA_MODE_UNSPECIFIED] = "unspecified",
+    [AVALPHA_MODE_PREMULTIPLIED] = "premultiplied",
+    [AVALPHA_MODE_STRAIGHT] = "straight",
 };
 
 static enum AVPixelFormat get_pix_fmt_internal(const char *name)
@@ -3761,7 +3784,7 @@ int av_color_range_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(color_range_names); i++) {
-        if (av_strstart(name, color_range_names[i], NULL))
+        if (!strcmp(name, color_range_names[i]))
             return i;
     }
 
@@ -3770,8 +3793,12 @@ int av_color_range_from_name(const char *name)
 
 const char *av_color_primaries_name(enum AVColorPrimaries primaries)
 {
-    return (unsigned) primaries < AVCOL_PRI_NB ?
-        color_primaries_names[primaries] : NULL;
+    if ((unsigned)primaries < AVCOL_PRI_NB)
+        return color_primaries_names[primaries];
+    else if (((unsigned)primaries >= AVCOL_PRI_EXT_BASE) &&
+             ((unsigned)primaries < AVCOL_PRI_EXT_NB))
+        return color_primaries_names_ext[primaries - AVCOL_TRC_EXT_BASE];
+    return NULL;
 }
 
 int av_color_primaries_from_name(const char *name)
@@ -3782,8 +3809,16 @@ int av_color_primaries_from_name(const char *name)
         if (!color_primaries_names[i])
             continue;
 
-        if (av_strstart(name, color_primaries_names[i], NULL))
+        if (!strcmp(name, color_primaries_names[i]))
             return i;
+    }
+
+    for (i = 0; i < FF_ARRAY_ELEMS(color_primaries_names_ext); i++) {
+        if (!color_primaries_names_ext[i])
+            continue;
+
+        if (!strcmp(name, color_primaries_names_ext[i]))
+            return AVCOL_PRI_EXT_BASE + i;
     }
 
     return AVERROR(EINVAL);
@@ -3791,8 +3826,12 @@ int av_color_primaries_from_name(const char *name)
 
 const char *av_color_transfer_name(enum AVColorTransferCharacteristic transfer)
 {
-    return (unsigned) transfer < AVCOL_TRC_NB ?
-        color_transfer_names[transfer] : NULL;
+    if ((unsigned)transfer < AVCOL_TRC_NB)
+        return color_transfer_names[transfer];
+    else if (((unsigned)transfer >= AVCOL_TRC_EXT_BASE) &&
+             ((unsigned)transfer < AVCOL_TRC_EXT_NB))
+        return color_transfer_names_ext[transfer - AVCOL_TRC_EXT_BASE];
+    return NULL;
 }
 
 int av_color_transfer_from_name(const char *name)
@@ -3803,8 +3842,16 @@ int av_color_transfer_from_name(const char *name)
         if (!color_transfer_names[i])
             continue;
 
-        if (av_strstart(name, color_transfer_names[i], NULL))
+        if (!strcmp(name, color_transfer_names[i]))
             return i;
+    }
+
+    for (i = 0; i < FF_ARRAY_ELEMS(color_transfer_names_ext); i++) {
+        if (!color_transfer_names_ext[i])
+            continue;
+
+        if (!strcmp(name, color_transfer_names_ext[i]))
+            return AVCOL_TRC_EXT_BASE + i;
     }
 
     return AVERROR(EINVAL);
@@ -3824,7 +3871,7 @@ int av_color_space_from_name(const char *name)
         if (!color_space_names[i])
             continue;
 
-        if (av_strstart(name, color_space_names[i], NULL))
+        if (!strcmp(name, color_space_names[i]))
             return i;
     }
 
@@ -3845,7 +3892,7 @@ int av_chroma_location_from_name(const char *name)
         if (!chroma_location_names[i])
             continue;
 
-        if (av_strstart(name, chroma_location_names[i], NULL))
+        if (!strcmp(name, chroma_location_names[i]))
             return i;
     }
 
@@ -3873,4 +3920,23 @@ enum AVChromaLocation av_chroma_location_pos_to_enum(int xpos, int ypos)
             return pos;
     }
     return AVCHROMA_LOC_UNSPECIFIED;
+}
+
+const char *av_alpha_mode_name(enum AVAlphaMode mode)
+{
+    return (unsigned) mode < AVALPHA_MODE_NB ?
+        alpha_mode_names[mode] : NULL;
+}
+
+enum AVAlphaMode av_alpha_mode_from_name(const char *name)
+{
+    for (int i = 0; i < FF_ARRAY_ELEMS(alpha_mode_names); i++) {
+        if (!alpha_mode_names[i])
+            continue;
+
+        if (!strcmp(name, alpha_mode_names[i]))
+            return i;
+    }
+
+    return AVERROR(EINVAL);
 }

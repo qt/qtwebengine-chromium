@@ -520,6 +520,11 @@ int ff_h264_decode_seq_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
         sps->crop        = 0;
     }
 
+    /* SPS is zero-initialized; set the default unspecified SAR here so
+     * ff_set_sar() gets {0,1} when VUI is absent. decode_vui_parameters()
+     * overwrites it if VUI provides explicit SAR. */
+    sps->vui.sar = (AVRational){ 0, 1 };
+
     sps->vui_parameters_present_flag = get_bits1(gb);
     if (sps->vui_parameters_present_flag) {
         ret = decode_vui_parameters(gb, avctx, sps);
@@ -548,9 +553,6 @@ int ff_h264_decode_seq_parameter_set(GetBitContext *gb, AVCodecContext *avctx,
             }
         }
     }
-
-    if (!sps->vui.sar.den)
-        sps->vui.sar.den = 1;
 
     if (avctx->debug & FF_DEBUG_PICT_INFO) {
         static const char csp[4][5] = { "Gray", "420", "422", "444" };
@@ -715,7 +717,7 @@ int ff_h264_decode_picture_parameter_set(GetBitContext *gb, AVCodecContext *avct
     pps->data_size = get_bits_bytesize(gb, 1);
     if (pps->data_size > sizeof(pps->data)) {
         av_log(avctx, AV_LOG_DEBUG, "Truncating likely oversized PPS "
-               "(%"SIZE_SPECIFIER" > %"SIZE_SPECIFIER")\n",
+               "(%zu > %zu)\n",
                pps->data_size, sizeof(pps->data));
         pps->data_size = sizeof(pps->data);
     }

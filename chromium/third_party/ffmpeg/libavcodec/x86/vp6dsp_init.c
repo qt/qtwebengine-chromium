@@ -1,5 +1,5 @@
 /*
- * VP6 MMX/SSE2 optimizations
+ * VP6 SSE2 optimizations
  * Copyright (C) 2009  Sebastien Lucas <sebastien.lucas@gmail.com>
  * Copyright (C) 2009  Zuxy Meng <zuxy.meng@gmail.com>
  *
@@ -25,10 +25,10 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/vp56dsp.h"
 
-void ff_vp6_filter_diag4_sse2(uint8_t *dst, uint8_t *src, ptrdiff_t stride,
+void ff_vp6_filter_diag4_sse2(uint8_t *dst, const uint8_t *src, ptrdiff_t stride,
                               const int16_t *h_weights,const int16_t *v_weights);
 
-av_cold void ff_vp6dsp_init_x86(VP56DSPContext *c)
+av_cold void ff_vp6dsp_init_x86(VP6DSPContext *c)
 {
     int cpu_flags = av_get_cpu_flags();
 

@@ -895,6 +895,12 @@ while producing the worst quality.
 Set lowpass cutoff frequency. If unspecified, the encoder dynamically
 adjusts the cutoff.
 
+@item strict (@emph{--strictly-enforce-ISO})
+Enable LAME's strict ISO buffer constraints when set to @samp{strict} or
+@samp{very}. Other values leave LAME's default buffer constraints unchanged.
+This can improve compatibility with some decoders, at the cost of reduced
+bit reservoir usage.
+
 @item reservoir
 Enable use of bit reservoir when set to 1. Default value is 1. LAME
 has this enabled by default, but can be overridden by use
@@ -1038,12 +1044,16 @@ forces a wideband cutoff for bitrates < 15 kbps, unless CELT-only
 Set channel mapping family to be used by the encoder. The default value of -1
 uses mapping family 0 for mono and stereo inputs, and mapping family 1
 otherwise. The default also disables the surround masking and LFE bandwidth
-optimzations in libopus, and requires that the input contains 8 channels or
+optimizations in libopus, and requires that the input contains 8 channels or
 fewer.
 
 Other values include 0 for mono and stereo, 1 for surround sound with masking
 and LFE bandwidth optimizations, and 255 for independent streams with an
 unspecified channel layout.
+
+@item dtx (N.A.)
+Allow discontinuous transmission when set to 1. The default value is 0
+(disabled).
 
 @item apply_phase_inv (N.A.) (requires libopus >= 1.2)
 If set to 0, disables the use of phase inversion for intensity stereo,
@@ -1996,6 +2006,49 @@ by ":". See the SVT-AV1 encoder user guide for a list of accepted parameters.
 
 @end table
 
+@section libsvtjpegxs
+
+SVT-JPEG-XS encoder wrapper.
+
+Requires the presence of the SVT-JPEG-XS headers and library during configuration.
+You need to explicitly configure the build with @code{--enable-libsvtjpegxs}.
+
+@subsection Options
+
+@table @option
+@item decomp_v
+Set vertical decomposition level
+@item decomp_h
+Set horizontal decomposition level
+
+@item quantization
+Set the quantization algorithm.
+@table @samp
+@item deadzone
+@item uniform
+@end table
+
+@item coding-signs
+Enable Signs handling strategy
+@table @samp
+@item disable
+@item fast
+@item full
+@end table
+
+@item coding-sigf
+Enable Significance coding
+
+@item coding-vpred
+Enable Vertical Prediction coding
+@table @samp
+@item disable
+@item no_residuals
+@item no_coeffs
+@end table
+
+@end table
+
 @section libjxl
 
 libjxl JPEG XL encoder wrapper.
@@ -2569,6 +2622,93 @@ Text-like
 
 @end table
 
+@section libastcenc
+
+ARM ASTC Encoder wrapper.
+
+This encoder requires the Arm ASTC Encoder (astc-encoder) library version
+5.4 or newer, which provides high-quality GPU texture compression to the
+ASTC format, installed as @code{astcenc/astcenc.h} next to a library that
+@code{-lastcenc} finds. Pass @code{--enable-version3} together with
+@code{--enable-libastcenc} to configure.
+
+The encoder supports both LDR (8-bit RGBA/RGB) and HDR (float/half RGBA)
+input. When float or half input is detected with an LDR profile, the
+profile is automatically promoted to HDR RGB with LDR alpha
+(@code{HDR_RGB_LDR_A}); an explicitly selected HDR profile is kept.
+
+The raw bitstream can be packaged in the @file{.astc} container (16-byte
+header + compressed blocks) or in the Khronos Texture 1.0 container
+(@file{.ktx}). This implementation writes LDR 2D textures only through the
+@file{.ktx} muxer: HDR ASTC and 3D block footprints are not supported by
+the muxer and @file{.astc} must be used for them instead. The KTX 1.0
+linear ASTC GL enums do not imply LDR either, so a linear @file{.ktx}
+texture may still hold HDR endpoints; such a texture is decoded with HDR
+precision by default.
+The @file{.ktx} muxer records its row order in a @code{KTXorientation} key.
+
+@subsection Pixel Format
+
+The encoder accepts the following pixel formats:
+@itemize
+@item @code{rgba} -- 8-bit packed RGBA (LDR).
+@item @code{rgb24} -- 8-bit packed RGB (LDR, opaque alpha synthesized).
+@item @code{rgbaf16} -- 16-bit floating-point RGBA (HDR).
+@item @code{rgbaf32} -- 32-bit floating-point RGBA (HDR).
+@item @code{gbrapf32} -- planar 32-bit floating-point GBR+Alpha (HDR).
+@end itemize
+
+swscale cannot convert @emph{to} the packed floating-point formats
+(@code{rgbaf16}, @code{rgbaf32}); to encode ordinary image formats as HDR,
+produce a planar floating-point source instead, for example with
+@code{-vf format=gbrapf32}. The packed formats are accepted when they are
+supplied directly, such as from a decoder or a custom filter graph.
+
+@subsection Options
+
+@table @option
+
+@item block_size @var{string}
+ASTC block size specified as @var{W}x@var{H}[@code{x}@var{D}].
+When the third dimension is omitted it defaults to 1 (2D block).
+Valid 2D: 4x4, 5x4, 5x5, 6x5, 6x6, 8x5, 8x6, 8x8, 10x5, 10x6,
+10x8, 10x10, 12x10, 12x12.  Valid 3D: 3x3x3, 4x3x3, 4x4x3, 4x4x4,
+5x4x4, 5x5x4, 5x5x5, 6x5x5, 6x6x5, 6x6x6.
+Default is @code{8x8}.
+
+@item quality @var{float}
+Compression quality from 0 (fastest) to 100 (slowest, exhaustive search).
+Default is @code{60}.
+
+@item profile @var{int}
+Color profile. Possible values:
+@table @samp
+@item ldr
+Linear LDR.
+@item ldr-srgb
+sRGB LDR (default).
+@item hdr-ldr-a
+HDR RGB channels with LDR alpha channel.
+@item hdr
+Full HDR.
+@end table
+
+When float/half input is detected with an LDR profile, the profile is
+automatically promoted to @code{hdr-ldr-a}. Conversely, selecting an HDR
+profile with 8-bit input is rejected.
+This option overrides @code{AVCodecContext.profile}. When it is not set, the
+profile is taken from @code{AVCodecContext.profile} (@code{AV_PROFILE_ASTC_*}),
+where @code{AV_PROFILE_UNKNOWN} selects @code{ldr-srgb} as before.
+
+@item perceptual @var{boolean}
+Use the perceptual (PSNR-weighted) error metric instead of peak-SNR.
+Default is @code{0}.
+
+@item alpha_weight @var{boolean}
+Enable per-texel alpha weighting. Default is @code{1}.
+
+@end table
+
 @section libx264, libx264rgb
 
 x264 H.264/MPEG-4 AVC encoder wrapper.
@@ -3040,6 +3180,10 @@ Quantizer curve compression factor
 Normally, when forcing a I-frame type, the encoder can select any type
 of I-frame. This option forces it to choose an IDR-frame.
 
+@item x265-stats
+Specify the file name for 2-pass stats. This is set automatically when using
+the @option{-passlogfile} option.
+
 @item udu_sei @var{boolean}
 Import user data unregistered SEI if available into output. Default is 0 (off).
 
@@ -3413,11 +3557,96 @@ Maximum quantization parameter for B frame.
 
 @section MediaFoundation
 
-This provides wrappers to encoders (both audio and video) in the
-MediaFoundation framework. It can access both SW and HW encoders.
+The following wrappers for encoders in the MediaFoundation framework are
+available:
+
+@itemize
+@item h264_mf
+@item hevc_mf
+@item av1_mf
+@end itemize
+
+These support both software and hardware encoding.
+
 Video encoders can take input in either of nv12 or yuv420p form
 (some encoders support both, some support only either - in practice,
 nv12 is the safer choice, especially among HW encoders).
+
+Hardware-accelerated encoding requires D3D11, including hardware
+scaling capabilities through the scale_d3d11 filter.
+
+To list all available options for the MediaFoundation encoders, use:
+@command{ffmpeg -h encoder=<encoder>} e.g. @command{ffmpeg -h encoder=h264_mf}
+
+@subsection Options
+
+@table @option
+@item rate_control
+Select rate control mode. Available modes:
+
+@table @samp
+@item default
+Default mode
+@item cbr
+CBR mode
+@item pc_vbr
+Peak constrained VBR mode
+@item u_vbr
+Unconstrained VBR mode
+@item quality
+Quality mode
+@item ld_vbr
+Low delay VBR mode (requires Windows 8+)
+@item g_vbr
+Global VBR mode (requires Windows 8+)
+@item gld_vbr
+Global low delay VBR mode (requires Windows 8+)
+@end table
+
+@item scenario
+Select usage scenario. Available scenarios:
+
+@table @samp
+@item default
+Default scenario
+@item display_remoting
+Display remoting scenario
+@item video_conference
+Video conference scenario
+@item archive
+Archive scenario
+@item live_streaming
+Live streaming scenario
+@item camera_record
+Camera record scenario
+@item display_remoting_with_feature_map
+Display remoting with feature map scenario
+@end table
+
+@item quality
+Set encoding quality (0-100). -1 means default quality.
+
+@item hw_encoding
+Force hardware encoding (0-1). Default is 0 (disabled).
+
+@end table
+
+@subsection Examples
+
+Hardware encoding:
+@example
+ffmpeg -i input.mp4 -c:v h264_mf -hw_encoding 1 output.mp4
+@end example
+
+Hardware-accelerated decoding with hardware encoding:
+@example
+ffmpeg -hwaccel d3d11va -i input.mp4 -c:v h264_mf -hw_encoding 1 output.mp4
+@end example
+
+Hardware-accelerated decoding, HW scaling and encoding with quality setting:
+@example
+ffmpeg -hwaccel d3d11va -hwaccel_output_format d3d11 -i input.mp4 -vf scale_d3d11=1920:1080 -c:v hevc_mf -hw_encoding 1 -quality 80 output.mp4
+@end example
 
 @section Microsoft RLE
 
@@ -3703,7 +3932,7 @@ For encoders set this flag to ON to reduce power consumption and GPU usage.
 @end table
 
 @subsection Runtime Options
-Following options can be used durning qsv encoding.
+Following options can be used during qsv encoding.
 
 @table @option
 @item @var{global_quality}
@@ -3813,7 +4042,7 @@ improves subjective visual quality. Enabling this flag may have negative impact
 on performance and objective visual quality metric.
 
 @item @var{low_delay_brc}
-Setting this flag turns on or off LowDelayBRC feautre in qsv plugin, which provides
+Setting this flag turns on or off LowDelayBRC feature in qsv plugin, which provides
 more accurate bitrate control to minimize the variance of bitstream size frame
 by frame. Value: -1-default 0-off 1-on
 
@@ -4012,7 +4241,7 @@ improves subjective visual quality. Enabling this flag may have negative impact
 on performance and objective visual quality metric.
 
 @item @var{low_delay_brc}
-Setting this flag turns on or off LowDelayBRC feautre in qsv plugin, which provides
+Setting this flag turns on or off LowDelayBRC feature in qsv plugin, which provides
 more accurate bitrate control to minimize the variance of bitstream size frame
 by frame. Value: -1-default 0-off 1-on
 
@@ -4246,7 +4475,7 @@ Extended bitrate control.
 Depth of look ahead in number frames, available when extbrc option is enabled.
 
 @item @var{low_delay_brc}
-Setting this flag turns on or off LowDelayBRC feautre in qsv plugin, which provides
+Setting this flag turns on or off LowDelayBRC feature in qsv plugin, which provides
 more accurate bitrate control to minimize the variance of bitstream size frame
 by frame. Value: -1-default 0-off 1-on
 
@@ -4602,6 +4831,25 @@ Reduces detail but attempts to preserve color at extremely low bitrates.
 @chapter Subtitles Encoders
 @c man begin SUBTITLES ENCODERS
 
+@section dvbsub
+
+This codec encodes the bitmap subtitle format that is used in DVB
+broadcasts and recordings. The bitmaps are typically embedded in a
+container such as MPEG-TS as a separate stream.
+
+@subsection Options
+
+@table @option
+@item min_bpp @var{integer (2, 4, or 8)}
+Set a minimum bits-per-pixel value for the subtitle color lookup tables.
+
+DVB supports 2, 4, and 8 bits-per-pixel color lookup tables.  This
+option enables forcing a particular bits-per-pixel value regardless of
+the number of colors.  Since not all players support or properly
+support 2 bits-per-pixel, this value defaults to 4.
+
+@end table
+
 @section dvdsub
 
 This codec encodes the bitmap subtitle format that is used in DVDs.
@@ -4627,6 +4875,20 @@ a fully transparent row if needed.  The overhead is low, typically
 one byte per subtitle on average.
 
 By default, this work-around is disabled.
+@end table
+
+@section lrc
+
+This codec encodes the LRC lyrics format.
+
+@subsection Options
+
+@table @option
+@item precision
+Specify the precision of the fractional part of the timestamp. Time base is
+determined based on this value.
+
+Defaults to 2 for centiseconds.
 @end table
 
 @c man end SUBTITLES ENCODERS

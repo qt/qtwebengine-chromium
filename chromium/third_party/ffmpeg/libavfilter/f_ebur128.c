@@ -246,8 +246,8 @@ static void drawtext(AVFrame *pic, int x, int y, int ftid, const uint8_t *color,
     int font_height;
     va_list vl;
 
-    if      (ftid == FONT16) font = avpriv_vga16_font, font_height = 16;
-    else if (ftid == FONT8)  font = avpriv_cga_font,   font_height =  8;
+    if      (ftid == FONT16) font = avpriv_vga16_font_get(), font_height = 16;
+    else if (ftid == FONT8)  font = avpriv_cga_font_get(),   font_height =  8;
     else return;
 
     va_start(vl, fmt);
@@ -433,10 +433,11 @@ static int config_audio_output(AVFilterLink *outlink)
     EBUR128Context *ebur128 = ctx->priv;
     const int nb_channels = outlink->ch_layout.nb_channels;
 
-#define BACK_MASK (AV_CH_BACK_LEFT    |AV_CH_BACK_CENTER    |AV_CH_BACK_RIGHT| \
-                   AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_CENTER|AV_CH_TOP_BACK_RIGHT| \
-                   AV_CH_SIDE_LEFT                          |AV_CH_SIDE_RIGHT| \
-                   AV_CH_SURROUND_DIRECT_LEFT               |AV_CH_SURROUND_DIRECT_RIGHT)
+    /* Height channels always use a weight of 1.0 in ITU-R BS.1770. */
+#define WEIGHT_1_41_MASK (AV_CH_BACK_LEFT             |AV_CH_BACK_CENTER          | \
+                          AV_CH_BACK_RIGHT            |AV_CH_SIDE_LEFT            | \
+                          AV_CH_SIDE_RIGHT            |AV_CH_SURROUND_DIRECT_LEFT | \
+                          AV_CH_SURROUND_DIRECT_RIGHT)
 
     ebur128->nb_channels  = nb_channels;
     ebur128->dsp.y        = av_calloc(nb_channels, 3 * sizeof(*ebur128->dsp.y));
@@ -445,15 +446,22 @@ static int config_audio_output(AVFilterLink *outlink)
     if (!ebur128->ch_weighting || !ebur128->dsp.y || !ebur128->dsp.z)
         return AVERROR(ENOMEM);
 
-#define I400_BINS(x)  ((x) * 4 / 10)
+#define I400_BINS(x)  ((x) * 2 / 5)
 #define I3000_BINS(x) ((x) * 3)
+
+    if (outlink->sample_rate  > INT_MAX/3U || outlink->sample_rate < 3)
+        return AVERROR(EINVAL);
 
     ebur128->i400.cache_size = I400_BINS(outlink->sample_rate);
     ebur128->i3000.cache_size = I3000_BINS(outlink->sample_rate);
+    size_t i400_count, i3000_count;
+    if (av_size_mult(nb_channels, ebur128->i400.cache_size,  &i400_count)  < 0 || i400_count  > INT_MAX ||
+        av_size_mult(nb_channels, ebur128->i3000.cache_size, &i3000_count) < 0 || i3000_count > INT_MAX)
+        return AVERROR(EINVAL);
     ebur128->i400.sum = av_calloc(nb_channels, sizeof(*ebur128->i400.sum));
     ebur128->i3000.sum = av_calloc(nb_channels, sizeof(*ebur128->i3000.sum));
-    ebur128->i400.cache = av_calloc(nb_channels * ebur128->i400.cache_size, sizeof(*ebur128->i400.cache));
-    ebur128->i3000.cache = av_calloc(nb_channels * ebur128->i3000.cache_size, sizeof(*ebur128->i3000.cache));
+    ebur128->i400.cache  = av_calloc(i400_count,  sizeof(*ebur128->i400.cache));
+    ebur128->i3000.cache = av_calloc(i3000_count, sizeof(*ebur128->i3000.cache));
     if (!ebur128->i400.sum || !ebur128->i3000.sum ||
         !ebur128->i400.cache || !ebur128->i3000.cache)
         return AVERROR(ENOMEM);
@@ -463,7 +471,7 @@ static int config_audio_output(AVFilterLink *outlink)
         const enum AVChannel chl = av_channel_layout_channel_from_index(&outlink->ch_layout, i);
         if (chl == AV_CHAN_LOW_FREQUENCY || chl == AV_CHAN_LOW_FREQUENCY_2) {
             ebur128->ch_weighting[i] = 0;
-        } else if (chl < 64 && (1ULL << chl) & BACK_MASK) {
+        } else if (chl < 64 && (1ULL << chl) & WEIGHT_1_41_MASK) {
             ebur128->ch_weighting[i] = 1.41;
         } else {
             ebur128->ch_weighting[i] = 1.0;
@@ -502,7 +510,7 @@ static int config_audio_output(AVFilterLink *outlink)
             return AVERROR(ENOMEM);
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_ebur128_init_x86(&ebur128->dsp, nb_channels);
 #endif
     return 0;
@@ -657,7 +665,7 @@ double ff_ebur128_find_peak_c(double *restrict ch_peaks, const int nb_channels,
     for (int ch = 0; ch < nb_channels; ch++) {
         double ch_peak = ch_peaks[ch];
         for (int i = 0; i < nb_samples; i++) {
-            const double sample = fabs(samples[i * nb_channels]);
+            const double sample = fabs(samples[i * nb_channels + ch]);
             ch_peak = FFMAX(ch_peak, sample);
         }
         maxpeak = FFMAX(maxpeak, ch_peak);
@@ -1022,7 +1030,7 @@ static int query_formats(const AVFilterContext *ctx,
 
     /* set optional output video format */
     if (ebur128->do_video) {
-        formats = ff_make_format_list(pix_fmts);
+        formats = ff_make_pixel_format_list(pix_fmts);
         if ((ret = ff_formats_ref(formats, &cfg_out[0]->formats)) < 0)
             return ret;
         out_idx = 1;
@@ -1031,7 +1039,7 @@ static int query_formats(const AVFilterContext *ctx,
     /* set input and output audio formats
      * Note: ff_set_common_* functions are not used because they affect all the
      * links, and thus break the video format negotiation */
-    formats = ff_make_format_list(sample_fmts);
+    formats = ff_make_sample_format_list(sample_fmts);
     if ((ret = ff_formats_ref(formats, &cfg_in[0]->formats)) < 0 ||
         (ret = ff_formats_ref(formats, &cfg_out[out_idx]->formats)) < 0)
         return ret;

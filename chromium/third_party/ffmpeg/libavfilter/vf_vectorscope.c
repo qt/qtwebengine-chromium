@@ -229,7 +229,7 @@ static int query_formats(AVFilterContext *ctx)
             in_pix_fmts = in2_pix_fmts;
         else
             in_pix_fmts = in1_pix_fmts;
-        if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
+        if ((ret = ff_formats_ref(ff_make_pixel_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
             return ret;
     }
 
@@ -262,7 +262,7 @@ static int query_formats(AVFilterContext *ctx)
         out_pix_fmts = out_yuv12_pix_fmts;
     else
         return AVERROR(EAGAIN);
-    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_pixel_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -968,7 +968,7 @@ static void draw_ihtext(AVFrame *out, int x, int y, float o1, float o2, const ch
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -993,7 +993,7 @@ static void draw_ihtext16(AVFrame *out, int x, int y, float o1, float o2, const 
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -1019,7 +1019,7 @@ static void draw_htext(AVFrame *out, int x, int y, float o1, float o2, const cha
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -1045,7 +1045,7 @@ static void draw_htext16(AVFrame *out, int x, int y, float o1, float o2, const c
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -1469,6 +1469,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
         return AVERROR(ENOMEM);
     }
     av_frame_copy_props(out, in);
+    out->sample_aspect_ratio = outlink->sample_aspect_ratio;
 
     s->vectorscope(s, in, out, s->pd);
     s->graticulef(s, out, s->x, s->y, s->pd, s->cs);

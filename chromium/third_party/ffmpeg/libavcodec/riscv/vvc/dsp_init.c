@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Institue of Software Chinese Academy of Sciences (ISCAS).
+ * Copyright (c) 2024 Institute of Software Chinese Academy of Sciences (ISCAS).
  *
  * This file is part of FFmpeg.
  *
@@ -34,7 +34,7 @@ void bf(ff_vvc_avg, bd, opt)(uint8_t *dst, ptrdiff_t dst_stride,                
     const int16_t *src0, const int16_t *src1, int width, int height);                                \
 void bf(ff_vvc_w_avg, bd, opt)(uint8_t *dst, ptrdiff_t dst_stride,                                   \
     const int16_t *src0, const int16_t *src1, int width, int height,                                 \
-    int denom, int w0, int w1, int o0, int o1);
+    int denom, int w0, int w1, int o);
 
 AVG_PROTOTYPES(8, rvv_128)
 AVG_PROTOTYPES(8, rvv_256)
@@ -102,7 +102,6 @@ void ff_vvc_dsp_init_riscv(VVCDSPContext *const c, const int bd)
                 break;
             case 10:
                 c->inter.sad      = ff_vvc_sad_rvv_256;
-            default:
                 break;
         }
     } else if (vlenb >= 16) {
@@ -118,7 +117,6 @@ void ff_vvc_dsp_init_riscv(VVCDSPContext *const c, const int bd)
                 break;
             case 10:
                 c->inter.sad      = ff_vvc_sad_rvv_128;
-            default:
                 break;
         }
     }

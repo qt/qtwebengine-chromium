@@ -69,6 +69,9 @@ static int neighbor_opencl_init(AVFilterContext *avctx)
         kernel_name = "erosion_global";
     } else if (!strcmp(avctx->filter->name, "dilation_opencl")){
         kernel_name = "dilation_global";
+    } else {
+        err = AVERROR_BUG;
+        goto fail;
     }
     ctx->kernel = clCreateKernel(ctx->ocf.program, kernel_name, &cle);
     CL_FAIL_ON_ERROR(AVERROR(EIO), "Failed to create "
@@ -182,8 +185,7 @@ static int neighbor_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
             if (err < 0)
                 goto fail;
 
-            av_log(avctx, AV_LOG_DEBUG, "Run kernel on plane %d "
-                   "(%"SIZE_SPECIFIER"x%"SIZE_SPECIFIER").\n",
+            av_log(avctx, AV_LOG_DEBUG, "Run kernel on plane %d (%zux%zu).\n",
                    p, global_work[0], global_work[1]);
 
             cle = clEnqueueNDRangeKernel(ctx->command_queue, ctx->kernel, 2, NULL,

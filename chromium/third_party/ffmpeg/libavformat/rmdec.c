@@ -215,6 +215,7 @@ static int rm_read_audio_stream_info(AVFormatContext *s, AVIOContext *pb,
             break;
         case AV_CODEC_ID_COOK:
             sti->need_parsing = AVSTREAM_PARSE_HEADERS;
+            av_fallthrough;
         case AV_CODEC_ID_ATRAC3:
         case AV_CODEC_ID_SIPR:
             if (read_all) {
@@ -569,7 +570,7 @@ static int rm_read_header(AVFormatContext *s)
         /* very old .ra format */
         return rm_read_header_old(s);
     } else if (tag != MKTAG('.', 'R', 'M', 'F') && tag != MKTAG('.', 'R', 'M', 'P')) {
-        return AVERROR(EIO);
+        return AVERROR_INVALIDDATA;
     }
 
     tag_size = avio_rb32(pb);
@@ -1064,7 +1065,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
             if (avio_feof(s->pb))
                 return AVERROR_EOF;
             if (len <= 0)
-                return AVERROR(EIO);
+                return AVERROR_INVALIDDATA;
 
             res = ff_rm_parse_packet (s, s->pb, st, st->priv_data, len, pkt,
                                       &seq, flags, timestamp);
@@ -1200,7 +1201,7 @@ static int ivr_probe(const AVProbeData *p)
 static int ivr_read_header(AVFormatContext *s)
 {
     unsigned tag, type, len, tlen, value;
-    int i, j, n, count, nb_streams = 0, ret;
+    int i, n, count, nb_streams = 0, ret;
     uint8_t key[256], val[256];
     AVIOContext *pb = s->pb;
     AVStream *st;
@@ -1254,7 +1255,7 @@ static int ivr_read_header(AVFormatContext *s)
             av_log(s, AV_LOG_DEBUG, "%s = '%s'\n", key, val);
         } else if (type == 4) {
             av_log(s, AV_LOG_DEBUG, "%s = '0x", key);
-            for (j = 0; j < len; j++) {
+            for (unsigned j = 0; j < len; j++) {
                 if (avio_feof(pb))
                     return AVERROR_INVALIDDATA;
                 av_log(s, AV_LOG_DEBUG, "%X", avio_r8(pb));
@@ -1307,10 +1308,8 @@ static int ivr_read_header(AVFormatContext *s)
                 if (ret < 0)
                     return ret;
             } else if (type == 4) {
-                int j;
-
                 av_log(s, AV_LOG_DEBUG, "%s = '0x", key);
-                for (j = 0; j < len; j++) {
+                for (unsigned j = 0; j < len; j++) {
                     if (avio_feof(pb))
                         return AVERROR_INVALIDDATA;
                     av_log(s, AV_LOG_DEBUG, "%X", avio_r8(pb));
@@ -1410,7 +1409,7 @@ static int ivr_read_packet(AVFormatContext *s, AVPacket *pkt)
                 }
             } else {
                 av_log(s, AV_LOG_ERROR, "Unsupported opcode=%d at %"PRIX64"\n", opcode, avio_tell(pb) - 1);
-                return AVERROR(EIO);
+                return AVERROR_INVALIDDATA;
             }
         }
 

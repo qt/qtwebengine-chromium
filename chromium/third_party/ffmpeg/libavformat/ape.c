@@ -107,10 +107,9 @@ static void ape_dumpinfo(AVFormatContext * s, APEContext * ape_ctx)
     av_log(s, AV_LOG_DEBUG, "audiodatalength      = %"PRIu32"\n", ape_ctx->audiodatalength);
     av_log(s, AV_LOG_DEBUG, "audiodatalength_high = %"PRIu32"\n", ape_ctx->audiodatalength_high);
     av_log(s, AV_LOG_DEBUG, "wavtaillength        = %"PRIu32"\n", ape_ctx->wavtaillength);
-    av_log(s, AV_LOG_DEBUG, "md5                  = ");
-    for (i = 0; i < 16; i++)
-         av_log(s, AV_LOG_DEBUG, "%02x", ape_ctx->md5[i]);
-    av_log(s, AV_LOG_DEBUG, "\n");
+    char md5_hex[sizeof(ape_ctx->md5) * 2 + 1];
+    ff_data_to_hex(md5_hex, ape_ctx->md5, sizeof(ape_ctx->md5), 1);
+    av_log(s, AV_LOG_DEBUG, "md5                  = %s\n", md5_hex);
 
     av_log(s, AV_LOG_DEBUG, "\nHeader Block:\n\n");
 
@@ -247,7 +246,7 @@ static int ape_read_header(AVFormatContext * s)
     }
     if (ape->seektablelength / sizeof(uint32_t) < ape->totalframes) {
         av_log(s, AV_LOG_ERROR,
-               "Number of seek entries is less than number of frames: %"SIZE_SPECIFIER" vs. %"PRIu32"\n",
+               "Number of seek entries is less than number of frames: %zu vs. %"PRIu32"\n",
                ape->seektablelength / sizeof(uint32_t), ape->totalframes);
         return AVERROR_INVALIDDATA;
     }
@@ -395,7 +394,7 @@ static int ape_read_packet(AVFormatContext * s, AVPacket * pkt)
         av_log(s, AV_LOG_ERROR, "invalid packet size: %8"PRId64"\n",
                ape->frames[ape->currentframe].size);
         ape->currentframe++;
-        return AVERROR(EIO);
+        return AVERROR_INVALIDDATA;
     }
 
     ret = av_new_packet(pkt, ape->frames[ape->currentframe].size + extra_size);

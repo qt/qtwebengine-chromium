@@ -38,6 +38,7 @@
 #include "vp9dsp.h"
 #include "vp9shared.h"
 #include "vpx_rac.h"
+#include "cbs_vp9.h"
 
 #define REF_INVALID_SCALE 0xFFFF
 
@@ -96,6 +97,11 @@ typedef struct VP9TileData VP9TileData;
 typedef struct VP9Context {
     VP9SharedContext s;
     VP9TileData *td;
+
+    CodedBitstreamContext *cbc;
+    CodedBitstreamFragment current_frag;
+    VP9RawFrame *header_ref; ///< RefStruct reference backing frame_header
+    VP9RawFrameHeader *frame_header;
 
     VP9DSPContext dsp;
     VideoDSPContext vdsp;
@@ -162,6 +168,8 @@ typedef struct VP9Context {
     // frame specific buffer pools
     struct AVRefStructPool *frame_extradata_pool;
     int frame_extradata_pool_size;
+
+    int webm_alpha_warned; ///< warn once about unsupported WebM alpha
 } VP9Context;
 
 struct VP9TileData {

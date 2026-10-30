@@ -345,8 +345,8 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
         const float *weights = s->weights[p];
         const int h = s->planeheight[p];
         const int w = s->planewidth[p];
-        const int slice_start = (h * jobnr) / nb_jobs;
-        const int slice_end = (h * (jobnr+1)) / nb_jobs;
+        const int slice_start = ff_slice_pos(h, jobnr, nb_jobs);
+        const int slice_end = ff_slice_pos(h, jobnr + 1, nb_jobs);
         const uint8_t *src = in->data[p] + slice_start * in->linesize[p];
         uint8_t *dst = out->data[p] + slice_start * out->linesize[p];
         const int thra = s->thra[p];
@@ -426,7 +426,7 @@ static int config_input(AVFilterLink *inlink)
         }
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_atadenoise_init_x86(&s->dsp, depth, s->algorithm, s->sigma);
 #endif
 

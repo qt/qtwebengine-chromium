@@ -20,6 +20,42 @@
 #include "bsf_internal.h"
 #include "cbs_bsf.h"
 
+#include "libavutil/attributes.h"
+
+const enum AVCodecID ff_cbs_all_codec_ids[] = {
+#if CONFIG_CBS_APV
+    AV_CODEC_ID_APV,
+#endif
+#if CONFIG_CBS_AV1
+    AV_CODEC_ID_AV1,
+#endif
+#if CONFIG_CBS_H264
+    AV_CODEC_ID_H264,
+#endif
+#if CONFIG_CBS_H265
+    AV_CODEC_ID_H265,
+#endif
+#if CONFIG_CBS_H266
+    AV_CODEC_ID_H266,
+#endif
+#if CONFIG_CBS_LCEVC
+    AV_CODEC_ID_LCEVC,
+#endif
+#if CONFIG_CBS_JPEG
+    AV_CODEC_ID_MJPEG,
+#endif
+#if CONFIG_CBS_MPEG2
+    AV_CODEC_ID_MPEG2VIDEO,
+#endif
+#if CONFIG_CBS_VP8
+    AV_CODEC_ID_VP8,
+#endif
+#if CONFIG_CBS_VP9
+    AV_CODEC_ID_VP9,
+#endif
+    AV_CODEC_ID_NONE
+};
+
 static int cbs_bsf_update_side_data(AVBSFContext *bsf, AVPacket *pkt)
 {
     CBSBSFContext           *ctx = bsf->priv_data;
@@ -107,7 +143,7 @@ fail:
     return err;
 }
 
-int ff_cbs_bsf_generic_init(AVBSFContext *bsf, const CBSBSFType *type)
+av_cold int ff_cbs_bsf_generic_init(AVBSFContext *bsf, const CBSBSFType *type)
 {
     CBSBSFContext           *ctx = bsf->priv_data;
     CodedBitstreamFragment *frag = &ctx->fragment;
@@ -152,7 +188,7 @@ fail:
     return err;
 }
 
-void ff_cbs_bsf_generic_close(AVBSFContext *bsf)
+av_cold void ff_cbs_bsf_generic_close(AVBSFContext *bsf)
 {
     CBSBSFContext *ctx = bsf->priv_data;
 

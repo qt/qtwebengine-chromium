@@ -241,17 +241,18 @@ static int64_t get_duration(AVFormatContext *s)
         return 0;
 
     int64_t start_pos = avio_tell(s->pb);
-    int64_t end_pos = -1;
-    int64_t start = 0, end = 0;
+    int64_t pos = -1;
+    int64_t start = 0;
     struct tm timeinfo;
-    uint8_t *end_buffer;
-    int64_t end_buffer_size;
-    int64_t end_buffer_pos;
+    uint8_t *buffer;
+    int64_t buffer_size;
+    int64_t buffer_pos;
     int64_t offset;
     unsigned date;
     int64_t size = avio_size(s->pb);
+    int64_t ret = 0;
 
-    if (start_pos + 16 > size)
+    if (start_pos < 0 || start_pos > size - 20)
         return 0;
 
     avio_skip(s->pb, 16);
@@ -259,42 +260,37 @@ static int64_t get_duration(AVFormatContext *s)
     get_timeinfo(date, &timeinfo);
     start = av_timegm(&timeinfo) * 1000LL;
 
-    end_buffer_size = FFMIN(MAX_DURATION_BUFFER_SIZE, size);
-    end_buffer = av_malloc(end_buffer_size);
-    if (!end_buffer)
+    buffer_size = FFMIN(MAX_DURATION_BUFFER_SIZE, size);
+    buffer = av_malloc(buffer_size);
+    if (!buffer)
         goto fail;
-    end_buffer_pos = size - end_buffer_size;
-    avio_seek(s->pb, end_buffer_pos, SEEK_SET);
-    if (ffio_read_size(s->pb, end_buffer, end_buffer_size) < 0)
+    buffer_pos = size - buffer_size;
+    avio_seek(s->pb, buffer_pos, SEEK_SET);
+    if (ffio_read_size(s->pb, buffer, buffer_size) < 0)
         goto fail;
 
-    offset = end_buffer_size - 8;
+    offset = buffer_size - 8;
     while (offset > 0) {
-        if (AV_RL32(end_buffer + offset) == MKTAG('d','h','a','v')) {
-            int64_t seek_back = AV_RL32(end_buffer + offset + 4);
-            end_pos = end_buffer_pos + offset - seek_back + 8;
+        if (AV_RL32(buffer + offset) == MKTAG('d','h','a','v')) {
+            int64_t seek_back = AV_RL32(buffer + offset + 4);
+            pos = buffer_pos + offset - seek_back + 8;
             break;
         } else {
             offset -= 9;
         }
     }
 
-    if (end_pos < 0 || end_pos + 16 > end_buffer_pos + end_buffer_size)
+    if (pos < buffer_pos || pos - buffer_pos > buffer_size - 20)
         goto fail;
 
-    date = AV_RL32(end_buffer + (end_pos - end_buffer_pos) + 16);
+    date = AV_RL32(buffer + (pos - buffer_pos) + 16);
     get_timeinfo(date, &timeinfo);
-    end = av_timegm(&timeinfo) * 1000LL;
 
-    av_freep(&end_buffer);
-
-    avio_seek(s->pb, start_pos, SEEK_SET);
-
-    return end - start;
+    ret = av_timegm(&timeinfo) * 1000LL - start;
 fail:
-    av_freep(&end_buffer);
+    av_freep(&buffer);
     avio_seek(s->pb, start_pos, SEEK_SET);
-    return 0;
+    return ret;
 }
 
 static int dhav_read_header(AVFormatContext *s)
@@ -325,7 +321,9 @@ static int dhav_read_header(AVFormatContext *s)
                 if (seek_back < 9)
                     break;
                 dhav->last_good_pos = avio_tell(s->pb);
-                avio_seek(s->pb, -seek_back, SEEK_CUR);
+                int64_t ret64 = avio_seek(s->pb, -seek_back, SEEK_CUR);
+                if (ret64 < 0)
+                    return ret64;
             }
             avio_seek(s->pb, dhav->last_good_pos, SEEK_SET);
         }
@@ -486,8 +484,7 @@ static int dhav_read_seek(AVFormatContext *s, int stream_index,
         return -1;
 
     for (int n = 0; n < s->nb_streams; n++) {
-        AVStream *st = s->streams[n];
-        DHAVStream *dst = st->priv_data;
+        DHAVStream *const dst = s->streams[n]->priv_data;
 
         dst->pts = pts;
         dst->last_time = AV_NOPTS_VALUE;

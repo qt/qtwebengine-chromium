@@ -129,11 +129,11 @@ static int rv10_decode_picture_header(H263DecContext *const h)
     if (h->c.pict_type == AV_PICTURE_TYPE_I) {
         if (h->rv10_version == 3) {
             /* specific MPEG like DC coding not used */
-            h->c.last_dc[0] = get_bits(&h->gb, 8);
-            h->c.last_dc[1] = get_bits(&h->gb, 8);
-            h->c.last_dc[2] = get_bits(&h->gb, 8);
-            ff_dlog(h->c.avctx, "DC:%d %d %d\n", h->c.last_dc[0],
-                    h->c.last_dc[1], h->c.last_dc[2]);
+            h->last_dc[0] = get_bits(&h->gb, 8);
+            h->last_dc[1] = get_bits(&h->gb, 8);
+            h->last_dc[2] = get_bits(&h->gb, 8);
+            ff_dlog(h->c.avctx, "DC:%d %d %d\n", h->last_dc[0],
+                    h->last_dc[1], h->last_dc[2]);
         }
     }
     /* if multiple packets per frame are sent, the position at which
@@ -415,8 +415,9 @@ static int rv10_decode_packet(AVCodecContext *avctx, const uint8_t *buf,
     H263DecContext *const h = &rv->h;
     int mb_count, mb_pos, left, start_mb_x, active_bits_size, ret;
 
+    if ((ret = init_get_bits8(&h->gb, buf, FFMAX(buf_size, buf_size2))) < 0)
+        return ret;
     active_bits_size = buf_size * 8;
-    init_get_bits(&h->gb, buf, FFMAX(buf_size, buf_size2) * 8);
     if (h->c.codec_id == AV_CODEC_ID_RV10)
         mb_count = rv10_decode_picture_header(h);
     else

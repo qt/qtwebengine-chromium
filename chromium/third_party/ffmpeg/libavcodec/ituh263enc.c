@@ -38,6 +38,7 @@
 #include "codec_internal.h"
 #include "mpegvideo.h"
 #include "flvenc.h"
+#include "mpegvideodata.h"
 #include "mpegvideoenc.h"
 #include "h263.h"
 #include "h263enc.h"
@@ -244,8 +245,8 @@ static int h263_encode_picture_header(MPVMainEncContext *const m)
     coded_frame_rate_base= (1000+best_clock_code)*best_divisor;
 
     put_bits(&s->pb, 22, 0x20); /* PSC */
-    temp_ref = s->picture_number * (int64_t)coded_frame_rate * s->c.avctx->time_base.num / //FIXME use timestamp
-                         (coded_frame_rate_base * (int64_t)s->c.avctx->time_base.den);
+    temp_ref = av_rescale_rnd(s->picture_number, coded_frame_rate * (int64_t)s->c.avctx->time_base.num, //FIXME use timestamp
+                              coded_frame_rate_base * (int64_t)s->c.avctx->time_base.den, AV_ROUND_ZERO);
     put_sbits(&s->pb, 8, temp_ref); /* TemporalReference */
 
     put_bits(&s->pb, 1, 1);     /* marker */
@@ -823,6 +824,11 @@ av_cold void ff_h263_encode_init(MPVMainEncContext *const m)
     s->me.mv_penalty = ff_h263_get_mv_penalty(); // FIXME exact table for MSMPEG4 & H.263+
 
     ff_h263dsp_init(&s->c.h263dsp);
+
+    ff_permute_scantable(s->permutated_intra_h_scantable, ff_alternate_horizontal_scan,
+                         s->c.idsp.idct_permutation);
+    ff_permute_scantable(s->permutated_intra_v_scantable, ff_alternate_vertical_scan,
+                         s->c.idsp.idct_permutation);
 
     if (s->c.codec_id == AV_CODEC_ID_MPEG4)
         return;

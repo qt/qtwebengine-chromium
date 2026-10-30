@@ -105,6 +105,7 @@ static int mtv_read_header(AVFormatContext *s)
     AVIOContext   *pb  = s->pb;
     AVStream        *st;
     unsigned int    audio_subsegments;
+    int64_t ret64;
 
     avio_skip(pb, 3);
     mtv->file_size         = avio_rl32(pb);
@@ -155,7 +156,10 @@ static int mtv_read_header(AVFormatContext *s)
         mtv->img_segment_size;
     mtv->video_fps         = (mtv->audio_br / 4) / audio_subsegments;
 
-    // FIXME Add sanity check here
+    if (!mtv->video_fps) {
+        av_log(s, AV_LOG_ERROR, "Invalid video frame rate\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     // all systems go! init decoders
 
@@ -190,8 +194,8 @@ static int mtv_read_header(AVFormatContext *s)
 
     // Jump over header
 
-    if(avio_seek(pb, MTV_HEADER_SIZE, SEEK_SET) != MTV_HEADER_SIZE)
-        return AVERROR(EIO);
+    if ((ret64 = avio_seek(pb, MTV_HEADER_SIZE, SEEK_SET)) < 0)
+        return (int)ret64;
 
     return 0;
 

@@ -103,8 +103,8 @@ static int do_slice_##name##_##xall(AVFilterContext *ctx,            \
     const int step = s->step;                                        \
     const int width = frame->width;                                  \
     const int process_h = frame->height;                             \
-    const int slice_start = (process_h *  jobnr   ) / nb_jobs;       \
-    const int slice_end   = (process_h * (jobnr+1)) / nb_jobs;       \
+    const int slice_start = ff_slice_pos(process_h, jobnr, nb_jobs); \
+    const int slice_end   = ff_slice_pos(process_h, jobnr + 1, nb_jobs); \
     const ptrdiff_t linesize = frame->linesize[0] / sizeof(type);    \
     type *row = (type *)frame->data[0] + linesize * slice_start;     \
     const uint8_t offset_r = s->rgba_map[R];                         \
@@ -295,7 +295,6 @@ static void transform_point(float matrix[4][4],
                             float x, float y, float z,
                             float *tx, float *ty, float *tz)
 {
-    x = y;
     *tx = x * matrix[0][0] + y * matrix[1][0] + z * matrix[2][0] + matrix[3][0];
     *ty = x * matrix[0][1] + y * matrix[1][1] + z * matrix[2][1] + matrix[3][1];
     *tz = x * matrix[0][2] + y * matrix[1][2] + z * matrix[2][2] + matrix[3][2];
@@ -321,8 +320,8 @@ static void hue_rotate_matrix(float matrix[4][4], float rotation,
     y_rotate_matrix(matrix, yrs, yrc);
 
     transform_point(matrix, rlw, glw, blw, &lx, &ly, &lz);
-    zsx = lx / lz;
-    zsy = ly / lz;
+    zsx = lz ? lx / lz : 0.f;
+    zsy = lz ? ly / lz : 0.f;
     z_shear_matrix(matrix, zsx, zsy);
 
     zrs = sinf(rotation * M_PI / 180.f);

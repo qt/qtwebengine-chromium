@@ -373,7 +373,7 @@ static int geq_query_formats(const AVFilterContext *ctx,
     };
     const enum AVPixelFormat *pix_fmts = geq->is_rgb ? rgb_pix_fmts : yuv_pix_fmts;
 
-    return ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
+    return ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
 }
 
 static int geq_config_props(AVFilterLink *inlink)
@@ -405,8 +405,8 @@ static int slice_geq_filter(AVFilterContext *ctx, void *arg, int jobnr, int nb_j
     const int width = td->width;
     const int plane = td->plane;
     const int linesize = td->linesize;
-    const int slice_start = (height *  jobnr) / nb_jobs;
-    const int slice_end = (height * (jobnr+1)) / nb_jobs;
+    const int slice_start = ff_slice_pos(height, jobnr, nb_jobs);
+    const int slice_end = ff_slice_pos(height, jobnr + 1, nb_jobs);
     int x, y;
 
     double values[VAR_VARS_NB];
@@ -514,7 +514,7 @@ static av_cold void geq_uninit(AVFilterContext *ctx)
         for (int j = 0; j < MAX_NB_THREADS; j++)
             av_expr_free(geq->e[i][j]);
     for (i = 0; i < NB_PLANES; i++)
-        av_freep(&geq->pixel_sums);
+        av_freep(&geq->pixel_sums[i]);
 }
 
 static const AVFilterPad geq_inputs[] = {

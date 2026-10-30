@@ -21,22 +21,24 @@
 #include "h264chroma.h"
 
 #define BIT_DEPTH 8
+#define MC2_STATIC
 #include "h264chroma_template.c"
+#undef MC2_STATIC
 #undef BIT_DEPTH
 
 #define BIT_DEPTH 16
+#define MC2_STATIC static
 #include "h264chroma_template.c"
+#undef MC2_STATIC
 #undef BIT_DEPTH
 
-#define SET_CHROMA(depth)                                                   \
-    c->put_h264_chroma_pixels_tab[0] = put_h264_chroma_mc8_ ## depth ## _c; \
-    c->put_h264_chroma_pixels_tab[1] = put_h264_chroma_mc4_ ## depth ## _c; \
-    c->put_h264_chroma_pixels_tab[2] = put_h264_chroma_mc2_ ## depth ## _c; \
-    c->put_h264_chroma_pixels_tab[3] = put_h264_chroma_mc1_ ## depth ## _c; \
-    c->avg_h264_chroma_pixels_tab[0] = avg_h264_chroma_mc8_ ## depth ## _c; \
-    c->avg_h264_chroma_pixels_tab[1] = avg_h264_chroma_mc4_ ## depth ## _c; \
-    c->avg_h264_chroma_pixels_tab[2] = avg_h264_chroma_mc2_ ## depth ## _c; \
-    c->avg_h264_chroma_pixels_tab[3] = avg_h264_chroma_mc1_ ## depth ## _c; \
+#define SET_CHROMA(depth)                                                      \
+    c->put_h264_chroma_pixels_tab[0] = put_h264_chroma_mc8_ ## depth ## _c;    \
+    c->put_h264_chroma_pixels_tab[1] = put_h264_chroma_mc4_ ## depth ## _c;    \
+    c->put_h264_chroma_pixels_tab[2] = ff_put_h264_chroma_mc2_ ## depth ## _c; \
+    c->avg_h264_chroma_pixels_tab[0] = avg_h264_chroma_mc8_ ## depth ## _c;    \
+    c->avg_h264_chroma_pixels_tab[1] = avg_h264_chroma_mc4_ ## depth ## _c;    \
+    c->avg_h264_chroma_pixels_tab[2] = ff_avg_h264_chroma_mc2_ ## depth ## _c; \
 
 av_cold void ff_h264chroma_init(H264ChromaContext *c, int bit_depth)
 {
@@ -52,7 +54,7 @@ av_cold void ff_h264chroma_init(H264ChromaContext *c, int bit_depth)
     ff_h264chroma_init_arm(c, bit_depth);
 #elif ARCH_PPC
     ff_h264chroma_init_ppc(c, bit_depth);
-#elif ARCH_X86
+#elif ARCH_X86 && HAVE_X86ASM
     ff_h264chroma_init_x86(c, bit_depth);
 #elif ARCH_MIPS
     ff_h264chroma_init_mips(c, bit_depth);

@@ -42,8 +42,6 @@
 
 #include "libavcodec/avcodec.h"
 
-#include "av1.h"
-#include "avc.h"
 #include "avformat.h"
 #include "avio_internal.h"
 #include "hlsplaylist.h"
@@ -51,11 +49,9 @@
 #include "http.h"
 #endif
 #include "internal.h"
-#include "isom.h"
 #include "mux.h"
 #include "os_support.h"
 #include "url.h"
-#include "vpcc.h"
 #include "dash.h"
 
 typedef enum {
@@ -75,6 +71,8 @@ enum {
 
 #define MPD_PROFILE_DASH 1
 #define MPD_PROFILE_DVB  2
+#define DASH_MAX_AVAILABILITY_START_TIME_MS (INT64_MAX / 1000)
+#define DASH_MAX_SUGGESTED_PRESENTATION_DELAY ((int64_t)INT_MAX * AV_TIME_BASE + AV_TIME_BASE - 1)
 
 typedef struct Segment {
     char file[1024];
@@ -204,19 +202,9 @@ typedef struct DASHContext {
     AVRational min_playback_rate;
     AVRational max_playback_rate;
     int64_t update_period;
+    int64_t availability_start_time_ms;
+    int64_t suggested_presentation_delay;
 } DASHContext;
-
-static const struct codec_string {
-    enum AVCodecID id;
-    const char str[8];
-} codecs[] = {
-    { AV_CODEC_ID_VP8, "vp8" },
-    { AV_CODEC_ID_VP9, "vp9" },
-    { AV_CODEC_ID_VORBIS, "vorbis" },
-    { AV_CODEC_ID_OPUS, "opus" },
-    { AV_CODEC_ID_FLAC, "flac" },
-    { AV_CODEC_ID_NONE }
-};
 
 static int dashenc_io_open(AVFormatContext *s, AVIOContext **pb, char *filename,
                            AVDictionary **options) {
@@ -325,117 +313,6 @@ static int init_segment_types(AVFormatContext *s)
     }
 
     return 0;
-}
-
-static void set_vp9_codec_str(AVFormatContext *s, AVCodecParameters *par,
-                              AVRational *frame_rate, char *str, int size) {
-    VPCC vpcc;
-    int ret = ff_isom_get_vpcc_features(s, par, NULL, 0, frame_rate, &vpcc);
-    if (ret == 0) {
-        av_strlcatf(str, size, "vp09.%02d.%02d.%02d",
-                    vpcc.profile, vpcc.level, vpcc.bitdepth);
-    } else {
-        // Default to just vp9 in case of error while finding out profile or level
-        av_log(s, AV_LOG_WARNING, "Could not find VP9 profile and/or level\n");
-        av_strlcpy(str, "vp9", size);
-    }
-    return;
-}
-
-static void set_codec_str(AVFormatContext *s, AVCodecParameters *par,
-                          AVRational *frame_rate, char *str, int size)
-{
-    const AVCodecTag *tags[2] = { NULL, NULL };
-    uint32_t tag;
-    int i;
-
-    // common Webm codecs are not part of RFC 6381
-    for (i = 0; codecs[i].id != AV_CODEC_ID_NONE; i++)
-        if (codecs[i].id == par->codec_id) {
-            if (codecs[i].id == AV_CODEC_ID_VP9) {
-                set_vp9_codec_str(s, par, frame_rate, str, size);
-            } else {
-                av_strlcpy(str, codecs[i].str, size);
-            }
-            return;
-        }
-
-    // for codecs part of RFC 6381
-    if (par->codec_type == AVMEDIA_TYPE_VIDEO)
-        tags[0] = ff_codec_movvideo_tags;
-    else if (par->codec_type == AVMEDIA_TYPE_AUDIO)
-        tags[0] = ff_codec_movaudio_tags;
-    else
-        return;
-
-    tag = par->codec_tag;
-    if (!tag)
-        tag = av_codec_get_tag(tags, par->codec_id);
-    if (!tag)
-        return;
-    if (size < 5)
-        return;
-
-    AV_WL32(str, tag);
-    str[4] = '\0';
-    if (!strcmp(str, "mp4a") || !strcmp(str, "mp4v")) {
-        uint32_t oti;
-        tags[0] = ff_mp4_obj_type;
-        oti = av_codec_get_tag(tags, par->codec_id);
-        if (oti)
-            av_strlcatf(str, size, ".%02"PRIx32, oti);
-        else
-            return;
-
-        if (tag == MKTAG('m', 'p', '4', 'a')) {
-            if (par->extradata_size >= 2) {
-                int aot = par->extradata[0] >> 3;
-                if (aot == 31)
-                    aot = ((AV_RB16(par->extradata) >> 5) & 0x3f) + 32;
-                av_strlcatf(str, size, ".%d", aot);
-            }
-        } else if (tag == MKTAG('m', 'p', '4', 'v')) {
-            // Unimplemented, should output ProfileLevelIndication as a decimal number
-            av_log(s, AV_LOG_WARNING, "Incomplete RFC 6381 codec string for mp4v\n");
-        }
-    } else if (!strcmp(str, "avc1")) {
-        uint8_t *tmpbuf = NULL;
-        uint8_t *extradata = par->extradata;
-        int extradata_size = par->extradata_size;
-        if (!extradata_size)
-            return;
-        if (extradata[0] != 1) {
-            AVIOContext *pb;
-            if (avio_open_dyn_buf(&pb) < 0)
-                return;
-            if (ff_isom_write_avcc(pb, extradata, extradata_size) < 0) {
-                ffio_free_dyn_buf(&pb);
-                return;
-            }
-            extradata_size = avio_close_dyn_buf(pb, &extradata);
-            tmpbuf = extradata;
-        }
-
-        if (extradata_size >= 4)
-            av_strlcatf(str, size, ".%02x%02x%02x",
-                        extradata[1], extradata[2], extradata[3]);
-        av_free(tmpbuf);
-    } else if (!strcmp(str, "av01")) {
-        AV1SequenceParameters seq;
-        if (!par->extradata_size)
-            return;
-        if (ff_av1_parse_seq_header(&seq, par->extradata, par->extradata_size) < 0)
-            return;
-
-        av_strlcatf(str, size, ".%01u.%02u%s.%02u",
-                    seq.profile, seq.level, seq.tier ? "H" : "M", seq.bitdepth);
-        if (seq.color_description_present_flag)
-            av_strlcatf(str, size, ".%01u.%01u%01u%01u.%02u.%02u.%02u.%01u",
-                        seq.monochrome,
-                        seq.chroma_subsampling_x, seq.chroma_subsampling_y, seq.chroma_sample_position,
-                        seq.color_primaries, seq.transfer_characteristics, seq.matrix_coefficients,
-                        seq.color_range);
-    }
 }
 
 static int flush_dynbuf(DASHContext *c, OutputStream *os, int *range_length)
@@ -559,7 +436,7 @@ static void write_hls_media_playlist(OutputStream *os, AVFormatContext *s,
                                 (double) seg->duration / timescale, 0,
                                 seg->range_length, seg->start_pos, NULL,
                                 c->single_file ? os->initfile : seg->file,
-                                &prog_date_time, 0, 0, 0);
+                                &prog_date_time, 0);
         if (ret < 0) {
             av_log(os->ctx, AV_LOG_WARNING, "ff_hls_write_file_entry get error\n");
         }
@@ -617,7 +494,7 @@ static void dash_free(AVFormatContext *s)
             if (!c->single_file)
                 ffio_free_dyn_buf(&os->ctx->pb);
             else
-                avio_close(os->ctx->pb);
+                ff_format_io_close(s, &os->ctx->pb);
         }
         ff_format_io_close(s, &os->out);
         avformat_free_context(os->ctx);
@@ -829,7 +706,9 @@ static int write_adaptation_set(AVFormatContext *s, AVIOContext *out, int as_ind
         if (os->bit_rate > 0)
             snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", os->bit_rate);
         else if (final) {
-            int average_bit_rate = os->pos * 8 * AV_TIME_BASE / c->total_duration;
+            int average_bit_rate = 0;
+            if (c->total_duration > 0)
+                average_bit_rate = os->pos * 8 * AV_TIME_BASE / c->total_duration;
             snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", average_bit_rate);
         } else if (os->first_segment_bit_rate > 0)
             snprintf(bandwidth_str, sizeof(bandwidth_str), " bandwidth=\"%d\"", os->first_segment_bit_rate);
@@ -1173,8 +1052,14 @@ static int write_manifest(AVFormatContext *s, int final)
         if (c->update_period)
             update_period = c->update_period;
         avio_printf(out, "\tminimumUpdatePeriod=\"PT%"PRId64"S\"\n", update_period);
-        if (!c->ldash)
-            avio_printf(out, "\tsuggestedPresentationDelay=\"PT%"PRId64"S\"\n", c->last_duration / AV_TIME_BASE);
+        if (!c->ldash) {
+            if (c->suggested_presentation_delay) {
+                avio_printf(out, "\tsuggestedPresentationDelay=\"");
+                write_time(out, c->suggested_presentation_delay);
+                avio_printf(out, "\"\n");
+            } else
+                avio_printf(out, "\tsuggestedPresentationDelay=\"PT%"PRId64"S\"\n", c->last_duration / AV_TIME_BASE);
+        }
         if (c->availability_start_time[0])
             avio_printf(out, "\tavailabilityStartTime=\"%s\"\n", c->availability_start_time);
         format_date(now_str, sizeof(now_str), av_gettime());
@@ -1488,6 +1373,7 @@ static int dash_init(AVFormatContext *s)
         AVStream *st;
         AVDictionary *opts = NULL;
         char filename[1024];
+        AVBPrint buffer;
 
         os->bit_rate = s->streams[i]->codecpar->bit_rate;
         if (!os->bit_rate) {
@@ -1579,12 +1465,14 @@ static int dash_init(AVFormatContext *s)
         snprintf(filename, sizeof(filename), "%s%s", c->dirname, os->initfile);
         set_http_options(&opts, c);
         if (!c->single_file) {
-            if ((ret = avio_open_dyn_buf(&ctx->pb)) < 0)
+            if ((ret = avio_open_dyn_buf(&ctx->pb)) < 0) {
+                av_dict_free(&opts);
                 return ret;
+            }
             ret = s->io_open(s, &os->out, filename, AVIO_FLAG_WRITE, &opts);
         } else {
             ctx->url = av_strdup(filename);
-            ret = avio_open2(&ctx->pb, filename, AVIO_FLAG_WRITE, NULL, &opts);
+            ret = s->io_open(s, &ctx->pb, filename, AVIO_FLAG_WRITE, &opts);
         }
         av_dict_free(&opts);
         if (ret < 0)
@@ -1701,8 +1589,8 @@ static int dash_init(AVFormatContext *s)
             c->has_video = 1;
         }
 
-        set_codec_str(s, st->codecpar, &st->avg_frame_rate, os->codec_str,
-                      sizeof(os->codec_str));
+        av_bprint_init_for_buffer(&buffer, os->codec_str, sizeof(os->codec_str));
+        ff_make_codec_str(s, st->codecpar, &st->avg_frame_rate, &buffer);
         os->first_pts = AV_NOPTS_VALUE;
         os->max_pts = AV_NOPTS_VALUE;
         os->last_dts = AV_NOPTS_VALUE;
@@ -1824,6 +1712,7 @@ static int update_stream_extradata(AVFormatContext *s, OutputStream *os,
     uint8_t *extradata;
     size_t extradata_size;
     int ret;
+    AVBPrint buffer;
 
     if (par->extradata_size)
         return 0;
@@ -1838,7 +1727,8 @@ static int update_stream_extradata(AVFormatContext *s, OutputStream *os,
 
     memcpy(par->extradata, extradata, extradata_size);
 
-    set_codec_str(s, par, frame_rate, os->codec_str, sizeof(os->codec_str));
+    av_bprint_init_for_buffer(&buffer, os->codec_str, sizeof(os->codec_str));
+    ff_make_codec_str(s, par, frame_rate, &buffer);
 
     return 0;
 }
@@ -2106,9 +1996,12 @@ static int dash_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (!c->availability_start_time[0]) {
         int64_t start_time_us = av_gettime();
+        int64_t mpd_start_time_us = c->availability_start_time_ms ?
+                                    c->availability_start_time_ms * 1000 :
+                                    start_time_us;
         c->start_time_s = start_time_us / 1000000;
         format_date(c->availability_start_time,
-                    sizeof(c->availability_start_time), start_time_us);
+                    sizeof(c->availability_start_time), mpd_start_time_us);
     }
 
     if (!os->packets_written)
@@ -2390,7 +2283,9 @@ static const AVOption options[] = {
     { "seg_duration", "segment duration (in seconds, fractional value can be set)", OFFSET(seg_duration), AV_OPT_TYPE_DURATION, { .i64 = 5000000 }, 0, INT_MAX, E },
     { "single_file", "Store all segments in one file, accessed using byte ranges", OFFSET(single_file), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
     { "single_file_name", "DASH-templated name to be used for baseURL. Implies storing all segments in one file, accessed using byte ranges", OFFSET(single_file_name), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, E },
+    { "availability_start_time_ms", "set MPD availabilityStartTime as epoch milliseconds", OFFSET(availability_start_time_ms), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, DASH_MAX_AVAILABILITY_START_TIME_MS, E },
     { "streaming", "Enable/Disable streaming mode of output. Each frame will be moof fragment", OFFSET(streaming), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, E },
+    { "suggested_presentation_delay", "set MPD suggestedPresentationDelay", OFFSET(suggested_presentation_delay), AV_OPT_TYPE_DURATION, { .i64 = 0 }, 0, DASH_MAX_SUGGESTED_PRESENTATION_DELAY, E },
     { "target_latency", "Set desired target latency for Low-latency dash", OFFSET(target_latency), AV_OPT_TYPE_DURATION, { .i64 = 0 }, 0, INT_MAX, E },
     { "timeout", "set timeout for socket I/O operations", OFFSET(timeout), AV_OPT_TYPE_DURATION, { .i64 = -1 }, -1, INT_MAX, .flags = E },
     { "update_period", "Set the mpd update interval", OFFSET(update_period), AV_OPT_TYPE_INT64, {.i64 = 0}, 0, INT64_MAX, E},

@@ -40,14 +40,12 @@ static int tmv_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                             int *got_frame, AVPacket *avpkt)
 {
     const uint8_t *src = avpkt->data;
+    const uint8_t *cga_font = avpriv_cga_font_get();
     uint8_t *dst;
     unsigned char_cols = avctx->width >> 3;
     unsigned char_rows = avctx->height >> 3;
     unsigned x, y, fg, bg, c;
     int ret;
-
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
-        return ret;
 
     if (avpkt->size < 2*char_rows*char_cols) {
         av_log(avctx, AV_LOG_ERROR,
@@ -55,6 +53,9 @@ static int tmv_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         *got_frame = 0;
         return AVERROR_INVALIDDATA;
     }
+
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        return ret;
 
     dst              = frame->data[0];
 
@@ -67,7 +68,7 @@ static int tmv_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             bg = *src  >> 4;
             fg = *src++ & 0xF;
             ff_draw_pc_font(dst + x * 8, frame->linesize[0],
-                            avpriv_cga_font, 8, c, fg, bg);
+                            cga_font, 8, c, fg, bg);
         }
         dst += frame->linesize[0] * 8;
     }

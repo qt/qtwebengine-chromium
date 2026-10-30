@@ -28,11 +28,14 @@
 
 #include "libavutil/common.h"
 #include "libavutil/cpu.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/imgutils.h"
 
 #include "avcodec.h"
+#include "bytestream.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "itut35.h"
 #include "libaom.h"
 #include "profiles.h"
 
@@ -68,9 +71,12 @@ static int set_pix_fmt(AVCodecContext *avctx, struct aom_image *img)
         AVCOL_RANGE_MPEG, AVCOL_RANGE_JPEG
     };
     avctx->color_range = color_ranges[img->range];
-    avctx->color_primaries = img->cp;
-    avctx->colorspace  = img->mc;
-    avctx->color_trc   = img->tc;
+    if (img->cp != AOM_CICP_CP_UNSPECIFIED)
+        avctx->color_primaries = (enum AVColorPrimaries)img->cp;
+    if (img->mc != AOM_CICP_MC_UNSPECIFIED)
+        avctx->colorspace  = (enum AVColorSpace)img->mc;
+    if (img->tc != AOM_CICP_TC_UNSPECIFIED)
+        avctx->color_trc   = (enum AVColorTransferCharacteristic)img->tc;
 
     switch (img->fmt) {
     case AOM_IMG_FMT_I420:
@@ -135,6 +141,49 @@ static int set_pix_fmt(AVCodecContext *avctx, struct aom_image *img)
     default:
         return AVERROR_INVALIDDATA;
     }
+}
+
+static int decode_metadata_itu_t_t35(AVCodecContext *avctx, AVFrame *frame,
+                                     const uint8_t *buffer, size_t buffer_size)
+{
+    FFITUTT35 itut35 = { 0 };
+    int ret;
+
+    if (buffer_size < 6)
+        return AVERROR(EINVAL);
+
+    ret = ff_itut_t35_parse_buffer(&itut35, buffer, buffer_size, 0);
+    if (ret <= 0)
+        return ret;
+
+    ret = ff_itut_t35_parse_payload_to_frame(&itut35, NULL, avctx, frame);
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
+
+static int decode_metadata(AVCodecContext *avctx, AVFrame *frame,
+                           const struct aom_image *img)
+{
+    const size_t num_metadata = aom_img_num_metadata(img);
+    for (size_t i = 0; i < num_metadata; ++i) {
+        const aom_metadata_t *metadata = aom_img_get_metadata(img, i);
+        if (!metadata)
+            continue;
+
+        switch (metadata->type) {
+        case OBU_METADATA_TYPE_ITUT_T35: {
+            int res = decode_metadata_itu_t_t35(avctx, frame, metadata->payload, metadata->sz);
+            if (res < 0)
+                return res;
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    return 0;
 }
 
 static int aom_decode(AVCodecContext *avctx, AVFrame *picture,
@@ -214,6 +263,11 @@ static int aom_decode(AVCodecContext *avctx, AVFrame *picture,
 
             av_image_copy(picture->data, picture->linesize, planes,
                           stride, avctx->pix_fmt, img->d_w, img->d_h);
+        }
+        ret = decode_metadata(avctx, picture, img);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to decode metadata\n");
+            return ret;
         }
         *got_frame = 1;
     }

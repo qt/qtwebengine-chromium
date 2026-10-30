@@ -145,10 +145,10 @@ static int query_formats(const AVFilterContext *ctx,
 {
     int ret;
 
-    if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &cfg_in[0]->formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_pixel_format_list(in_pix_fmts), &cfg_in[0]->formats)) < 0)
         return ret;
 
-    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &cfg_out[0]->formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_pixel_format_list(out_pix_fmts), &cfg_out[0]->formats)) < 0)
         return ret;
 
     return 0;
@@ -1132,7 +1132,7 @@ fill_in_tongue(uint16_t*                  const pixels,
 
     /* Scan the image line by line and  fill  the  tongue  outline
        with the RGB values determined by the color system for the x-y
-       co-ordinates within the tongue.
+       coordinates within the tongue.
     */
 
     for (y = 0; y < h; ++y) {

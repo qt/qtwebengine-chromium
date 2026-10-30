@@ -48,6 +48,7 @@
 #include <time.h>
 
 #include "libavutil/aes.h"
+#include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/mathematics.h"
@@ -145,7 +146,6 @@ typedef struct MXFSequence {
     UID *structural_components_refs;
     int structural_components_count;
     int64_t duration;
-    uint8_t origin;
 } MXFSequence;
 
 typedef struct MXFTimecodeComponent {
@@ -189,6 +189,7 @@ typedef struct {
     int body_sid;
     MXFWrappingScheme wrapping;
     int edit_units_per_packet; /* how many edit units to read at a time (PCM, ClipWrapped) */
+    int64_t origin;
 } MXFTrack;
 
 typedef struct MXFDescriptor {
@@ -423,6 +424,7 @@ static void mxf_free_metadataset(MXFMetadataSet **ctx, enum MXFMetadataSetType t
         av_freep(&seg->temporal_offset_entries);
         av_freep(&seg->flag_entries);
         av_freep(&seg->stream_offset_entries);
+        break;
     default:
         break;
     }
@@ -491,7 +493,9 @@ static int klv_read_packet(MXFContext *mxf, KLVPacket *klv, AVIOContext *pb)
         return AVERROR_INVALIDDATA;
 
     memcpy(klv->key, mxf_klv_key, 4);
-    avio_read(pb, klv->key + 4, 12);
+    int ret = ffio_read_size(pb, klv->key + 4, 12);
+    if (ret < 0)
+        return ret;
     length = klv_decode_ber_length(pb, &llen);
     if (length < 0)
         return length;
@@ -953,7 +957,7 @@ static int mxf_add_metadata_set(MXFContext *mxf, MXFMetadataSet **metadata_set, 
     int ret;
 
     // Index Table is special because it might be added manually without
-    // partition and we iterate thorugh all instances of them. Also some files
+    // partition and we iterate through all instances of them. Also some files
     // use the same Instance UID for different index tables...
     if (type != IndexTableSegment) {
         for (int i = 0; i < mg->metadata_sets_count; i++) {
@@ -1153,6 +1157,9 @@ static int mxf_read_track(void *arg, AVIOContext *pb, int tag, int size, UID uid
         track->edit_rate.num = avio_rb32(pb);
         track->edit_rate.den = avio_rb32(pb);
         break;
+    case 0x4b02:
+        track->origin = avio_rb64(pb);
+        break;
     case 0x4803:
         avio_read(pb, track->sequence_ref, 16);
         break;
@@ -1169,9 +1176,6 @@ static int mxf_read_sequence(void *arg, AVIOContext *pb, int tag, int size, UID 
         break;
     case 0x0201:
         avio_read(pb, sequence->data_definition_ul, 16);
-        break;
-        case 0x4b02:
-        sequence->origin = avio_r8(pb);
         break;
     case 0x1001:
         return mxf_read_strong_ref_array(pb, &sequence->structural_components_refs,
@@ -1439,7 +1443,7 @@ static int mxf_read_generic_descriptor(void *arg, AVIOContext *pb, int tag, int 
                 av_log(NULL, AV_LOG_WARNING, "Duplicate sony_mpeg4_extradata\n");
             av_free(descriptor->extradata);
             descriptor->extradata_size = 0;
-            descriptor->extradata = av_malloc(size);
+            descriptor->extradata = av_mallocz(size + AV_INPUT_BUFFER_PADDING_SIZE);
             if (!descriptor->extradata)
                 return AVERROR(ENOMEM);
             descriptor->extradata_size = size;
@@ -1683,7 +1687,7 @@ static const MXFCodecUL mxf_sound_essence_container_uls[] = {
 
 static const MXFCodecUL mxf_data_essence_container_uls[] = {
     { { 0x06,0x0e,0x2b,0x34,0x04,0x01,0x01,0x09,0x0d,0x01,0x03,0x01,0x02,0x0d,0x00,0x00 }, 16, AV_CODEC_ID_NONE,      "vbi_smpte_436M", 11 },
-    { { 0x06,0x0e,0x2b,0x34,0x04,0x01,0x01,0x09,0x0d,0x01,0x03,0x01,0x02,0x0e,0x00,0x00 }, 16, AV_CODEC_ID_NONE, "vbi_vanc_smpte_436M", 11 },
+    { { 0x06,0x0e,0x2b,0x34,0x04,0x01,0x01,0x09,0x0d,0x01,0x03,0x01,0x02,0x0e,0x00,0x00 }, 16, AV_CODEC_ID_SMPTE_436M_ANC, "vbi_vanc_smpte_436M", 11 },
     { { 0x06,0x0e,0x2b,0x34,0x04,0x01,0x01,0x09,0x0d,0x01,0x03,0x01,0x02,0x13,0x01,0x01 }, 16, AV_CODEC_ID_TTML },
     { { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 },  0, AV_CODEC_ID_NONE },
 };
@@ -2924,6 +2928,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                     break;
                 case SegmentedFrame:
                     st->codecpar->field_order = AV_FIELD_PROGRESSIVE;
+                    av_fallthrough;
                 case SeparateFields:
                     av_log(mxf->fc, AV_LOG_DEBUG, "video_line_map: (%d, %d), field_dominance: %d\n",
                            descriptor->video_line_map[0], descriptor->video_line_map[1],
@@ -3023,11 +3028,11 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 }
             }
             sti->need_parsing = AVSTREAM_PARSE_HEADERS;
-            if (material_track->sequence->origin) {
-                av_dict_set_int(&st->metadata, "material_track_origin", material_track->sequence->origin, 0);
+            if (material_track->origin) {
+                av_dict_set_int(&st->metadata, "material_track_origin", material_track->origin, 0);
             }
-            if (source_track->sequence->origin) {
-                av_dict_set_int(&st->metadata, "source_track_origin", source_track->sequence->origin, 0);
+            if (source_track->origin) {
+                av_dict_set_int(&st->metadata, "source_track_origin", source_track->origin, 0);
             }
             if (descriptor->aspect_ratio.num && descriptor->aspect_ratio.den)
                 sti->display_aspect_ratio = descriptor->aspect_ratio;
@@ -3113,9 +3118,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 st->codecpar->codec_type = type;
             if (container_ul->desc)
                 av_dict_set(&st->metadata, "data_type", container_ul->desc, 0);
-            if (mxf->eia608_extract &&
-                container_ul->desc &&
-                !strcmp(container_ul->desc, "vbi_vanc_smpte_436M")) {
+            if (mxf->eia608_extract && st->codecpar->codec_id == AV_CODEC_ID_SMPTE_436M_ANC) {
                 st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
                 st->codecpar->codec_id = AV_CODEC_ID_EIA_608;
             }
@@ -3126,7 +3129,7 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
             if (!ff_alloc_extradata(st->codecpar, descriptor->extradata_size)) {
                 memcpy(st->codecpar->extradata, descriptor->extradata, descriptor->extradata_size);
             }
-        } else if (st->codecpar->codec_id == AV_CODEC_ID_H264) {
+        } else if (st->codecpar->codec_id == AV_CODEC_ID_H264 && source_track->intra_only) {
             int coded_width = mxf_get_codec_ul(mxf_intra_only_picture_coded_width,
                                                &descriptor->essence_codec_ul)->id;
             if (coded_width)

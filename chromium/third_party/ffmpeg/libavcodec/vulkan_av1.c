@@ -123,7 +123,7 @@ static int vk_av1_fill_pict(AVCodecContext *avctx, const AV1Frame **ref_src,
         .codedExtent = (VkExtent2D){ pic->f->width, pic->f->height },
         .baseArrayLayer = ((has_grain || dec->dedicated_dpb) && ctx->common.layered_dpb) ?
                           hp->frame_id : 0,
-        .imageViewBinding = vkpic->view.ref[0],
+        .imageViewBinding = vkpic->view.ref,
     };
 
     *ref_slot = (VkVideoReferenceSlotInfoKHR) {
@@ -208,7 +208,7 @@ static void vk_av1_params_fill(AVCodecContext *avctx,
     };
 }
 
-static int vk_av1_create_params(AVCodecContext *avctx, AVBufferRef **buf,
+static int vk_av1_create_params(AVCodecContext *avctx, VkVideoSessionParametersKHR **buf,
                                 AV1VulkanDecodePicture *ap)
 {
     int err;
@@ -252,8 +252,11 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
     int err;
     int ref_count = 0;
     AV1DecContext *s = avctx->priv_data;
+    const AV1RawSequenceHeader *seq = s->raw_seq;
     const AV1Frame *pic = &s->cur_frame;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
+    uint32_t frame_id_alloc_mask = 0;
+    uint16_t sb_shift = seq->use_128x128_superblock ? 5 : 4;
 
     AV1VulkanDecodePicture *ap = pic->hwaccel_picture_private;
     FFVulkanDecodePicture *vp = &ap->vp;
@@ -268,17 +271,24 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
                                                          STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_WIENER,
                                                          STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_SGRPROJ };
 
+    /* Use the current frame_ids in ref[] to decide occupied frame_ids */
+    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        const AV1VulkanDecodePicture* rp = s->ref[i].hwaccel_picture_private;
+        if (rp)
+            frame_id_alloc_mask |= 1 << rp->frame_id;
+    }
+
     if (!ap->frame_id_set) {
         unsigned slot_idx = 0;
         for (unsigned i = 0; i < 32; i++) {
-            if (!(dec->frame_id_alloc_mask & (1 << i))) {
+            if (!(frame_id_alloc_mask & (1 << i))) {
                 slot_idx = i;
                 break;
             }
         }
         ap->frame_id = slot_idx;
         ap->frame_id_set = 1;
-        dec->frame_id_alloc_mask |= (1 << slot_idx);
+        frame_id_alloc_mask |= (1 << slot_idx);
     }
 
     ap->ref_frame_sign_bias_mask = 0x0;
@@ -351,7 +361,7 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
             .codedOffset = (VkOffset2D){ 0, 0 },
             .codedExtent = (VkExtent2D){ pic->f->width, pic->f->height },
             .baseArrayLayer = 0,
-            .imageViewBinding = vp->view.out[0],
+            .imageViewBinding = vp->view.out,
         },
     };
 
@@ -490,8 +500,8 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
     for (int i = 0; i < 64; i++) {
         ap->width_in_sbs_minus1[i] = frame_header->width_in_sbs_minus_1[i];
         ap->height_in_sbs_minus1[i] = frame_header->height_in_sbs_minus_1[i];
-        ap->mi_col_starts[i] = frame_header->tile_start_col_sb[i];
-        ap->mi_row_starts[i] = frame_header->tile_start_row_sb[i];
+        ap->mi_col_starts[i] = frame_header->tile_start_col_sb[i] << sb_shift;
+        ap->mi_row_starts[i] = frame_header->tile_start_row_sb[i] << sb_shift;
     }
 
     for (int i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
@@ -560,11 +570,11 @@ static int vk_av1_decode_slice(AVCodecContext *avctx,
     AV1VulkanDecodePicture *ap = s->cur_frame.hwaccel_picture_private;
     FFVulkanDecodePicture *vp = &ap->vp;
 
-    /* Too many tiles, exceeding all defined levels in the AV1 spec */
-    if (ap->av1_pic_info.tileCount > MAX_TILES)
-        return AVERROR(ENOSYS);
-
     for (int i = s->tg_start; i <= s->tg_end; i++) {
+        /* Too many tiles, exceeding all defined levels in the AV1 spec */
+        if (ap->av1_pic_info.tileCount >= MAX_TILES)
+            return AVERROR(ENOSYS);
+
         ap->tile_sizes[ap->av1_pic_info.tileCount] = s->tile_group_info[i].tile_size;
 
         err = ff_vk_decode_add_slice(avctx, vp,
@@ -626,7 +636,7 @@ static int vk_av1_end_frame(AVCodecContext *avctx)
         rav[i] = ap->ref_src[i]->f;
     }
 
-    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i tiles\n",
+    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %zu bytes, %i tiles\n",
            vp->slices_size, ap->av1_pic_info.tileCount);
 
     return ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);
@@ -636,10 +646,6 @@ static void vk_av1_free_frame_priv(AVRefStructOpaque _hwctx, void *data)
 {
     AVHWDeviceContext *hwctx = _hwctx.nc;
     AV1VulkanDecodePicture *ap = data;
-
-    /* Workaround for a spec issue. */
-    if (ap->frame_id_set)
-        ap->dec->frame_id_alloc_mask &= ~(1 << ap->frame_id);
 
     /* Free frame resources, this also destroys the session parameters. */
     ff_vk_decode_free_frame(hwctx, &ap->vp);
@@ -658,19 +664,8 @@ const FFHWAccel ff_av1_vulkan_hwaccel = {
     .init                  = &ff_vk_decode_init,
     .update_thread_context = &ff_vk_update_thread_context,
     .decode_params         = &ff_vk_params_invalidate,
-    .flush                 = &ff_vk_decode_flush,
     .uninit                = &ff_vk_decode_uninit,
     .frame_params          = &ff_vk_frame_params,
     .priv_data_size        = sizeof(FFVulkanDecodeContext),
-
-    /* NOTE: Threading is intentionally disabled here. Due to the design of Vulkan,
-     * where frames are opaque to users, and mostly opaque for driver developers,
-     * there's an issue with current hardware accelerator implementations of AV1,
-     * where they require an internal index. With regular hwaccel APIs, this index
-     * is given to users as an opaque handle directly. With Vulkan, due to increased
-     * flexibility, this index cannot be present anywhere.
-     * The current implementation tracks the index for the driver and submits it
-     * as necessary information. Due to needing to modify the decoding context,
-     * which is not thread-safe, on frame free, threading is disabled. */
     .caps_internal         = HWACCEL_CAP_ASYNC_SAFE,
 };

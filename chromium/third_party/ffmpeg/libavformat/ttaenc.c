@@ -22,7 +22,7 @@
 #include "libavutil/crc.h"
 #include "libavutil/intreadwrite.h"
 
-#include "libavcodec/packet_internal.h"
+#include "packet_internal.h"
 #include "apetag.h"
 #include "avformat.h"
 #include "avio_internal.h"
@@ -71,7 +71,7 @@ static int tta_write_header(AVFormatContext *s)
     if ((ret = avio_open_dyn_buf(&tta->seek_table)) < 0)
         return ret;
 
-    /* Ignore most extradata information if present. It can be innacurate
+    /* Ignore most extradata information if present. It can be inaccurate
        if for example remuxing from Matroska */
     ffio_init_checksum(s->pb, ff_crcEDB88320_update, UINT32_MAX);
     ffio_init_checksum(tta->seek_table, ff_crcEDB88320_update, UINT32_MAX);
@@ -89,7 +89,7 @@ static int tta_write_packet(AVFormatContext *s, AVPacket *pkt)
     TTAMuxContext *tta = s->priv_data;
     int ret;
 
-    ret = avpriv_packet_list_put(&tta->queue, pkt, NULL, 0);
+    ret = ff_packet_list_put(&tta->queue, pkt, NULL, 0);
     if (ret < 0) {
         return ret;
     }
@@ -121,7 +121,7 @@ static void tta_queue_flush(AVFormatContext *s)
     AVPacket *const pkt = ffformatcontext(s)->pkt;
 
     while (tta->queue.head) {
-        avpriv_packet_list_get(&tta->queue, pkt);
+        ff_packet_list_get(&tta->queue, pkt);
         avio_write(s->pb, pkt->data, pkt->size);
         av_packet_unref(pkt);
     }
@@ -157,7 +157,7 @@ static void tta_deinit(AVFormatContext *s)
     TTAMuxContext *tta = s->priv_data;
 
     ffio_free_dyn_buf(&tta->seek_table);
-    avpriv_packet_list_free(&tta->queue);
+    ff_packet_list_free(&tta->queue);
 }
 
 const FFOutputFormat ff_tta_muxer = {

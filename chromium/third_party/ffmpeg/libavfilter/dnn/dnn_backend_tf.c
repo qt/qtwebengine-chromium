@@ -486,6 +486,7 @@ static void dnn_free_model_tf(DNNModel **model)
         return;
 
     tf_model = (TFModel *)(*model);
+    ff_dnn_wait_requests(tf_model->request_queue, tf_model->ctx->nireq);
     while (ff_safe_queue_size(tf_model->request_queue) != 0) {
         TFRequestItem *item = ff_safe_queue_pop_front(tf_model->request_queue);
         destroy_request_item(&item);
@@ -539,13 +540,6 @@ static DNNModel *dnn_load_model_tf(DnnContext *ctx, DNNFunctionType func_type, A
     if (ctx->nireq <= 0) {
         ctx->nireq = av_cpu_count() / 2 + 1;
     }
-
-#if !HAVE_PTHREAD_CANCEL
-    if (ctx->options.async) {
-        ctx->options.async = 0;
-        av_log(filter_ctx, AV_LOG_WARNING, "pthread is not supported, roll back to sync.\n");
-    }
-#endif
 
     tf_model->request_queue = ff_safe_queue_create();
     if (!tf_model->request_queue) {
@@ -706,6 +700,7 @@ static void infer_completion_callback(void *args) {
     }
 
     for (uint32_t i = 0; i < task->nb_output; ++i) {
+        outputs[i].layout = DL_NHWC;
         outputs[i].dims[dnn_get_height_idx_by_layout(outputs[i].layout)] =
             TF_Dim(infer_request->output_tensors[i], 1);
         outputs[i].dims[dnn_get_width_idx_by_layout(outputs[i].layout)] =
@@ -833,14 +828,12 @@ static int dnn_execute_model_tf(const DNNModel *model, DNNExecBaseParams *exec_p
 
     ret = extract_lltask_from_task(task, tf_model->lltask_queue);
     if (ret != 0) {
-        av_freep(&task);
         av_log(ctx, AV_LOG_ERROR, "unable to extract last level task from task.\n");
         return ret;
     }
 
     request = ff_safe_queue_pop_front(tf_model->request_queue);
     if (!request) {
-        av_freep(&task);
         av_log(ctx, AV_LOG_ERROR, "unable to get infer request.\n");
         return AVERROR(EINVAL);
     }

@@ -28,7 +28,7 @@
 #include "config_components.h"
 
 #include "libavutil/mem.h"
-#include "mathops.h"
+#include "libavcodec/mathops.h"
 #include "tab.h"
 #include "pvq.h"
 
@@ -914,7 +914,7 @@ int av_cold ff_celt_pvq_init(CeltPVQ **pvq, int encode)
 
 #if CONFIG_OPUS_ENCODER
     s->pvq_search = ppp_pvq_search_c;
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_celt_pvq_init_x86(s);
 #endif
 #endif

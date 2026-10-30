@@ -23,6 +23,7 @@
 #include "config_components.h"
 
 #include "avformat.h"
+#include "avio_internal.h"
 #include "demux.h"
 #include "internal.h"
 #include "mux.h"
@@ -153,10 +154,8 @@ static int apm_read_header(AVFormatContext *s)
                                  (int64_t)par->sample_rate *
                                  par->bits_per_coded_sample;
 
-    if ((ret = avio_read(s->pb, buf, APM_FILE_EXTRADATA_SIZE)) < 0)
+    if ((ret = ffio_read_size(s->pb, buf, APM_FILE_EXTRADATA_SIZE)) < 0)
         return ret;
-    else if (ret != APM_FILE_EXTRADATA_SIZE)
-        return AVERROR(EIO);
 
     apm_parse_extradata(&extradata, buf);
 
@@ -252,7 +251,7 @@ static int apm_write_header(AVFormatContext *s)
     avio_wl16(s->pb, APM_TAG_CODEC);
     avio_wl16(s->pb, par->ch_layout.nb_channels);
     avio_wl32(s->pb, par->sample_rate);
-    /* This is the wrong calculation, but it's what the orginal files have. */
+    /* This is the wrong calculation, but it's what the original files have. */
     avio_wl32(s->pb, par->sample_rate * par->ch_layout.nb_channels * 2);
     avio_wl16(s->pb, par->block_align);
     avio_wl16(s->pb, par->bits_per_coded_sample);

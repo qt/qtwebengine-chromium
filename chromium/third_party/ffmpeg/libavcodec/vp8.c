@@ -26,6 +26,8 @@
 
 #include "config_components.h"
 
+#include "libavutil/attributes.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 
@@ -184,6 +186,9 @@ static enum AVPixelFormat get_pixel_format(VP8Context *s)
 #endif
 #if CONFIG_VP8_NVDEC_HWACCEL
         AV_PIX_FMT_CUDA,
+#endif
+#if CONFIG_VP8_NVDEC_CUARRAY_HWACCEL
+        AV_PIX_FMT_CUARRAY,
 #endif
         AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_NONE,
@@ -733,7 +738,7 @@ static int vp8_decode_frame_header(VP8Context *s, const uint8_t *buf, int buf_si
     int height = s->avctx->height;
 
     if (buf_size < 3) {
-        av_log(s->avctx, AV_LOG_ERROR, "Insufficent data (%d) for header\n", buf_size);
+        av_log(s->avctx, AV_LOG_ERROR, "Insufficient data (%d) for header\n", buf_size);
         return AVERROR_INVALIDDATA;
     }
 
@@ -1660,7 +1665,7 @@ int check_intra_pred4x4_mode_emuedge(int mode, int mb_x, int mb_y,
             *copy_buf = 1;
             return mode;
         }
-        /* fall-through */
+        av_fallthrough;
     case DIAG_DOWN_LEFT_PRED:
     case VERT_LEFT_PRED:
         return !mb_y ? (vp7 ? DC_128_PRED : DC_127_PRED) : mode;
@@ -1669,7 +1674,7 @@ int check_intra_pred4x4_mode_emuedge(int mode, int mb_x, int mb_y,
             *copy_buf = 1;
             return mode;
         }
-        /* fall-through */
+        av_fallthrough;
     case HOR_UP_PRED:
         return !mb_x ? (vp7 ? DC_128_PRED : DC_129_PRED) : mode;
     case TM_VP8_PRED:
@@ -1843,7 +1848,7 @@ void vp8_mc_luma(VP8Context *s, VP8ThreadData *td, uint8_t *dst,
         y_off += mv->y >> 2;
 
         // edge emulation
-        ff_progress_frame_await(ref, (3 + y_off + block_h + subpel_idx[2][my]) >> 4);
+        ff_progress_frame_await(ref, FFMAX((3 + y_off + block_h + subpel_idx[2][my]) >> 4, 0));
         src += y_off * linesize + x_off;
         if (x_off < mx_idx || x_off >= width  - block_w - subpel_idx[2][mx] ||
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
@@ -1901,7 +1906,7 @@ void vp8_mc_chroma(VP8Context *s, VP8ThreadData *td, uint8_t *dst1,
         // edge emulation
         src1 += y_off * linesize + x_off;
         src2 += y_off * linesize + x_off;
-        ff_progress_frame_await(ref, (3 + y_off + block_h + subpel_idx[2][my]) >> 3);
+        ff_progress_frame_await(ref, FFMAX((3 + y_off + block_h + subpel_idx[2][my]) >> 3, 0));
         if (x_off < mx_idx || x_off >= width  - block_w - subpel_idx[2][mx] ||
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
             s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
@@ -2416,7 +2421,7 @@ static av_always_inline int decode_mb_row_no_filter(AVCodecContext *avctx, void 
         mb = s->macroblocks_base + ((s->mb_width + 1) * (mb_y + 1) + 1);
     else {
         // Make sure the previous frame has read its segmentation map,
-        // if we re-use the same map.
+        // if we reuse the same map.
         if (prev_frame && s->segmentation.enabled &&
             !s->segmentation.update_map)
             ff_progress_frame_await(&prev_frame->tf, mb_y);
@@ -2522,18 +2527,12 @@ static av_always_inline void filter_mb_row(AVCodecContext *avctx, void *tdata,
     VP8ThreadData *td = &s->thread_data[threadnr];
     int mb_x, mb_y = atomic_load(&td->thread_mb_pos) >> 16, num_jobs = s->num_jobs;
     AVFrame *curframe = s->curframe->tf.f;
-    VP8Macroblock *mb;
     VP8ThreadData *prev_td, *next_td;
     uint8_t *dst[3] = {
         curframe->data[0] + 16 * mb_y * s->linesize,
         curframe->data[1] +  8 * mb_y * s->uvlinesize,
         curframe->data[2] +  8 * mb_y * s->uvlinesize
     };
-
-    if (s->mb_layout == 1)
-        mb = s->macroblocks_base + ((s->mb_width + 1) * (mb_y + 1) + 1);
-    else
-        mb = s->macroblocks + (s->mb_height - mb_y - 1) * 2;
 
     if (mb_y == 0)
         prev_td = td;
@@ -2544,7 +2543,7 @@ static av_always_inline void filter_mb_row(AVCodecContext *avctx, void *tdata,
     else
         next_td = &s->thread_data[(jobnr + 1) % num_jobs];
 
-    for (mb_x = 0; mb_x < s->mb_width; mb_x++, mb++) {
+    for (mb_x = 0; mb_x < s->mb_width; mb_x++) {
         const VP8FilterStrength *f = &td->filter_strength[mb_x];
         if (prev_td != td)
             check_thread_pos(td, prev_td,
@@ -2761,7 +2760,7 @@ int vp78_decode_frame(AVCodecContext *avctx, AVFrame *rframe, int *got_frame,
 
         if (s->mb_layout == 1) {
             // Make sure the previous frame has read its segmentation map,
-            // if we re-use the same map.
+            // if we reuse the same map.
             if (prev_frame && s->segmentation.enabled &&
                 !s->segmentation.update_map)
                 ff_progress_frame_await(&prev_frame->tf, 1);
@@ -2852,10 +2851,36 @@ static void vp8_filter_mb_row(AVCodecContext *avctx, void *tdata,
     filter_mb_row(avctx, tdata, jobnr, threadnr, 0);
 }
 
+static void vp8_warn_unsupported_webm_alpha(AVCodecContext *avctx,
+                                            const AVPacket *avpkt)
+{
+    VP8Context *s = avctx->priv_data;
+    const uint8_t *sd;
+    size_t sd_size;
+
+    sd = av_packet_get_side_data(avpkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+                                 &sd_size);
+    if (!sd || sd_size < 8 || AV_RB64(sd) != 1)
+        return;
+
+    av_log_once(avctx, AV_LOG_WARNING, AV_LOG_DEBUG,
+                &s->webm_alpha_warned,
+                "Ignoring unsupported WebM alpha channel side data; use the "
+                "libvpx decoder to decode it.\n");
+}
+
 int ff_vp8_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                         int *got_frame, AVPacket *avpkt)
 {
     return vp78_decode_frame(avctx, frame, got_frame, avpkt, IS_VP8);
+}
+
+static int vp8_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                            int *got_frame, AVPacket *avpkt)
+{
+    vp8_warn_unsupported_webm_alpha(avctx, avpkt);
+
+    return ff_vp8_decode_frame(avctx, frame, got_frame, avpkt);
 }
 
 av_cold int ff_vp8_decode_init(AVCodecContext *avctx)
@@ -2898,6 +2923,7 @@ static int vp8_decode_update_thread_context(AVCodecContext *dst,
     s->prob[0]      = s_src->prob[!s_src->update_probabilities];
     s->segmentation = s_src->segmentation;
     s->lf_delta     = s_src->lf_delta;
+    s->webm_alpha_warned = s_src->webm_alpha_warned;
     memcpy(s->sign_bias, s_src->sign_bias, sizeof(s->sign_bias));
 
     for (int i = 0; i < FF_ARRAY_ELEMS(s_src->frames); i++)
@@ -2969,7 +2995,7 @@ const FFCodec ff_vp8_decoder = {
     .priv_data_size        = sizeof(VP8Context),
     .init                  = ff_vp8_decode_init,
     .close                 = ff_vp8_decode_free,
-    FF_CODEC_DECODE_CB(ff_vp8_decode_frame),
+    FF_CODEC_DECODE_CB(vp8_decode_frame),
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS |
                              AV_CODEC_CAP_SLICE_THREADS,
     .caps_internal         = FF_CODEC_CAP_USES_PROGRESSFRAMES,
@@ -2981,6 +3007,9 @@ const FFCodec ff_vp8_decoder = {
 #endif
 #if CONFIG_VP8_NVDEC_HWACCEL
                                HWACCEL_NVDEC(vp8),
+#endif
+#if CONFIG_VP8_NVDEC_CUARRAY_HWACCEL
+                               HWACCEL_NVDEC_CUARRAY(vp8),
 #endif
                                NULL
                            },

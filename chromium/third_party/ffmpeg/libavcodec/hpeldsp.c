@@ -39,9 +39,9 @@
 static inline void OPNAME ## _no_rnd_pixels8_l2_8(uint8_t *dst,         \
                                                   const uint8_t *src1,  \
                                                   const uint8_t *src2,  \
-                                                  int dst_stride,       \
-                                                  int src_stride1,      \
-                                                  int src_stride2,      \
+                                                  ptrdiff_t dst_stride, \
+                                                  ptrdiff_t src_stride1,\
+                                                  ptrdiff_t src_stride2,\
                                                   int h)                \
 {                                                                       \
     int i;                                                              \
@@ -174,8 +174,8 @@ static inline void OPNAME ## _pixels4_xy2_8_c(uint8_t *block,           \
 {                                                                       \
     /* FIXME HIGH BIT DEPTH */                                          \
     int i;                                                              \
-    const uint32_t a = AV_RN32(pixels);                                 \
-    const uint32_t b = AV_RN32(pixels + 1);                             \
+    uint32_t a = AV_RN32(pixels);                                       \
+    uint32_t b = AV_RN32(pixels + 1);                                   \
     uint32_t l0 = (a & 0x03030303UL) +                                  \
                   (b & 0x03030303UL) +                                  \
                        0x02020202UL;                                    \
@@ -185,8 +185,8 @@ static inline void OPNAME ## _pixels4_xy2_8_c(uint8_t *block,           \
                                                                         \
     pixels += line_size;                                                \
     for (i = 0; i < h; i += 2) {                                        \
-        uint32_t a = AV_RN32(pixels);                                   \
-        uint32_t b = AV_RN32(pixels + 1);                               \
+        a = AV_RN32(pixels);                                            \
+        b = AV_RN32(pixels + 1);                                        \
         l1 = (a & 0x03030303UL) +                                       \
              (b & 0x03030303UL);                                        \
         h1 = ((a & 0xFCFCFCFCUL) >> 2) +                                \
@@ -219,8 +219,8 @@ static inline void OPNAME ## _pixels8_xy2_8_c(uint8_t *block,           \
                                                                         \
     for (j = 0; j < 2; j++) {                                           \
         int i;                                                          \
-        const uint32_t a = AV_RN32(pixels);                             \
-        const uint32_t b = AV_RN32(pixels + 1);                         \
+        uint32_t a = AV_RN32(pixels);                                   \
+        uint32_t b = AV_RN32(pixels + 1);                               \
         uint32_t l0 = (a & 0x03030303UL) +                              \
                       (b & 0x03030303UL) +                              \
                            0x02020202UL;                                \
@@ -230,8 +230,8 @@ static inline void OPNAME ## _pixels8_xy2_8_c(uint8_t *block,           \
                                                                         \
         pixels += line_size;                                            \
         for (i = 0; i < h; i += 2) {                                    \
-            uint32_t a = AV_RN32(pixels);                               \
-            uint32_t b = AV_RN32(pixels + 1);                           \
+            a = AV_RN32(pixels);                                        \
+            b = AV_RN32(pixels + 1);                                    \
             l1 = (a & 0x03030303UL) +                                   \
                  (b & 0x03030303UL);                                    \
             h1 = ((a & 0xFCFCFCFCUL) >> 2) +                            \
@@ -267,8 +267,8 @@ static inline void OPNAME ## _no_rnd_pixels8_xy2_8_c(uint8_t *block,    \
                                                                         \
     for (j = 0; j < 2; j++) {                                           \
         int i;                                                          \
-        const uint32_t a = AV_RN32(pixels);                             \
-        const uint32_t b = AV_RN32(pixels + 1);                         \
+        uint32_t a = AV_RN32(pixels);                                   \
+        uint32_t b = AV_RN32(pixels + 1);                               \
         uint32_t l0 = (a & 0x03030303UL) +                              \
                       (b & 0x03030303UL) +                              \
                            0x01010101UL;                                \
@@ -278,8 +278,8 @@ static inline void OPNAME ## _no_rnd_pixels8_xy2_8_c(uint8_t *block,    \
                                                                         \
         pixels += line_size;                                            \
         for (i = 0; i < h; i += 2) {                                    \
-            uint32_t a = AV_RN32(pixels);                               \
-            uint32_t b = AV_RN32(pixels + 1);                           \
+            a = AV_RN32(pixels);                                        \
+            b = AV_RN32(pixels + 1);                                    \
             l1 = (a & 0x03030303UL) +                                   \
                  (b & 0x03030303UL);                                    \
             h1 = ((a & 0xFCFCFCFCUL) >> 2) +                            \
@@ -360,7 +360,7 @@ av_cold void ff_hpeldsp_init(HpelDSPContext *c, int flags)
     ff_hpeldsp_init_arm(c, flags);
 #elif ARCH_PPC
     ff_hpeldsp_init_ppc(c, flags);
-#elif ARCH_X86
+#elif ARCH_X86 && HAVE_X86ASM
     ff_hpeldsp_init_x86(c, flags);
 #elif ARCH_MIPS
     ff_hpeldsp_init_mips(c, flags);

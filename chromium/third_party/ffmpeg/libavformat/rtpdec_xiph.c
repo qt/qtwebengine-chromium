@@ -187,7 +187,7 @@ static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
 
         if (fragmented == 3) {
             // end of xiph data packet
-            int ret = ff_rtp_finalize_packet(pkt, &data->fragment, st->index);
+            ret = ff_rtp_finalize_packet(pkt, &data->fragment, st->index);
             if (ret < 0) {
                 av_log(ctx, AV_LOG_ERROR,
                        "Error occurred when getting fragment buffer.");
@@ -234,7 +234,7 @@ parse_packed_headers(AVFormatContext *s,
 
     if (packed_headers_end - packed_headers < 9) {
         av_log(s, AV_LOG_ERROR,
-               "Invalid %"PTRDIFF_SPECIFIER" byte packed header.",
+               "Invalid %td byte packed header.",
                packed_headers_end - packed_headers);
         return AVERROR_INVALIDDATA;
     }
@@ -255,7 +255,7 @@ parse_packed_headers(AVFormatContext *s,
     if (packed_headers_end - packed_headers != length ||
         length1 > length || length2 > length - length1) {
         av_log(s, AV_LOG_ERROR,
-               "Bad packed header lengths (%d,%d,%"PTRDIFF_SPECIFIER",%u)\n", length1,
+               "Bad packed header lengths (%d,%d,%td,%u)\n", length1,
                length2, packed_headers_end - packed_headers, length);
         return AVERROR_INVALIDDATA;
     }

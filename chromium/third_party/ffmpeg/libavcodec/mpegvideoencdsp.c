@@ -28,6 +28,29 @@
 #include "mathops.h"
 #include "mpegvideoencdsp.h"
 
+static void denoise_dct_c(int16_t block[64], int dct_error_sum[64],
+                          const uint16_t dct_offset[64])
+{
+    for (int i = 0; i < 64; ++i) {
+        int level = block[i];
+
+        if (level) {
+            if (level > 0) {
+                dct_error_sum[i] += level;
+                level -= dct_offset[i];
+                if (level < 0)
+                    level = 0;
+            } else {
+                dct_error_sum[i] -= level;
+                level += dct_offset[i];
+                if (level > 0)
+                    level = 0;
+            }
+            block[i] = level;
+        }
+    }
+}
+
 static int try_8x8basis_c(const int16_t rem[64], const int16_t weight[64],
                           const int16_t basis[64], int scale)
 {
@@ -156,16 +179,16 @@ static void draw_edges_8_c(uint8_t *buf, ptrdiff_t wrap, int width, int height,
 
 /* This wrapper function only serves to convert the stride parameters
  * from ptrdiff_t to int for av_image_copy_plane(). */
-static void copy_plane_wrapper(uint8_t *dst, ptrdiff_t dst_wrap,
-                               const uint8_t *src, ptrdiff_t src_wrap,
+static void copy_plane_wrapper(uint8_t *restrict dst, ptrdiff_t dst_wrap,
+                               const uint8_t *restrict src, ptrdiff_t src_wrap,
                                int width, int height)
 {
     av_image_copy_plane(dst, dst_wrap, src, src_wrap, width, height);
 }
 
 /* 2x2 -> 1x1 */
-static void shrink22(uint8_t *dst, ptrdiff_t dst_wrap,
-                     const uint8_t *src, ptrdiff_t src_wrap,
+static void shrink22(uint8_t *restrict dst, ptrdiff_t dst_wrap,
+                     const uint8_t *restrict src, ptrdiff_t src_wrap,
                      int width, int height)
 {
     int w;
@@ -197,8 +220,8 @@ static void shrink22(uint8_t *dst, ptrdiff_t dst_wrap,
 }
 
 /* 4x4 -> 1x1 */
-static void shrink44(uint8_t *dst, ptrdiff_t dst_wrap,
-                     const uint8_t *src, ptrdiff_t src_wrap,
+static void shrink44(uint8_t *restrict dst, ptrdiff_t dst_wrap,
+                     const uint8_t *restrict src, ptrdiff_t src_wrap,
                      int width, int height)
 {
     int w;
@@ -228,8 +251,8 @@ static void shrink44(uint8_t *dst, ptrdiff_t dst_wrap,
 }
 
 /* 8x8 -> 1x1 */
-static void shrink88(uint8_t *dst, ptrdiff_t dst_wrap,
-                     const uint8_t *src, ptrdiff_t src_wrap,
+static void shrink88(uint8_t *restrict dst, ptrdiff_t dst_wrap,
+                     const uint8_t *restrict src, ptrdiff_t src_wrap,
                      int width, int height)
 {
     int w, i;
@@ -253,6 +276,8 @@ static void shrink88(uint8_t *dst, ptrdiff_t dst_wrap,
 av_cold void ff_mpegvideoencdsp_init(MpegvideoEncDSPContext *c,
                                      AVCodecContext *avctx)
 {
+    c->denoise_dct  = denoise_dct_c;
+
     c->try_8x8basis = try_8x8basis_c;
     c->add_8x8basis = add_8x8basis_c;
 

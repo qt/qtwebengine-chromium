@@ -133,6 +133,14 @@ static VVCFrame *alloc_frame(VVCContext *s, VVCFrameContext *fc)
         frame->sps = av_refstruct_ref_c(fc->ps.sps);
         frame->pps = av_refstruct_ref_c(fc->ps.pps);
 
+        // Add LCEVC SEI metadata here, as it's needed in get_buffer()
+        if (fc->sei.common.itut_t35.lcevc) {
+            ret = ff_frame_new_side_data_from_buf(s->avctx, frame->frame,
+                                                  AV_FRAME_DATA_LCEVC, &fc->sei.common.itut_t35.lcevc);
+            if (ret < 0)
+                goto fail;
+        }
+
         ret = ff_thread_get_buffer(s->avctx, frame->frame, AV_GET_BUFFER_FLAG_REF);
         if (ret < 0)
             return NULL;
@@ -372,6 +380,12 @@ static VVCFrame *find_ref_idx(VVCContext *s, VVCFrameContext *fc, int poc, uint8
 
     for (int i = 0; i < FF_ARRAY_ELEMS(fc->DPB); i++) {
         VVCFrame *ref = &fc->DPB[i];
+
+        // In the specification, the current frame is not considered part of
+        // the DPB at this stage, therefore we treat it as if it's not there.
+        if (ref == fc->ref)
+            continue;
+
         if (ref->frame->buf[0] && ref->sequence == s->seq_decode) {
             if ((ref->poc & mask) == poc)
                 return ref;
@@ -442,15 +456,18 @@ static int check_candidate_ref(const VVCFrame *frame, const VVCRefPic *refp)
 static int add_candidate_ref(VVCContext *s, VVCFrameContext *fc, RefPicList *list,
                              int poc, int ref_flag, uint8_t use_msb)
 {
-    VVCFrame *ref   = find_ref_idx(s, fc, poc, use_msb);
     VVCRefPic *refp = &list->refs[list->nb_refs];
+    VVCFrame *ref;
 
-    if (ref == fc->ref || list->nb_refs >= VVC_MAX_REF_ENTRIES)
+    if (use_msb && poc == fc->ref->poc || list->nb_refs >= VVC_MAX_REF_ENTRIES)
         return AVERROR_INVALIDDATA;
+
+    ref = find_ref_idx(s, fc, poc, use_msb);
 
     if (!IS_CVSS(s)) {
         const bool ref_corrupt = !ref || (ref->flags & VVC_FRAME_FLAG_CORRUPT);
-        const bool recovering  = s->no_output_before_recovery_flag && !GDR_IS_RECOVERED(s);
+        const bool recovering  = s->no_output_before_recovery_flag &&
+            (IS_RASL(s) || !GDR_IS_RECOVERED(s));
 
         if (ref_corrupt && !recovering) {
             if (!(s->avctx->flags & AV_CODEC_FLAG_OUTPUT_CORRUPT) &&

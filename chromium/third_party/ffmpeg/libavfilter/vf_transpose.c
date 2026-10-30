@@ -237,7 +237,7 @@ static int config_props_output(AVFilterLink *outlink)
         }
     }
 
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     for (int i = 0; i < 4; i++) {
         TransVtable *v = &s->vtables[i];
 
@@ -282,8 +282,8 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr,
         int inh     = AV_CEIL_RSHIFT(in->height, vsub);
         int outw    = AV_CEIL_RSHIFT(out->width,  hsub);
         int outh    = AV_CEIL_RSHIFT(out->height, vsub);
-        int start   = (outh *  jobnr   ) / nb_jobs;
-        int end     = (outh * (jobnr+1)) / nb_jobs;
+        int start   = ff_slice_pos(outh, jobnr, nb_jobs);
+        int end     = ff_slice_pos(outh, jobnr + 1, nb_jobs);
         uint8_t *dst, *src;
         int dstlinesize, srclinesize;
         int x, y;

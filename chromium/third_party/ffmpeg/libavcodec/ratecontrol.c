@@ -26,7 +26,6 @@
  */
 
 #include "libavutil/attributes.h"
-#include "libavutil/emms.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 
@@ -533,7 +532,6 @@ av_cold int ff_rate_control_init(MPVMainEncContext *const m)
         "qp2bits",
         NULL
     };
-    emms_c();
 
     if (!avctx->rc_max_available_vbv_use && avctx->rc_buffer_size) {
         if (avctx->rc_max_rate) {
@@ -630,6 +628,11 @@ av_cold int ff_rate_control_init(MPVMainEncContext *const m)
                        i, e);
                 return -1;
             }
+            if (rce->pict_type < AV_PICTURE_TYPE_I || rce->pict_type > AV_PICTURE_TYPE_B) {
+                av_log(avctx, AV_LOG_ERROR, "invalid picture type %d at line %d\n",
+                       rce->pict_type, i);
+                return -1;
+            }
 
             p = next;
         }
@@ -710,8 +713,6 @@ av_cold int ff_rate_control_init(MPVMainEncContext *const m)
 
 av_cold void ff_rate_control_uninit(RateControlContext *rcc)
 {
-    emms_c();
-
     // rc_eq is always managed via an AVOption and therefore not freed here.
     av_expr_free(rcc->rc_eq_eval);
     rcc->rc_eq_eval = NULL;
@@ -927,7 +928,6 @@ float ff_rate_estimate_qscale(MPVMainEncContext *const m, int dry_run)
     double rate_factor;
     int64_t var;
     const int pict_type = s->c.pict_type;
-    emms_c();
 
     get_qminmax(&qmin, &qmax, m, pict_type);
 

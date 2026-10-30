@@ -35,7 +35,7 @@ int ff_vaapi_vpp_query_formats(const AVFilterContext *avctx,
     };
     int err;
 
-    err = ff_set_common_formats_from_list2(avctx, cfg_in, cfg_out, pix_fmts);
+    err = ff_set_pixel_formats_from_list2(avctx, cfg_in, cfg_out, pix_fmts);
     if (err < 0)
         return err;
 
@@ -463,10 +463,6 @@ static int vaapi_vpp_colour_properties(AVFilterContext *avctx,
         .chroma_sample_location = input_frame->chroma_location,
     };
 
-    vaapi_vpp_fill_colour_properties(avctx, &input_props,
-                                     caps.input_color_standards,
-                                     caps.num_input_color_standards);
-
     output_props = (VAAPIColourProperties) {
         .colorspace = vaapi_vpp_frame_is_rgb(output_frame)
                 ? AVCOL_SPC_RGB : output_frame->colorspace,
@@ -475,6 +471,14 @@ static int vaapi_vpp_colour_properties(AVFilterContext *avctx,
         .color_range            = output_frame->color_range,
         .chroma_sample_location = output_frame->chroma_location,
     };
+
+    // Input without a chroma location is assumed to be sited like the output.
+    if (input_props.chroma_sample_location == AVCHROMA_LOC_UNSPECIFIED)
+        input_props.chroma_sample_location = output_props.chroma_sample_location;
+
+    vaapi_vpp_fill_colour_properties(avctx, &input_props,
+                                     caps.input_color_standards,
+                                     caps.num_input_color_standards);
     vaapi_vpp_fill_colour_properties(avctx, &output_props,
                                      caps.output_color_standards,
                                      caps.num_output_color_standards);

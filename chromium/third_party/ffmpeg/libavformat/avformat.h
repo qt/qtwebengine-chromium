@@ -357,11 +357,23 @@ struct AVFrame;
  * -  Several modifiers can be applied to the tag name. This is done by
  *    appending a dash character ('-') and the modifier name in the order
  *    they appear in the list below -- e.g. foo-eng-sort, not foo-sort-eng.
+ *    -  descriptor -- some formats (e.g. ID3v2 COMM and USLT frames) attach
+ *       a free-form descriptor to a tag to distinguish multiple instances.
+ *       The full key format is "<tag>-<descriptor>-<lang>", but either
+ *       component may be absent. When writing, the last dash-separated suffix
+ *       is interpreted as a language code if it is a valid ISO 639-2/B code;
+ *       otherwise the entire portion after the first dash is treated as a
+ *       descriptor. Examples: "comment-eng" (lang only),
+ *       "comment-MusicMatch_Bio-eng" (descriptor + lang),
+ *       "comment-foobar" (descriptor only, foobar is not a valid lang code).
  *    -  language -- a tag whose value is localized for a particular language
  *       is appended with the ISO 639-2/B 3-letter language code.
  *       For example: Author-ger=Michael, Author-eng=Mike
  *       The original/default language is in the unqualified "Author" tag.
  *       A demuxer should set a default if it sets any translated tag.
+ *       When a language is required by the format but not specified in the key
+ *       (e.g. ID3v2 COMM and USLT frames), the default is left to the
+ *       underlying implementation (ID3v2 defaults to "und").
  *    -  sorting  -- a modified version of a tag that should be used for
  *       sorting will have '-sort' appended. E.g. artist="The Beatles",
  *       artist-sort="Beatles, The".
@@ -381,11 +393,15 @@ struct AVFrame;
                  e.g. "Various Artists" for compilation albums.
  artist       -- main creator of the work
  comment      -- any additional description of the file.
+                 ID3v2 COMM frames: bare "comment" has no lang or descriptor;
+                 "comment-<lang>" for lang only; "comment-<descriptor>-<lang>"
+                 for both (see descriptor modifier above).
  composer     -- who composed the work, if different from artist.
  copyright    -- name of copyright holder.
  creation_time-- date when the file was created, preferably in ISO 8601.
  date         -- date when the work was created, preferably in ISO 8601.
  disc         -- number of a subset, e.g. disc in a multi-disc collection.
+ disc_subtitle-- title of a subset, e.g. disc subtitle in a multi-disc collection.
  encoder      -- name/settings of the software/hardware that produced the file.
  encoded_by   -- person/group who created the file.
  filename     -- original name of the file.
@@ -393,6 +409,10 @@ struct AVFrame;
  language     -- main language in which the work is performed, preferably
                  in ISO 639-2 format. Multiple languages can be specified by
                  separating them with commas.
+ lyrics       -- lyrics for the work.
+                 ID3v2 USLT frames: bare "lyrics" has no lang or descriptor;
+                 "lyrics-<lang>" for lang only; "lyrics-<descriptor>-<lang>"
+                 for both (see descriptor modifier above).
  performer    -- artist who performed the work, if different from artist.
                  E.g for "Also sprach Zarathustra", artist would be "Richard
                  Strauss" and performer "London Philharmonic Orchestra".
@@ -401,7 +421,9 @@ struct AVFrame;
  service_provider -- name of the service provider in broadcasting.
  title        -- name of the work.
  track        -- number of this work in the set, can be in form current/total.
- variant_bitrate -- the total bitrate of the bitrate variant that the current stream is part of
+ variant_bitrate -- the total bitrate of the bitrate variant that the program
+                    represents or that the current stream is part of. On
+                    streams it is only set when unambiguous.
  @endverbatim
  *
  * Look in the examples section for an application example how to use the Metadata API.
@@ -495,6 +517,7 @@ typedef struct AVProbeData {
                                         The user or muxer can override this through
                                         AVFormatContext.avoid_negative_ts
                                         */
+#define AVFMT_FIXED_FRAMESIZE 0x80000 /**< Format wants @ref AVCodecParameters.frame_size "fixed size audio frames." */
 
 #define AVFMT_SEEK_TO_PTS   0x4000000 /**< Seeking is based on PTS */
 
@@ -517,10 +540,10 @@ typedef struct AVOutputFormat {
     enum AVCodecID video_codec;    /**< default video codec */
     enum AVCodecID subtitle_codec; /**< default subtitle codec */
     /**
-     * can use flags: AVFMT_NOFILE, AVFMT_NEEDNUMBER,
+     * can use flags: AVFMT_NOFILE, AVFMT_NEEDNUMBER, AVFMT_EXPERIMENTAL,
      * AVFMT_GLOBALHEADER, AVFMT_NOTIMESTAMPS, AVFMT_VARIABLE_FPS,
      * AVFMT_NODIMENSIONS, AVFMT_NOSTREAMS,
-     * AVFMT_TS_NONSTRICT, AVFMT_TS_NEGATIVE
+     * AVFMT_TS_NONSTRICT, AVFMT_TS_NEGATIVE, AVFMT_FIXED_FRAMESIZE
      */
     int flags;
 
@@ -556,9 +579,10 @@ typedef struct AVInputFormat {
     const char *long_name;
 
     /**
-     * Can use flags: AVFMT_NOFILE, AVFMT_NEEDNUMBER, AVFMT_SHOW_IDS,
-     * AVFMT_NOTIMESTAMPS, AVFMT_GENERIC_INDEX, AVFMT_TS_DISCONT, AVFMT_NOBINSEARCH,
-     * AVFMT_NOGENSEARCH, AVFMT_NO_BYTE_SEEK, AVFMT_SEEK_TO_PTS.
+     * Can use flags: AVFMT_NOFILE, AVFMT_NEEDNUMBER, AVFMT_EXPERIMENTAL,
+     * AVFMT_SHOW_IDS, AVFMT_NOTIMESTAMPS, AVFMT_GENERIC_INDEX,
+     * AVFMT_TS_DISCONT, AVFMT_NOBINSEARCH, AVFMT_NOGENSEARCH,
+     * AVFMT_NO_BYTE_SEEK, AVFMT_SEEK_TO_PTS.
      */
     int flags;
 
@@ -926,7 +950,7 @@ typedef struct AVStream {
  * the sixth @ref AVStreamGroup.streams "stream" in the group is "512,512",
  * etc.
  *
- * The following is an example of a canvas with overlaping tiles:
+ * The following is an example of a canvas with overlapping tiles:
  *
  * +-----------+
  * |   %%%%%   |
@@ -1062,20 +1086,33 @@ typedef struct AVStreamGroupTileGrid {
 } AVStreamGroupTileGrid;
 
 /**
- * AVStreamGroupLCEVC is meant to define the relation between video streams
- * and a data stream containing LCEVC enhancement layer NALUs.
+ * AVStreamGroupLayeredVideo is meant to define the relation between a base
+ * layer video stream and a separate enhancement layer stream that together
+ * form a single layered video presentation (for example a video stream and a
+ * data stream containing LCEVC enhancement layer NALUs, Dolby Vision
+ * Profile 7 dual-layer encoding, or a base rendition accompanied by an
+ * ISO 21496-1 gain map).
  *
- * No more than one stream of @ref AVCodecParameters.codec_type "codec_type"
- * AVMEDIA_TYPE_DATA shall be present, and it must be of
- * @ref AVCodecParameters.codec_id "codec_id" AV_CODEC_ID_LCEVC.
+ * The enhancement layer stream is identified by @ref el_index.
  */
-typedef struct AVStreamGroupLCEVC {
+typedef struct AVStreamGroupLayeredVideo {
     const AVClass *av_class;
 
     /**
-     * Index of the LCEVC data stream in AVStreamGroup.
+     * Index of the enhancement layer stream in AVStreamGroup.
      */
-    unsigned int lcevc_index;
+#if FF_API_LCEVC_STRUCT
+    union {
+#endif
+        unsigned int el_index;
+#if FF_API_LCEVC_STRUCT
+        /**
+         * Alias for @ref el_index, kept for backward compatibility.
+         */
+        attribute_deprecated
+        unsigned int lcevc_index;
+    };
+#endif
     /**
      * Width of the final stream for presentation.
      */
@@ -1084,7 +1121,32 @@ typedef struct AVStreamGroupLCEVC {
      * Height of the final image for presentation.
      */
     int height;
-} AVStreamGroupLCEVC;
+} AVStreamGroupLayeredVideo;
+
+#if FF_API_LCEVC_STRUCT
+/**
+ * Alias kept for backward compatibility.
+ *
+ * AVStreamGroupLCEVC was renamed to @ref AVStreamGroupLayeredVideo.
+ */
+#define AVStreamGroupLCEVC AVStreamGroupLayeredVideo
+#endif
+
+/**
+ * AVStreamGroupTREF is meant to define the relation between video, audio,
+ * or subtitle streams, and a data stream containing metadata.
+ *
+ * No more than one stream of @ref AVCodecParameters.codec_type "codec_type"
+ * AVMEDIA_TYPE_DATA shall be present.
+ */
+typedef struct AVStreamGroupTREF {
+    const AVClass *av_class;
+
+    /**
+     * Index of the metadata stream in the AVStreamGroup.
+     */
+    unsigned int metadata_index;
+} AVStreamGroupTREF;
 
 enum AVStreamGroupParamsType {
     AV_STREAM_GROUP_PARAMS_NONE,
@@ -1092,6 +1154,9 @@ enum AVStreamGroupParamsType {
     AV_STREAM_GROUP_PARAMS_IAMF_MIX_PRESENTATION,
     AV_STREAM_GROUP_PARAMS_TILE_GRID,
     AV_STREAM_GROUP_PARAMS_LCEVC,
+    AV_STREAM_GROUP_PARAMS_TREF,
+    AV_STREAM_GROUP_PARAMS_DOLBY_VISION,
+    AV_STREAM_GROUP_PARAMS_GAIN_MAP,
 };
 
 struct AVIAMFAudioElement;
@@ -1133,7 +1198,15 @@ typedef struct AVStreamGroup {
         struct AVIAMFAudioElement *iamf_audio_element;
         struct AVIAMFMixPresentation *iamf_mix_presentation;
         struct AVStreamGroupTileGrid *tile_grid;
+        struct AVStreamGroupLayeredVideo *layered_video;
+#if FF_API_LCEVC_STRUCT
+        /**
+         * deprecated, use layered_video.
+         */
+        attribute_deprecated
         struct AVStreamGroupLCEVC *lcevc;
+#endif
+        struct AVStreamGroupTREF *tref;
     } params;
 
     /**
@@ -1424,7 +1497,7 @@ typedef struct AVFormatContext {
 #define AVFMT_FLAG_NONBLOCK     0x0004 ///< Do not block when reading packets from input.
 #define AVFMT_FLAG_IGNDTS       0x0008 ///< Ignore DTS on frames that contain both DTS & PTS
 #define AVFMT_FLAG_NOFILLIN     0x0010 ///< Do not infer any values from other values, just return what is stored in the container
-#define AVFMT_FLAG_NOPARSE      0x0020 ///< Do not use AVParsers, you also must set AVFMT_FLAG_NOFILLIN as the fillin code works on frames and no parsing -> no frames. Also seeking to frames can not work if parsing to find frame boundaries has been disabled
+#define AVFMT_FLAG_NOPARSE      0x0020 ///< Do not use AVParsers, you also must set AVFMT_FLAG_NOFILLIN as the filling code works on frames and no parsing -> no frames. Also seeking to frames can not work if parsing to find frame boundaries has been disabled
 #define AVFMT_FLAG_NOBUFFER     0x0040 ///< Do not buffer frames when possible
 #define AVFMT_FLAG_CUSTOM_IO    0x0080 ///< The caller has supplied a custom AVIOContext, don't avio_close() it.
 #define AVFMT_FLAG_DISCARD_CORRUPT  0x0100 ///< Discard frames marked corrupted
@@ -1440,10 +1513,25 @@ typedef struct AVFormatContext {
 #define AVFMT_FLAG_FAST_SEEK   0x80000 ///< Enable fast, but inaccurate seeks for some formats
 #define AVFMT_FLAG_AUTO_BSF   0x200000 ///< Add bitstream filters as requested by the muxer
 
+#if FF_API_OLD_ID3V2_COMMENT
+/**
+ * Also export ID3v2 COMM frames with a non-empty descriptor under the
+ * descriptor as metadata key, next to the "comment-<descriptor>-<lang>" key.
+ *
+ * Only applies to the ID3v2 tag read as container metadata, not to in-band
+ * or timed ID3 tags.
+ *
+ * @deprecated the bare descriptor key is ambiguous: a descriptor matching a
+ * known tag name (e.g. "album") is written back as that tag. Use the
+ * "comment-<descriptor>-<lang>" key instead.
+ */
+#define AVFMT_FLAG_LEGACY_ID3V2_COMM_KEYS 0x400000
+#endif
+
 // Chromium: Flag to experimentally disable H.264 parsing for demuxing.
 // TODO(crbug.com/355485812): Remove after M132 if H.264 parsers can be removed
 // from the build configurations.
-#define AVFMT_FLAG_NOH264PARSE 0x400000
+#define AVFMT_FLAG_NOH264PARSE 0x800000
 
     /**
      * Maximum number of bytes read from input in order to determine stream
@@ -1548,7 +1636,12 @@ typedef struct AVFormatContext {
      * Flags to enable debugging.
      */
     int debug;
-#define FF_FDEBUG_TS        0x0001
+#define AV_FDEBUG_TS        0x0001
+#define AV_FDEBUG_ID3V2     0x0002
+
+#if FF_API_FDEBUG_TS
+#define FF_FDEBUG_TS AV_FDEBUG_TS
+#endif
 
     /**
      * The maximum number of streams.
@@ -1679,7 +1772,7 @@ typedef struct AVFormatContext {
     int use_wallclock_as_timestamps;
 
     /**
-     * Skip duration calcuation in estimate_timings_from_pts.
+     * Skip duration calculation in estimate_timings_from_pts.
      * - encoding: unused
      * - decoding: set by user
      *
@@ -1782,7 +1875,7 @@ typedef struct AVFormatContext {
 
     /**
      * IO repositioned flag.
-     * This is set by avformat when the underlaying IO context read pointer
+     * This is set by avformat when the underlying IO context read pointer
      * is repositioned, for example when doing byte based seeking.
      * Demuxers can use the flag to detect such changes.
      */
@@ -1893,6 +1986,20 @@ typedef struct AVFormatContext {
      * @see skip_estimate_duration_from_pts
      */
     int64_t duration_probesize;
+
+    /**
+     * Name of this format context, only used for logging purposes.
+     */
+    char *name;
+
+    /**
+     * Depth recursion limit,
+     *
+     * The maximum recursion depth that a Demuxer can open a Demuxer within itself.
+     *
+     * - demuxing: Set by user
+     */
+    int recursion_limit;
 } AVFormatContext;
 
 /**
@@ -2074,6 +2181,37 @@ int avformat_stream_group_add_stream(AVStreamGroup *stg, AVStream *st);
 
 AVProgram *av_new_program(AVFormatContext *s, int id);
 
+
+#define AVFMT_PROGCOPY_MATCH_BY_ID          (1 << 0) ///< match streams using stream id
+#define AVFMT_PROGCOPY_MATCH_BY_INDEX       (1 << 1) ///< match streams using stream index
+#define AVFMT_PROGCOPY_OVERWRITE            (1 << 8) ///< overwrite pre-existing program having same ID
+
+/**
+ * Copy an AVProgram from one AVFormatContext to another.
+ *
+ * Streams in the destination context whose designated attribute match the attribute of
+ * the streams in the source AVProgram index are added to the stream index of the copied
+ * AVProgram. The attribute is designated using AVFMT_PROGCOPY_MATCH_ flags.
+ *
+ * If a new program has to be added, the function expects and requires any existing buffer
+ * holding the array of pointers to AVPrograms in the destination context to have its size
+ * be a power-of-two value. This should be the case if all earlier programs were created
+ * using av_new_program or this function.
+ *
+ * @param dst           pointer to the target muxer context
+ * @param src           pointer to the source muxer context
+ * @param progid        ID of the program to be copied
+ * @param flags         combination of flags which determine how streams are matched and
+ *                      whether pre-existing AVProgram in target is overwritten.
+ *                      If no match condition is set, streams will be matched by ids if
+ *                      all source stream ids are non-zero and unique, else by index.
+ *
+ * @return  >= 0 in case of success, Error EEXIST if target already has program with same ID
+ *          and overwrite flag isn't set, else a negative AVERROR code in case of other
+ *          failures.
+ */
+int av_program_copy(AVFormatContext *dst, const AVFormatContext *src, int progid, int flags);
+
 /**
  * @}
  */
@@ -2236,6 +2374,19 @@ AVProgram *av_find_program_from_stream(AVFormatContext *ic, AVProgram *last, int
 void av_program_add_stream_index(AVFormatContext *ac, int progid, unsigned int idx);
 
 /**
+ * Add the supplied index of a stream to the AVProgram with matching id.
+ *
+ * @param ac      the format context which contains the target AVProgram
+ * @param progid  the ID of the AVProgram whose stream index is to be updated
+ * @param idx     the index of the stream to be added
+ *
+ * @return >=0 upon successful addition or if index was already present,
+ *         AVERROR if no matching program is found or stream index is invalid or
+ *         the stream index array reallocation failed.
+ */
+int av_program_add_stream_index2(AVFormatContext *ac, int progid, unsigned int idx);
+
+/**
  * Find the "best" stream in the file.
  * The best stream is determined according to various heuristics as the most
  * likely to be what the user expects.
@@ -2372,6 +2523,101 @@ int av_read_play(AVFormatContext *s);
  * Use av_read_play() to resume it.
  */
 int av_read_pause(AVFormatContext *s);
+
+/**
+ * Command IDs that can be sent to the demuxer
+ *
+ * The following commands can be sent to a demuxer
+ * using ::avformat_send_command.
+ */
+enum AVFormatCommandID {
+    /**
+     * Send a RTSP `SET_PARAMETER` request to the server
+     *
+     * Sends an SET_PARAMETER RTSP command to the server,
+     * with a data payload of type ::AVRTSPCommandRequest,
+     * ownership of it and its data remains with the caller.
+     *
+     * A reply retrieved is of type ::AVRTSPResponse and it
+     * and its contents must be freed by the caller.
+     */
+    AVFORMAT_COMMAND_RTSP_SET_PARAMETER,
+};
+
+typedef struct AVRTSPCommandRequest {
+    /**
+     * Headers sent in the request to the server
+     */
+    AVDictionary *headers;
+
+    /**
+     * Body payload size
+     */
+    size_t body_len;
+
+    /**
+     * Body payload
+     */
+    char *body;
+} AVRTSPCommandRequest;
+
+typedef struct AVRTSPResponse {
+    /**
+     * Response status code from server
+     */
+    int status_code;
+
+    /**
+     * Reason phrase from the server, describing the
+     * status in a human-readable way.
+     */
+    char *reason;
+
+    /**
+     * Body payload size
+     */
+    size_t body_len;
+
+    /**
+     * Body payload
+     */
+    unsigned char *body;
+} AVRTSPResponse;
+
+/**
+ * Send a command to the demuxer
+ *
+ * Sends the specified command and (depending on the command)
+ * optionally a command-specific payload to the demuxer to handle.
+ *
+ * @param s     Format context, must be allocated with
+ *              ::avformat_alloc_context.
+ * @param id    Identifier of type ::AVFormatCommandID,
+ *              indicating the command to send.
+ * @param data  Command-specific data, allocated by the caller
+ *              and ownership remains with the caller.
+ *              For details what is expected here, consult the
+ *              documentation of the respective ::AVFormatCommandID.
+ */
+int avformat_send_command(AVFormatContext *s, enum AVFormatCommandID id, void *data);
+
+/**
+ * Receive a command reply from the demuxer
+ *
+ * Retrieves a reply for a previously sent command from the muxer.
+ *
+ * @param s         Format context, must be allocated with
+ *                  ::avformat_alloc_context.
+ * @param id        Identifier of type ::AVFormatCommandID,
+ *                  indicating the command for which to retrieve
+ *                  the reply.
+ * @param data_out  Pointee is set to the command reply, the actual
+ *                  type depends on the command. This is allocated by
+ *                  the muxer and must be freed with ::av_free.
+ *                  For details on the actual data set here, consult the
+ *                  documentation of the respective ::AVFormatCommandID.
+ */
+int avformat_receive_command_reply(AVFormatContext *s, enum AVFormatCommandID id, void **data_out);
 
 /**
  * Close an opened input AVFormatContext. Free it and all its contents
@@ -2577,7 +2823,7 @@ int av_write_uncoded_frame_query(AVFormatContext *s, int stream_index);
  * May only be called after a successful call to avformat_write_header.
  *
  * @param s media file handle
- * @return 0 if OK, AVERROR_xxx on error
+ * @return >=0 if OK, AVERROR_xxx on error
  */
 int av_write_trailer(AVFormatContext *s);
 
@@ -2828,7 +3074,8 @@ void av_dump_format(AVFormatContext *ic,
                     int is_output);
 
 
-#define AV_FRAME_FILENAME_FLAGS_MULTIPLE 1 ///< Allow multiple %d
+#define AV_FRAME_FILENAME_FLAGS_MULTIPLE          1  ///< Allow multiple %d
+#define AV_FRAME_FILENAME_FLAGS_IGNORE_TRUNCATION 2  ///< Ignore truncated output instead of returning an error
 
 /**
  * Return in 'buf' the path with '%d' replaced by a number.
@@ -2897,6 +3144,20 @@ int av_match_ext(const char *filename, const char *extensions);
  */
 int avformat_query_codec(const AVOutputFormat *ofmt, enum AVCodecID codec_id,
                          int std_compliance);
+
+struct AVBPrint;
+/**
+ * Make a RFC 4281/6381 like string describing a codec for MIME types.
+ *
+ * @param par pointer to an AVCodecParameters struct describing the codec
+ * @param frame_rate an AVRational for the frame rate, for deciding the
+ *                   right profile for video codecs. Pass an invalid
+ *                   AVRational (1/0) to indicate that it is unknown.
+ * @param out the AVBPrint to write the output to
+ * @return <0 on error
+ */
+int av_mime_codec_str(const AVCodecParameters *par,
+                      AVRational frame_rate, struct AVBPrint *out);
 
 /**
  * @defgroup riff_fourcc RIFF FourCCs
@@ -2979,32 +3240,6 @@ int avformat_match_stream_specifier(AVFormatContext *s, AVStream *st,
                                     const char *spec);
 
 int avformat_queue_attached_pictures(AVFormatContext *s);
-
-#if FF_API_INTERNAL_TIMING
-enum AVTimebaseSource {
-    AVFMT_TBCF_AUTO = -1,
-    AVFMT_TBCF_DECODER,
-    AVFMT_TBCF_DEMUXER,
-#if FF_API_R_FRAME_RATE
-    AVFMT_TBCF_R_FRAMERATE,
-#endif
-};
-
-/**
- * @deprecated do not call this function
- */
-attribute_deprecated
-int avformat_transfer_internal_stream_timing_info(const AVOutputFormat *ofmt,
-                                                  AVStream *ost, const AVStream *ist,
-                                                  enum AVTimebaseSource copy_tb);
-
-/**
- * @deprecated do not call this function
- */
-attribute_deprecated
-AVRational av_stream_get_codec_timebase(const AVStream *st);
-#endif
-
 
 /**
  * @}

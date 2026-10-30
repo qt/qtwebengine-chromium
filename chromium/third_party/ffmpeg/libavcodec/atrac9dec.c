@@ -80,7 +80,7 @@ typedef struct ATRAC9BlockData {
     int cpe_base_channel;
     int is_signs[30];
 
-    int reuseable;
+    int reusable;
 
 } ATRAC9BlockData;
 
@@ -285,7 +285,7 @@ static inline int read_scalefactors(ATRAC9Context *s, ATRAC9BlockData *b,
         for (int i = 1; i < b->band_ext_q_unit; i++) {
             int val = c->scalefactors[i - 1] + get_vlc2(gb, tab,
                                                         ATRAC9_SF_VLC_BITS, 1);
-            c->scalefactors[i] = val & ((1 << len) - 1);
+            c->scalefactors[i] = av_zero_extend(val, len);
         }
 
         for (int i = 0; i < b->band_ext_q_unit; i++)
@@ -339,7 +339,7 @@ static inline int read_scalefactors(ATRAC9Context *s, ATRAC9BlockData *b,
         for (int i = 1; i < unit_cnt; i++) {
             int val = c->scalefactors[i - 1] + get_vlc2(gb, tab,
                                                         ATRAC9_SF_VLC_BITS, 1);
-            c->scalefactors[i] = val & ((1 << len) - 1);
+            c->scalefactors[i] = av_zero_extend(val, len);
         }
 
         for (int i = 0; i < unit_cnt; i++)
@@ -689,7 +689,7 @@ static int atrac9_decode_block(ATRAC9Context *s, GetBitContext *gb,
     if (!reuse_params) {
         int stereo_band, ext_band;
         const int min_band_count = s->samplerate_idx > 7 ? 1 : 3;
-        b->reuseable = 0;
+        b->reusable = 0;
         b->band_count = get_bits(gb, 4) + min_band_count;
         b->q_unit_cnt = at9_tab_band_q_unit_map[b->band_count];
 
@@ -721,9 +721,9 @@ static int atrac9_decode_block(ATRAC9Context *s, GetBitContext *gb,
             }
             b->band_ext_q_unit = at9_tab_band_q_unit_map[ext_band];
         }
-        b->reuseable = 1;
+        b->reusable = 1;
     }
-    if (!b->reuseable) {
+    if (!b->reusable) {
         av_log(s->avctx, AV_LOG_ERROR, "invalid block reused!\n");
         return AVERROR_INVALIDDATA;
     }
@@ -817,10 +817,10 @@ static int atrac9_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     *got_frame_ptr = 1;
 
-    return avctx->block_align;
+    return frames < s->frame_count ? (get_bits_count(&gb) >> 3) : avctx->block_align;
 }
 
-static void atrac9_decode_flush(AVCodecContext *avctx)
+static av_cold void atrac9_decode_flush(AVCodecContext *avctx)
 {
     ATRAC9Context *s = avctx->priv_data;
 

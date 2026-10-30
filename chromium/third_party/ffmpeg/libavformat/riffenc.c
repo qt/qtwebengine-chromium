@@ -135,6 +135,14 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
         bytespersec = par->sample_rate * blkalign;
     } else if (par->codec_id == AV_CODEC_ID_G723_1) {
         bytespersec = 800;
+    } else if (par->codec_id == AV_CODEC_ID_ADPCM_MS ||
+               par->codec_id == AV_CODEC_ID_ADPCM_IMA_WAV) {
+        if (frame_size <= 0) {
+            av_log(s, AV_LOG_ERROR, "Invalid block_align or bps for %s\n",
+                   avcodec_get_name(par->codec_id));
+            return AVERROR(EINVAL);
+        }
+        bytespersec = (int64_t)par->sample_rate * blkalign / frame_size;
     } else {
         bytespersec = par->bit_rate / 8;
     }
@@ -200,6 +208,18 @@ int ff_put_wav_header(AVFormatContext *s, AVIOContext *pb,
                par->codec_tag != 0x0001 /* PCM */ ||
                riff_extradata - riff_extradata_start) {
         /* WAVEFORMATEX */
+        if (par->codec_tag == 0x1610) {
+            /* HEAACWAVEFORMAT */
+            avio_wl16(pb, par->extradata_size + 12); /* cbSize */
+            avio_wl16(pb, !par->extradata_size); // wPayloadType, 0 = Raw, 1 = ADTS
+            avio_wl16(pb, 0xFE); // wAudioProfileLevelIndication, 0xFE = unspecified
+            avio_wl16(pb, 0); // wStructType, 0 = AudioSpecificConfig()
+            avio_wl16(pb, 0); // wReserved1
+            avio_wl32(pb, 0); // dwReserved2
+        } else if (par->codec_tag == 0xFF && !par->extradata_size) {
+            av_log(s, AV_LOG_ERROR, "ADTS is only supported with codec tag 0x1610\n");
+            return AVERROR(EINVAL);
+        } else
         avio_wl16(pb, riff_extradata - riff_extradata_start); /* cbSize */
     } /* else PCMWAVEFORMAT */
     avio_write(pb, riff_extradata_start, riff_extradata - riff_extradata_start);

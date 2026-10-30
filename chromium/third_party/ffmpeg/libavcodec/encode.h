@@ -21,6 +21,7 @@
 #ifndef AVCODEC_ENCODE_H
 #define AVCODEC_ENCODE_H
 
+#include "libavutil/dict.h"
 #include "libavutil/frame.h"
 
 #include "avcodec.h"
@@ -79,10 +80,15 @@ int ff_encode_reordered_opaque(AVCodecContext *avctx,
 int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
                         AVFrame *frame, int *got_packet);
 
+int ff_encode_reconf_parse_dict(AVCodecContext *avctx, AVDictionary **dict);
+
 /**
  * Add a CPB properties side data to an encoding context.
  */
 AVCPBProperties *ff_encode_add_cpb_side_data(AVCodecContext *avctx);
+
+int ff_encode_add_stats_side_data(AVPacket *pkt, int quality, const int64_t error[],
+                                  int error_count, enum AVPictureType pict_type);
 
 /**
  * Rescale from sample rate to AVCodecContext.time_base.
@@ -94,6 +100,18 @@ static av_always_inline int64_t ff_samples_to_time_base(const AVCodecContext *av
         return AV_NOPTS_VALUE;
     return av_rescale_q(samples, (AVRational){ 1, avctx->sample_rate },
                         avctx->time_base);
+}
+
+/**
+ * Rescale from time base to AVCodecContext.sample_rate.
+ */
+static av_always_inline int64_t ff_samples_from_time_base(const AVCodecContext *avctx,
+                                                          int64_t duration)
+{
+    if (!duration)
+        return duration;
+    return av_rescale_q(duration, avctx->time_base,
+                        (AVRational){ 1, avctx->sample_rate });
 }
 
 /**

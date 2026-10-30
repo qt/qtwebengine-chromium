@@ -27,10 +27,18 @@
 #include <torch/script.h>
 
 extern "C" {
+#include "config.h"
 #include "dnn_io_proc.h"
 #include "dnn_backend_common.h"
 #include "libavutil/opt.h"
 #include "libavutil/mem.h"
+#include "libavutil/cpu.h"
+#if CONFIG_CUDA
+#include "libavutil/hwcontext.h"
+#include "libavutil/hwcontext_cuda.h"
+#include "libavutil/hwcontext_cuda_internal.h"
+#include "libavutil/pixfmt.h"
+#endif
 #include "queue.h"
 #include "safe_queue.h"
 }
@@ -51,7 +59,8 @@ typedef struct THInferRequest {
 
 typedef struct THRequestItem {
     THInferRequest *infer_request;
-    LastLevelTaskItem *lltask;
+    LastLevelTaskItem **lltasks;
+    uint32_t lltask_count;
     DNNAsyncExecModule exec_module;
 } THRequestItem;
 
@@ -107,7 +116,7 @@ static inline void destroy_request_item(THRequestItem **arg)
     item = *arg;
     th_free_request(item->infer_request);
     av_freep(&item->infer_request);
-    av_freep(&item->lltask);
+    av_freep(&item->lltasks);
     ff_dnn_async_module_cleanup(&item->exec_module);
     av_freep(arg);
 }
@@ -118,27 +127,25 @@ static void dnn_free_model_th(DNNModel **model)
     if (!model || !*model)
         return;
 
-    th_model = (THModel *) (*model);
-    while (ff_safe_queue_size(th_model->request_queue) != 0) {
-        THRequestItem *item = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
-        destroy_request_item(&item);
-    }
-    ff_safe_queue_destroy(th_model->request_queue);
+    th_model = (THModel *)(*model);
 
-    while (ff_queue_size(th_model->lltask_queue) != 0) {
-        LastLevelTaskItem *item = (LastLevelTaskItem *)ff_queue_pop_front(th_model->lltask_queue);
-        av_freep(&item);
+    if (th_model->request_queue) {
+        ff_dnn_wait_requests(th_model->request_queue, th_model->ctx->nireq);
+        while (ff_safe_queue_size(th_model->request_queue) != 0) {
+            THRequestItem *item = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
+            destroy_request_item(&item);
+        }
+        ff_safe_queue_destroy(th_model->request_queue);
     }
-    ff_queue_destroy(th_model->lltask_queue);
 
-    while (ff_queue_size(th_model->task_queue) != 0) {
-        TaskItem *item = (TaskItem *)ff_queue_pop_front(th_model->task_queue);
-        av_frame_free(&item->in_frame);
-        av_frame_free(&item->out_frame);
-        av_freep(&item);
-    }
-    ff_queue_destroy(th_model->task_queue);
-    delete th_model->jit_model;
+    if (th_model->lltask_queue)
+        ff_queue_destroy(th_model->lltask_queue);
+    if (th_model->task_queue)
+        ff_queue_destroy(th_model->task_queue);
+
+    if (th_model->jit_model)
+        delete th_model->jit_model;
+
     av_freep(&th_model);
     *model = NULL;
 }
@@ -160,6 +167,125 @@ static void deleter(void *arg)
     av_freep(&arg);
 }
 
+#if CONFIG_CUDA
+static void cuda_tensor_deleter(void *arg)
+{
+    /* No-op: GPU memory is owned by FFmpeg AVBuffer ref-counting.
+     * LibTorch must not free it. */
+    (void)arg;
+}
+
+/**
+ * Map a CUDA frame's GPU pointer directly into a LibTorch tensor,
+ * bypassing any host-device memory copy.
+ *
+ * The resulting tensor is a zero-copy view over the frame's VRAM
+ * buffer; the AVBuffer reference keeps the memory alive.
+ */
+static int fill_model_input_th_cuda(THModel *th_model, THRequestItem *request)
+{
+    THInferRequest *infer_request = request->infer_request;
+    LastLevelTaskItem *lltask = request->lltasks[0];
+    TaskItem *task = lltask->task;
+    AVFrame *frame = task->in_frame;
+
+
+    int height = frame->height;
+    int width  = frame->width;
+    /* linesize[0] is in bytes; for packed RGB/BGR it equals width * channels
+     * plus alignment padding. Use it as the stride so PyTorch respects the
+     * actual memory layout. */
+    int stride_bytes = frame->linesize[0];
+    int channels     = stride_bytes / width;   /* 3 for RGB24, 4 for RGB0/BGR0 */
+
+    /* Wrap the GPU device pointer in a LibTorch tensor (no copy). */
+    torch::Tensor byte_tensor = torch::from_blob(
+        frame->data[0],
+        {1, height, width, channels},
+        {(long)(height * stride_bytes), (long)stride_bytes,
+         (long)channels, 1L},
+        cuda_tensor_deleter,
+        torch::TensorOptions().dtype(torch::kUInt8).device(torch::kCUDA));
+
+    /* Convert NHWC uint8 → NCHW float32 in [0, 1] and keep on GPU. */
+    *infer_request->input_tensor =
+        byte_tensor.to(torch::kFloat32).div(255.0f)
+                   .permute({0, 3, 1, 2})   /* NHWC → NCHW */
+                   .slice(1, 0, 3)          /* drop alpha if present */
+                   .contiguous();
+
+    return 0;
+}
+
+static void fill_model_output_th_cuda(THModel *th_model, TaskItem *task, torch::Tensor &out_slice)
+{
+    AVHWFramesContext *hw_frames_ctx =
+        (AVHWFramesContext *)task->out_frame->hw_frames_ctx->data;
+
+    /* Determine channel layout from sw_format. */
+    int hw_channels = 3;
+    int rgb_start   = 0;
+    bool needs_flip = false;
+    switch (hw_frames_ctx->sw_format) {
+    case AV_PIX_FMT_RGB24:
+        hw_channels = 3; rgb_start = 0; needs_flip = false;
+        break;
+    case AV_PIX_FMT_BGR24:
+        hw_channels = 3; rgb_start = 0; needs_flip = true;
+        break;
+    case AV_PIX_FMT_RGB0:
+        hw_channels = 4; rgb_start = 0; needs_flip = false;
+        break;
+    case AV_PIX_FMT_BGR0:
+        hw_channels = 4; rgb_start = 0; needs_flip = true;
+        break;
+    case AV_PIX_FMT_0RGB:
+        hw_channels = 4; rgb_start = 1; needs_flip = false;
+        break;
+    case AV_PIX_FMT_0BGR:
+        hw_channels = 4; rgb_start = 1; needs_flip = true;
+        break;
+    default:
+        av_log(th_model->ctx, AV_LOG_ERROR,
+               "Unsupported sw_format for CUDA zero-copy output\n");
+        hw_channels = 3;
+        break;
+    }
+
+    /* Convert model output: NCHW float [0,1] → NHWC uint8 [0,255]. */
+    torch::Tensor out_u8 =
+        out_slice.mul(255.0f)
+                 .permute({0, 2, 3, 1})
+                 .to(torch::kUInt8)
+                 .contiguous();
+    if (needs_flip)
+        out_u8 = out_u8.flip({3});
+
+    int out_h = (int)out_u8.size(1);
+    int out_w = (int)out_u8.size(2);
+
+    /* Map the output frame's VRAM into a tensor with correct
+     * stride (linesize includes alignment padding). */
+    torch::Tensor out_frame_tensor = torch::from_blob(
+        task->out_frame->data[0],
+        {1, out_h, out_w, hw_channels},
+        {(long)(out_h * task->out_frame->linesize[0]),
+         (long)task->out_frame->linesize[0],
+         (long)hw_channels, 1L},
+        cuda_tensor_deleter,
+        torch::TensorOptions()
+            .dtype(torch::kUInt8)
+            .device(torch::kCUDA));
+
+    /* Device-to-Device copy into the correct channel slice. */
+    out_frame_tensor.slice(3, rgb_start, rgb_start + 3)
+                    .copy_(out_u8);
+
+    /* Flush the CUDA stream before the encoder reads the frame. */
+    torch::cuda::synchronize();
+}
+#endif /* CONFIG_CUDA */
+
 static int fill_model_input_th(THModel *th_model, THRequestItem *request)
 {
     LastLevelTaskItem *lltask = NULL;
@@ -168,53 +294,75 @@ static int fill_model_input_th(THModel *th_model, THRequestItem *request)
     DNNData input = { 0 };
     DnnContext *ctx = th_model->ctx;
     int ret, width_idx, height_idx, channel_idx;
+    int batch_size = ctx->batch_size;
+    float *batch_data = NULL;
+    int frame_size = 0;
 
-    lltask = (LastLevelTaskItem *)ff_queue_pop_front(th_model->lltask_queue);
-    if (!lltask) {
-        ret = AVERROR(EINVAL);
-        goto err;
-    }
-    request->lltask = lltask;
-    task = lltask->task;
     infer_request = request->infer_request;
 
     ret = get_input_th(&th_model->model, &input, NULL);
-    if ( ret != 0) {
+    if (ret != 0) {
         goto err;
     }
     width_idx = dnn_get_width_idx_by_layout(input.layout);
     height_idx = dnn_get_height_idx_by_layout(input.layout);
     channel_idx = dnn_get_channel_idx_by_layout(input.layout);
+
+    lltask = (LastLevelTaskItem *)ff_queue_peek_front(th_model->lltask_queue);
+    if (!lltask) {
+        ret = AVERROR(EINVAL);
+        goto err;
+    }
+    task = lltask->task;
     input.dims[height_idx] = task->in_frame->height;
     input.dims[width_idx] = task->in_frame->width;
-    input.data = av_malloc(input.dims[height_idx] * input.dims[width_idx] *
-                           input.dims[channel_idx] * sizeof(float));
-    if (!input.data)
-        return AVERROR(ENOMEM);
+
+    frame_size = input.dims[height_idx] * input.dims[width_idx] * input.dims[channel_idx];
+    batch_data = (float *)av_malloc(batch_size * frame_size * sizeof(float));
+    if (!batch_data) {
+        ret = AVERROR(ENOMEM);
+        goto err;
+    }
+
+    for (int i = 0; i < batch_size; i++) {
+        lltask = (LastLevelTaskItem *)ff_queue_pop_front(th_model->lltask_queue);
+        if (!lltask)
+            break;
+
+        request->lltasks[i] = lltask;
+        request->lltask_count = i + 1;
+        task = lltask->task;
+
+        input.data = batch_data + i * frame_size;
+
+        switch (th_model->model.func_type) {
+        case DFT_PROCESS_FRAME:
+            input.scale = 255;
+            if (task->do_ioproc) {
+                if (th_model->model.frame_pre_proc != NULL) {
+                    th_model->model.frame_pre_proc(task->in_frame, &input, th_model->model.filter_ctx);
+                } else {
+                    ff_proc_from_frame_to_dnn(task->in_frame, &input, ctx);
+                }
+            }
+            break;
+        default:
+            avpriv_report_missing_feature(NULL, "model function type %d", th_model->model.func_type);
+            break;
+        }
+    }
+
     infer_request->input_tensor = new torch::Tensor();
     infer_request->output = new torch::Tensor();
-
-    switch (th_model->model.func_type) {
-    case DFT_PROCESS_FRAME:
-        input.scale = 255;
-        if (task->do_ioproc) {
-            if (th_model->model.frame_pre_proc != NULL) {
-                th_model->model.frame_pre_proc(task->in_frame, &input, th_model->model.filter_ctx);
-            } else {
-                ff_proc_from_frame_to_dnn(task->in_frame, &input, ctx);
-            }
-        }
-        break;
-    default:
-        avpriv_report_missing_feature(NULL, "model function type %d", th_model->model.func_type);
-        break;
-    }
-    *infer_request->input_tensor = torch::from_blob(input.data,
-        {1, input.dims[channel_idx], input.dims[height_idx], input.dims[width_idx]},
+    *infer_request->input_tensor = torch::from_blob(batch_data,
+        {request->lltask_count, input.dims[channel_idx], input.dims[height_idx], input.dims[width_idx]},
         deleter, torch::kFloat32);
+
     return 0;
 
 err:
+    if (batch_data)
+        av_freep(&batch_data);
     th_free_request(infer_request);
     return ret;
 }
@@ -235,7 +383,7 @@ static int th_start_inference(void *args)
         return AVERROR(EINVAL);
     }
     infer_request = request->infer_request;
-    lltask = request->lltask;
+    lltask = request->lltasks[0];
     task = lltask->task;
     th_model = (THModel *)task->model;
     ctx = th_model->ctx;
@@ -250,7 +398,8 @@ static int th_start_inference(void *args)
         return DNN_GENERIC_ERROR;
     }
     // Transfer tensor to the same device as model
-    c10::Device device = (*th_model->jit_model->parameters().begin()).device();
+    const char *device_name = ctx->device ? ctx->device : "cpu";
+    c10::Device device(device_name);
     if (infer_request->input_tensor->device() != device)
         *infer_request->input_tensor = infer_request->input_tensor->to(device);
     inputs.push_back(*infer_request->input_tensor);
@@ -262,54 +411,75 @@ static int th_start_inference(void *args)
 
 static void infer_completion_callback(void *args) {
     THRequestItem *request = (THRequestItem*)args;
-    LastLevelTaskItem *lltask = request->lltask;
-    TaskItem *task = lltask->task;
-    DNNData outputs = { 0 };
     THInferRequest *infer_request = request->infer_request;
-    THModel *th_model = (THModel *)task->model;
+    LastLevelTaskItem *lltask = request->lltasks[0];
+    THModel *th_model = (THModel *)lltask->task->model;
     torch::Tensor *output = infer_request->output;
+    DNNData outputs = { 0 };
 
-    c10::IntArrayRef sizes = output->sizes();
-    outputs.order = DCO_RGB;
-    outputs.layout = DL_NCHW;
-    outputs.dt = DNN_FLOAT;
-    if (sizes.size() == 4) {
-        // 4 dimensions: [batch_size, channel, height, width]
-        // this format of data is normally used for video frame SR
-        outputs.dims[0] = sizes.at(0); // N
-        outputs.dims[1] = sizes.at(1); // C
-        outputs.dims[2] = sizes.at(2); // H
-        outputs.dims[3] = sizes.at(3); // W
-    } else {
-        avpriv_report_missing_feature(th_model->ctx, "Support of this kind of model");
-        goto err;
-    }
+    auto slices = torch::split(*output, /*split_size=*/1, /*dim=*/0);
+    for (uint32_t i = 0; i < request->lltask_count; i++) {
+        lltask = request->lltasks[i];
+        TaskItem *task = lltask->task;
+        torch::Tensor out_slice = slices[i];
+        c10::IntArrayRef sizes = out_slice.sizes();
 
-    switch (th_model->model.func_type) {
-    case DFT_PROCESS_FRAME:
-        if (task->do_ioproc) {
-            // Post process can only deal with CPU memory.
-            if (output->device() != torch::kCPU)
-                *output = output->to(torch::kCPU);
-            outputs.scale = 255;
-            outputs.data = output->data_ptr();
-            if (th_model->model.frame_post_proc != NULL) {
-                th_model->model.frame_post_proc(task->out_frame, &outputs, th_model->model.filter_ctx);
-            } else {
-                ff_proc_from_dnn_to_frame(task->out_frame, &outputs, th_model->ctx);
-            }
+        outputs.order = DCO_RGB;
+        outputs.layout = DL_NCHW;
+        outputs.dt = DNN_FLOAT;
+
+        if (sizes.size() == 4) {
+            // 4 dimensions: [batch_size, channel, height, width]
+            // this format of data is normally used for video frame SR
+            outputs.dims[0] = sizes.at(0); // N
+            outputs.dims[1] = sizes.at(1); // C
+            outputs.dims[2] = sizes.at(2); // H
+            outputs.dims[3] = sizes.at(3); // W
         } else {
-            task->out_frame->width = outputs.dims[dnn_get_width_idx_by_layout(outputs.layout)];
-            task->out_frame->height = outputs.dims[dnn_get_height_idx_by_layout(outputs.layout)];
+            avpriv_report_missing_feature(th_model->ctx, "Support of this kind of model");
+            goto err;
         }
-        break;
-    default:
-        avpriv_report_missing_feature(th_model->ctx, "model function type %d", th_model->model.func_type);
-        goto err;
+
+        switch (th_model->model.func_type) {
+        case DFT_PROCESS_FRAME:
+            if (task->do_ioproc) {
+#if CONFIG_CUDA
+                if (task->out_frame->format == AV_PIX_FMT_CUDA) {
+                    fill_model_output_th_cuda(th_model, task, out_slice);
+                } else {
+#endif
+                    if (out_slice.device() != torch::kCPU)
+                        out_slice = out_slice.to(torch::kCPU);
+                    outputs.scale = 255;
+                    outputs.data = out_slice.data_ptr();
+                    if (th_model->model.frame_post_proc != NULL) {
+                        th_model->model.frame_post_proc(task->out_frame, &outputs,
+                                                        th_model->model.filter_ctx);
+                    } else {
+                        ff_proc_from_dnn_to_frame(task->out_frame, &outputs,
+                                                  th_model->ctx);
+                    }
+#if CONFIG_CUDA
+                }
+#endif
+            } else {
+                task->out_frame->width = outputs.dims[dnn_get_width_idx_by_layout(outputs.layout)];
+                task->out_frame->height = outputs.dims[dnn_get_height_idx_by_layout(outputs.layout)];
+            }
+            break;
+        default:
+            avpriv_report_missing_feature(th_model->ctx, "model function type %d", th_model->model.func_type);
+            goto err;
+        }
+        task->inference_done++;
     }
-    task->inference_done++;
-    av_freep(&request->lltask);
+
 err:
+    for (uint32_t i = 0; i < request->lltask_count; i++) {
+        av_freep(&request->lltasks[i]);
+    }
+    request->lltask_count = 0;
+
     th_free_request(infer_request);
 
     if (ff_safe_queue_push_back(th_model->request_queue, request) < 0) {
@@ -339,13 +509,27 @@ static int execute_model_th(THRequestItem *request, Queue *lltask_queue)
     task = lltask->task;
     th_model = (THModel *)task->model;
 
+#if CONFIG_CUDA
+    if (task->in_frame->format == AV_PIX_FMT_CUDA) {
+        ret = fill_model_input_th_cuda(th_model, request);
+    } else {
+        ret = fill_model_input_th(th_model, request);
+    }
+#else
     ret = fill_model_input_th(th_model, request);
-    if ( ret != 0) {
+#endif
+    if (ret != 0) {
         goto err;
     }
+
     if (task->async) {
-        avpriv_report_missing_feature(th_model->ctx, "LibTorch async");
+        ret = ff_dnn_start_inference_async(th_model->ctx, &request->exec_module);
+        if (ret != 0) {
+            goto err;
+        }
+        return 0;
     } else {
+        // Synchronous execution path
         ret = th_start_inference((void *)(request));
         if (ret != 0) {
             goto err;
@@ -435,7 +619,18 @@ static DNNModel *dnn_load_model_th(DnnContext *ctx, DNNFunctionType func_type, A
             av_log(ctx, AV_LOG_ERROR, "No XPU device found\n");
             goto fail;
         }
+#if TORCH_VERSION_MAJOR > 2 || (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 6)
+        at::detail::getXPUHooks().init();
+#else
         at::detail::getXPUHooks().initXPU();
+#endif
+    } else if (device.is_cuda()) {
+        // CUDA device - works for both NVIDIA CUDA and AMD ROCm (which uses CUDA-compatible API)
+        if (!torch::cuda::is_available()) {
+            av_log(ctx, AV_LOG_ERROR, "CUDA/ROCm is not available\n");
+            goto fail;
+        }
+        av_log(ctx, AV_LOG_INFO, "Using CUDA/ROCm device: %s\n", device_name);
     } else if (!device.is_cpu()) {
         av_log(ctx, AV_LOG_ERROR, "Not supported device:\"%s\"\n", device_name);
         goto fail;
@@ -450,39 +645,42 @@ static DNNModel *dnn_load_model_th(DnnContext *ctx, DNNFunctionType func_type, A
         goto fail;
     }
 
+    if (ctx->nireq <= 0) {
+        ctx->nireq = av_cpu_count() / 2 + 1;
+    }
+
     th_model->request_queue = ff_safe_queue_create();
     if (!th_model->request_queue) {
         goto fail;
     }
 
-    item = (THRequestItem *)av_mallocz(sizeof(THRequestItem));
-    if (!item) {
-        goto fail;
-    }
-    item->lltask = NULL;
-    item->infer_request = th_create_inference_request();
-    if (!item->infer_request) {
-        av_log(NULL, AV_LOG_ERROR, "Failed to allocate memory for Torch inference request\n");
-        goto fail;
-    }
-    item->exec_module.start_inference = &th_start_inference;
-    item->exec_module.callback = &infer_completion_callback;
-    item->exec_module.args = item;
+    for (int i = 0; i < ctx->nireq; i++) {
+        item = (THRequestItem *)av_mallocz(sizeof(THRequestItem));
+        if (!item) {
+            goto fail;
+        }
+        item->infer_request = th_create_inference_request();
+        if (!item->infer_request) {
+            goto fail;
+        }
+        item->lltasks = (LastLevelTaskItem **)av_malloc_array(ctx->batch_size, sizeof(*item->lltasks));
+        if (!item->lltasks) {
+            goto fail;
+        }
+        item->lltask_count = 0;
 
-    if (ff_safe_queue_push_back(th_model->request_queue, item) < 0) {
-        goto fail;
+        item->exec_module.start_inference = &th_start_inference;
+        item->exec_module.callback = &infer_completion_callback;
+        item->exec_module.args = item;
+
+        if (ff_safe_queue_push_back(th_model->request_queue, item) < 0) {
+            goto fail;
+        }
+        item = NULL;
     }
-    item = NULL;
 
     th_model->task_queue = ff_queue_create();
-    if (!th_model->task_queue) {
-        goto fail;
-    }
-
     th_model->lltask_queue = ff_queue_create();
-    if (!th_model->lltask_queue) {
-        goto fail;
-    }
 
     model->get_input = &get_input_th;
     model->get_output = &get_output_th;
@@ -493,7 +691,6 @@ static DNNModel *dnn_load_model_th(DnnContext *ctx, DNNFunctionType func_type, A
 fail:
     if (item) {
         destroy_request_item(&item);
-        av_freep(&item);
     }
     dnn_free_model_th(&model);
     return NULL;
@@ -519,7 +716,7 @@ static int dnn_execute_model_th(const DNNModel *model, DNNExecBaseParams *exec_p
         return AVERROR(ENOMEM);
     }
 
-    ret = ff_dnn_fill_task(task, exec_params, th_model, 0, 1);
+    ret = ff_dnn_fill_task(task, exec_params, th_model, ctx->async, 1);
     if (ret != 0) {
         av_freep(&task);
         av_log(ctx, AV_LOG_ERROR, "unable to fill task.\n");
@@ -539,13 +736,20 @@ static int dnn_execute_model_th(const DNNModel *model, DNNExecBaseParams *exec_p
         return ret;
     }
 
-    request = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
-    if (!request) {
-        av_log(ctx, AV_LOG_ERROR, "unable to get infer request.\n");
-        return AVERROR(EINVAL);
+    while (ff_queue_size(th_model->lltask_queue) >= ctx->batch_size) {
+        request = (THRequestItem *)ff_safe_queue_pop_front(th_model->request_queue);
+        if (!request) {
+            av_log(ctx, AV_LOG_ERROR, "unable to get infer request.\n");
+            return AVERROR(EINVAL);
+        }
+
+        ret = execute_model_th(request, th_model->lltask_queue);
+        if (ret != 0) {
+            return ret;
+        }
     }
 
-    return execute_model_th(request, th_model->lltask_queue);
+    return 0;
 }
 
 static DNNAsyncStatusType dnn_get_result_th(const DNNModel *model, AVFrame **in, AVFrame **out)

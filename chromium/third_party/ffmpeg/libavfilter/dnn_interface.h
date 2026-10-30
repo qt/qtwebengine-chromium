@@ -35,7 +35,8 @@
 typedef enum {
     DNN_TF = 1,
     DNN_OV = 1 << 1,
-    DNN_TH = 1 << 2
+    DNN_TH = 1 << 2,
+    DNN_ONNX = 1 << 3
 } DNNBackendType;
 
 typedef enum {DNN_FLOAT = 1, DNN_UINT8 = 4} DNNDataType;
@@ -126,7 +127,6 @@ typedef struct TFOptions{
 typedef struct OVOptions {
     const AVClass *clazz;
 
-    int batch_size;
     int input_resizable;
     DNNLayout layout;
     float scale;
@@ -137,6 +137,13 @@ typedef struct THOptions {
     const AVClass *clazz;
     int optimize;
 } THOptions;
+
+#if CONFIG_LIBONNXRUNTIME
+typedef struct ONNXOptions {
+    const AVClass *clazz;
+    int num_threads;
+} ONNXOptions;
+#endif
 
 typedef struct DNNModule DNNModule;
 
@@ -157,7 +164,9 @@ typedef struct DnnContext {
     const DNNModule *dnn_module;
 
     int nireq;
+    int batch_size;
     char *device;
+    int device_id;
 
 #if CONFIG_LIBTENSORFLOW
     TFOptions tf_option;
@@ -168,6 +177,9 @@ typedef struct DnnContext {
 #endif
 #if CONFIG_LIBTORCH
     THOptions torch_option;
+#endif
+#if CONFIG_LIBONNXRUNTIME
+    ONNXOptions onnx_option;
 #endif
 } DnnContext;
 

@@ -249,7 +249,7 @@ static void match_video_size(AVFormatContext *avctx)
                                   ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS,
                                   &available_configs);
 
-    for (int i = 0; i < available_configs.count; i++) {
+    for (int i = 0; i < available_configs.count / 4; i++) {
         int32_t input = available_configs.data.i32[i * 4 + 3];
         int32_t format = available_configs.data.i32[i * 4 + 0];
 
@@ -296,7 +296,7 @@ static void match_framerate(AVFormatContext *avctx)
                                   ACAMERA_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
                                   &available_framerates);
 
-    for (int i = 0; i < available_framerates.count; i++) {
+    for (int i = 0; i < available_framerates.count / 2; i++) {
         int32_t min = available_framerates.data.i32[i * 2 + 0];
         int32_t max = available_framerates.data.i32[i * 2 + 1];
 
@@ -421,7 +421,7 @@ static void image_available(void *context, AImageReader *reader)
         }
     }
 
-    pkt_buffer_size = av_image_get_buffer_size(ctx->image_format, ctx->width, ctx->height, 32);
+    pkt_buffer_size = av_image_get_buffer_size(ctx->image_format, ctx->width, ctx->height, 1);
     AImage_getTimestamp(image, &image_timestamp);
 
     AImage_getPlaneRowStride(image, 0, &image_linestrides[0]);
@@ -460,7 +460,7 @@ static void image_available(void *context, AImageReader *reader)
     av_image_copy_to_buffer(pkt.data, pkt_buffer_size,
                             (const uint8_t * const *) image_plane_data,
                             image_linestrides, ctx->image_format,
-                            ctx->width, ctx->height, 32);
+                            ctx->width, ctx->height, 1);
 
     ret = av_thread_message_queue_send(ctx->input_queue, &pkt, AV_THREAD_MESSAGE_NONBLOCK);
 

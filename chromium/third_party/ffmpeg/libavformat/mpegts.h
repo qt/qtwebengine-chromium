@@ -73,6 +73,7 @@
 #define M2TS_PMT_PID                      0x0100
 #define M2TS_PCR_PID                      0x1001
 #define M2TS_VIDEO_PID                    0x1011
+#define M2TS_VIDEO_EL_PID                 0x1015
 #define M2TS_AUDIO_START_PID              0x1100
 #define M2TS_PGSSUB_START_PID             0x1200
 #define M2TS_TEXTSUB_PID                  0x1800
@@ -90,7 +91,7 @@
 #define ONIT_TID        0x41 /* Network Information section - other network */
 #define SDT_TID         0x42 /* Service Description section - actual TS */
 /* TID from 0x43 to 0x45 are reserved for future use */
-#define OSDT_TID        0x46 /* Service Descrition section - other TS */
+#define OSDT_TID        0x46 /* Service Description section - other TS */
 /* TID from 0x47 to 0x49 are reserved for future use */
 #define BAT_TID         0x4A /* Bouquet Association section */
 #define UNT_TID         0x4B /* Update Notification Table section */
@@ -106,7 +107,7 @@
 #define RST_TID         0x71 /* Running Status section */
 #define ST_TID          0x72 /* Stuffing section */
 #define TOT_TID         0x73 /* Time Offset section */
-#define AIT_TID         0x74 /* Application Inforamtion section */
+#define AIT_TID         0x74 /* Application Information section */
 #define CT_TID          0x75 /* Container section */
 #define RCT_TID         0x76 /* Related Content section */
 #define CIT_TID         0x77 /* Content Identifier section */
@@ -144,7 +145,9 @@
 #define STREAM_TYPE_VIDEO_MVC       0x20
 #define STREAM_TYPE_VIDEO_JPEG2000  0x21
 #define STREAM_TYPE_VIDEO_HEVC      0x24
+#define STREAM_TYPE_VIDEO_JPEGXS    0x32
 #define STREAM_TYPE_VIDEO_VVC       0x33
+#define STREAM_TYPE_VIDEO_LCEVC     0x36
 #define STREAM_TYPE_VIDEO_CAVS      0x42
 #define STREAM_TYPE_VIDEO_AVS2      0xd2
 #define STREAM_TYPE_VIDEO_AVS3      0xd4
@@ -202,7 +205,13 @@ https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/
 #define FMC_DESCRIPTOR               0x1f
 #define METADATA_DESCRIPTOR          0x26
 #define METADATA_STD_DESCRIPTOR      0x27
+#define EXTENSION_DESCRIPTOR         0x3f
 /* descriptor_tag values [0x40, 0xff] are User Private */
+
+/* ISO/IEC 13818-1 Table 2-109 */
+#define JXS_VIDEO_DESCRIPTOR         0x14 /* JPEG-XS descriptor */
+#define LCEVC_VIDEO_DESCRIPTOR       0x17 /* LCEVC video descriptor */
+#define LCEVC_LINKAGE_DESCRIPTOR     0x18 /* LCEVC linkage descriptor */
 
 /* DVB descriptor tag values [0x40, 0x7F] from
    ETSI EN 300 468 Table 12: Possible locations of descriptors */
@@ -215,11 +224,12 @@ https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/
 #define AC3_DESCRIPTOR               0x6a /* AC-3_descriptor */
 #define ENHANCED_AC3_DESCRIPTOR      0x7a /* enhanced_AC-3_descriptor */
 #define DTS_DESCRIPTOR               0x7b
-#define EXTENSION_DESCRIPTOR         0x7f
+#define DVB_EXTENSION_DESCRIPTOR     0x7f
 
 /* DVB descriptor_tag_extension values from
    ETSI EN 300 468 Table 109: Possible locations of extended descriptors */
 #define SUPPLEMENTARY_AUDIO_DESCRIPTOR 0x06
+#define AC4_DESCRIPTOR 0x15
 
 /** see "Dolby Vision Streams Within the MPEG-2 Transport Stream Format"
 https://professional.dolby.com/siteassets/content-creation/dolby-vision-for-content-creators/dolby-vision-bitstreams-in-mpeg-2-transport-stream-multiplex-v1.2.pdf */
@@ -283,7 +293,7 @@ typedef struct DVBAC3Descriptor {
  * @param desc_list_end             End of buffer
  * @return <0 to stop processing
  */
-int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type,
+int ff_parse_mpeg2_descriptor(AVFormatContext *fc, AVStream *st, int stream_type, int prg_id,
                               const uint8_t **pp, const uint8_t *desc_list_end,
                               Mp4Descr *mp4_descr, int mp4_descr_count, int pid,
                               MpegTSContext *ts);

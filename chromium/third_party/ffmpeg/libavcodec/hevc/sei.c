@@ -22,8 +22,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "bytestream.h"
-#include "golomb.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/golomb.h"
 #include "ps.h"
 #include "sei.h"
 
@@ -167,6 +167,8 @@ static int decode_nal_sei_timecode(HEVCSEITimeCode *s, GetBitContext *gb)
 
 static int decode_nal_sei_3d_reference_displays_info(HEVCSEITDRDI *s, GetBitContext *gb)
 {
+    unsigned num_ref_displays;
+
     s->prec_ref_display_width = get_ue_golomb(gb);
     if (s->prec_ref_display_width > 31)
         return AVERROR_INVALIDDATA;
@@ -176,10 +178,10 @@ static int decode_nal_sei_3d_reference_displays_info(HEVCSEITDRDI *s, GetBitCont
         if (s->prec_ref_viewing_dist > 31)
             return AVERROR_INVALIDDATA;
     }
-    s->num_ref_displays = get_ue_golomb(gb);
-    if (s->num_ref_displays > 31)
+    num_ref_displays = get_ue_golomb(gb);
+    if (num_ref_displays > 31)
         return AVERROR_INVALIDDATA;
-    s->num_ref_displays += 1;
+    s->num_ref_displays = num_ref_displays + 1;
 
     for (int i = 0; i < s->num_ref_displays; i++) {
         int length;
@@ -193,7 +195,7 @@ static int decode_nal_sei_3d_reference_displays_info(HEVCSEITDRDI *s, GetBitCont
         else
             length = FFMAX(0, (int)s->exponent_ref_display_width[i] +
                               (int)s->prec_ref_display_width - 31);
-        s->mantissa_ref_display_width[i] = get_bits_long(gb, length);
+        s->mantissa_ref_display_width[i] = get_bits64(gb, length);
         if (s->ref_viewing_distance_flag) {
             s->exponent_ref_viewing_distance[i] = get_bits(gb, 6);
             if (s->exponent_ref_viewing_distance[i] > 62)
@@ -203,7 +205,7 @@ static int decode_nal_sei_3d_reference_displays_info(HEVCSEITDRDI *s, GetBitCont
             else
                 length = FFMAX(0, (int)s->exponent_ref_viewing_distance[i] +
                                   (int)s->prec_ref_viewing_dist - 31);
-            s->mantissa_ref_viewing_distance[i] = get_bits_long(gb, length);
+            s->mantissa_ref_viewing_distance[i] = get_bits64(gb, length);
         }
         s->additional_shift_present_flag[i] = get_bits1(gb);
         if (s->additional_shift_present_flag[i]) {
@@ -214,6 +216,8 @@ static int decode_nal_sei_3d_reference_displays_info(HEVCSEITDRDI *s, GetBitCont
         }
     }
     s->three_dimensional_reference_displays_extension_flag = get_bits1(gb);
+
+    s->present = 1;
 
     return 0;
 }

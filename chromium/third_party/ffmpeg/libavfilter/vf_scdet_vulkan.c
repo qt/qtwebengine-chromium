@@ -19,12 +19,14 @@
  */
 
 #include "libavutil/avassert.h"
-#include "libavutil/vulkan_spirv.h"
 #include "libavutil/opt.h"
 #include "libavutil/timestamp.h"
 #include "vulkan_filter.h"
 
 #include "filters.h"
+
+extern const unsigned char ff_scdet_comp_spv_data[];
+extern const unsigned int ff_scdet_comp_spv_len;
 
 typedef struct SceneDetectVulkanContext {
     FFVulkanContext vkctx;
@@ -33,7 +35,7 @@ typedef struct SceneDetectVulkanContext {
     FFVkExecPool e;
     AVVulkanDeviceQueueFamily *qf;
     FFVulkanShader shd;
-    AVBufferPool *det_buf_pool;
+    AVRefStructPool *det_buf_pool;
 
     double threshold;
     int sc_pass;
@@ -52,25 +54,13 @@ typedef struct SceneDetectBuf {
 static av_cold int init_filter(AVFilterContext *ctx)
 {
     int err;
-    uint8_t *spv_data;
-    size_t spv_len;
-    void *spv_opaque = NULL;
     SceneDetectVulkanContext *s = ctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
-    FFVulkanShader *shd;
-    FFVkSPIRVCompiler *spv;
-    FFVulkanDescriptorSetBinding *desc;
 
     const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->vkctx.input_format);
     const int lumaonly = !(pixdesc->flags & AV_PIX_FMT_FLAG_RGB) &&
                          (pixdesc->flags & AV_PIX_FMT_FLAG_PLANAR);
     s->nb_planes = lumaonly ? 1 : av_pix_fmt_count_planes(s->vkctx.input_format);
-
-    spv = ff_vk_spirv_init();
-    if (!spv) {
-        av_log(ctx, AV_LOG_ERROR, "Unable to initialize SPIR-V compiler!\n");
-        return AVERROR_EXTERNAL;
-    }
 
     s->qf = ff_vk_qf_find(vkctx, VK_QUEUE_COMPUTE_BIT, 0);
     if (!s->qf) {
@@ -79,77 +69,42 @@ static av_cold int init_filter(AVFilterContext *ctx)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
-    RET(ff_vk_shader_init(vkctx, &s->shd, "scdet",
-                          VK_SHADER_STAGE_COMPUTE_BIT,
-                          (const char *[]) { "GL_KHR_shader_subgroup_arithmetic" }, 1,
-                          32, 32, 1,
-                          0));
-    shd = &s->shd;
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
-    desc = (FFVulkanDescriptorSetBinding []) {
-        {
-            .name       = "prev_img",
+    SPEC_LIST_CREATE(sl, 2, 2*sizeof(uint32_t))
+    SPEC_LIST_ADD(sl, 0, 32, s->nb_planes);
+    SPEC_LIST_ADD(sl, 1, 32, SLICES);
+
+    ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT, sl,
+                      (int []) { 32, 32, 1 }, 0);
+
+    const FFVulkanDescriptorSetBinding desc[] = {
+        { /* prev_img */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = av_pix_fmt_count_planes(s->vkctx.input_format),
+        },
+        { /* cur_img */
             .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .mem_layout = ff_vk_shader_rep_fmt(s->vkctx.input_format, FF_VK_REP_UINT),
-            .mem_quali  = "readonly",
-            .dimensions = 2,
-            .elems      = av_pix_fmt_count_planes(s->vkctx.input_format),
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
-        }, {
-            .name       = "cur_img",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .mem_layout = ff_vk_shader_rep_fmt(s->vkctx.input_format, FF_VK_REP_UINT),
-            .mem_quali  = "readonly",
-            .dimensions = 2,
             .elems      = av_pix_fmt_count_planes(s->vkctx.input_format),
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
-        }, {
-            .name        = "sad_buffer",
+        },
+        { /* sad_buffer */
             .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .buf_content = "uint frame_sad[];",
         }
     };
+    ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 3, 0);
 
-    RET(ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 3, 0, 0));
-
-    GLSLC(0, shared uint wg_sum;                                              );
-    GLSLC(0, void main()                                                      );
-    GLSLC(0, {                                                                );
-    GLSLF(1,     const uint slice = gl_WorkGroupID.x %% %u;            ,SLICES);
-    GLSLC(1,     const ivec2 pos = ivec2(gl_GlobalInvocationID.xy);           );
-    GLSLC(1,     wg_sum = 0;                                                  );
-    GLSLC(1,     barrier();                                                   );
-    for (int i = 0; i < s->nb_planes; i++) {
-        GLSLF(1, if (IS_WITHIN(pos, imageSize(cur_img[%d]))) {              ,i);
-        GLSLF(2,     uvec4 prev = imageLoad(prev_img[%d], pos);             ,i);
-        GLSLF(2,     uvec4 cur  = imageLoad(cur_img[%d],  pos);             ,i);
-        GLSLC(2,     uvec4 sad = abs(ivec4(cur) - ivec4(prev));               );
-        GLSLC(2,     uint sum = subgroupAdd(sad.x + sad.y + sad.z);           );
-        GLSLC(2,     if (subgroupElect())                                     );
-        GLSLC(3,         atomicAdd(wg_sum, sum);                              );
-        GLSLC(1, }                                                            );
-    }
-    GLSLC(1,     barrier();                                                   );
-    GLSLC(1,     if (gl_LocalInvocationIndex == 0)                            );
-    GLSLC(2,         atomicAdd(frame_sad[slice], wg_sum);                     );
-    GLSLC(0, }                                                                );
-
-    RET(spv->compile_shader(vkctx, spv, &s->shd, &spv_data, &spv_len, "main",
-                            &spv_opaque));
-    RET(ff_vk_shader_link(vkctx, &s->shd, spv_data, spv_len, "main"));
+    RET(ff_vk_shader_link(vkctx, &s->shd,
+                          ff_scdet_comp_spv_data,
+                          ff_scdet_comp_spv_len, "main"));
 
     RET(ff_vk_shader_register_exec(vkctx, &s->e, &s->shd));
 
     s->initialized = 1;
 
 fail:
-    if (spv_opaque)
-        spv->free_shader(spv, &spv_opaque);
-    if (spv)
-        spv->uninit(&spv);
-
     return err;
 }
 
@@ -189,8 +144,7 @@ static int scdet_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
     FFVulkanContext *vkctx = &s->vkctx;
     FFVulkanFunctions *vk = &vkctx->vkfn;
     FFVkExecContext *exec = NULL;
-    AVBufferRef *buf = NULL;
-    FFVkBuffer *buf_vk;
+    FFVkBuffer *buf_vk = NULL;
 
     SceneDetectBuf *sad;
     double score = 0.0;
@@ -205,7 +159,7 @@ static int scdet_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
     if (!s->prev)
         goto done;
 
-    RET(ff_vk_get_pooled_buffer(vkctx, &s->det_buf_pool, &buf,
+    RET(ff_vk_get_pooled_buffer(vkctx, &s->det_buf_pool, &buf_vk,
                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                 NULL,
@@ -213,11 +167,15 @@ static int scdet_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
-    buf_vk = (FFVkBuffer *)buf->data;
     sad = (SceneDetectBuf *) buf_vk->mapped_mem;
 
     exec = ff_vk_exec_get(vkctx, &s->e);
-    ff_vk_exec_start(vkctx, exec);
+    err = ff_vk_exec_start(vkctx, exec);
+    if (err < 0) {
+        av_frame_free(&in);
+        av_refstruct_unref(&buf_vk);
+        return err;
+    }
 
     RET(ff_vk_exec_add_dep_frame(vkctx, exec, s->prev,
                                  VK_PIPELINE_STAGE_2_NONE,
@@ -317,7 +275,12 @@ static int scdet_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
             .bufferMemoryBarrierCount = 1,
         });
 
-    RET(ff_vk_exec_submit(vkctx, exec));
+    err = ff_vk_exec_submit(vkctx, exec);
+    if (err < 0) {
+        av_frame_free(&in);
+        av_refstruct_unref(&buf_vk);
+        return err;
+    }
     ff_vk_exec_wait(vkctx, exec);
     score = evaluate(ctx, sad);
 
@@ -330,11 +293,11 @@ done:
     if (score >= s->threshold) {
         const char *pts = av_ts2timestr(in->pts, &link->time_base);
         av_dict_set(&in->metadata, "lavfi.scd.time", pts, 0);
-        av_log(s, AV_LOG_INFO, "lavfi.scd.score: %.3f, lavfi.scd.time: %s\n",
+        av_log(ctx, AV_LOG_INFO, "lavfi.scd.score: %.3f, lavfi.scd.time: %s\n",
                score, pts);
     }
 
-    av_buffer_unref(&buf);
+    av_refstruct_unref(&buf_vk);
     if (!s->sc_pass || score >= s->threshold)
         return ff_filter_frame(outlink, in);
     else {
@@ -344,9 +307,9 @@ done:
 
 fail:
     if (exec)
-        ff_vk_exec_discard_deps(&s->vkctx, exec);
+        ff_vk_exec_discard(&s->vkctx, exec);
     av_frame_free(&in);
-    av_buffer_unref(&buf);
+    av_refstruct_unref(&buf_vk);
     return err;
 }
 
@@ -361,7 +324,7 @@ static void scdet_vulkan_uninit(AVFilterContext *avctx)
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd);
 
-    av_buffer_pool_uninit(&s->det_buf_pool);
+    av_refstruct_pool_uninit(&s->det_buf_pool);
 
     ff_vk_uninit(&s->vkctx);
 

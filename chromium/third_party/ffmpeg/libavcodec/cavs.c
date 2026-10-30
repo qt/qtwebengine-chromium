@@ -387,12 +387,15 @@ void ff_cavs_modify_mb_i(AVSContext *h, int *pred_mode_uv)
  ****************************************************************************/
 
 static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
-                               int delta, int list, uint8_t *dest_y,
+                               int list, uint8_t *dest_y,
                                uint8_t *dest_cb, uint8_t *dest_cr,
                                int src_x_offset, int src_y_offset,
                                qpel_mc_func *qpix_op,
                                h264_chroma_mc_func chroma_op, cavs_vector *mv)
 {
+    if (!pic->data[0])
+        return;
+
     const int mx         = mv->x + src_x_offset * 8;
     const int my         = mv->y + src_y_offset * 8;
     const int luma_xy    = (mx & 3) + ((my & 3) << 2);
@@ -407,8 +410,6 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
     const int pic_height = 16 * h->mb_height;
     int emu = 0;
 
-    if (!pic->data[0])
-        return;
     if (mx & 7)
         extra_width  -= 3;
     if (my & 7)
@@ -452,7 +453,7 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
     chroma_op(dest_cr, src_cr, h->c_stride, chroma_height, mx & 7, my & 7);
 }
 
-static inline void mc_part_std(AVSContext *h, int chroma_height, int delta,
+static inline void mc_part_std(AVSContext *h, int chroma_height,
                                uint8_t *dest_y,
                                uint8_t *dest_cb,
                                uint8_t *dest_cr,
@@ -474,7 +475,7 @@ static inline void mc_part_std(AVSContext *h, int chroma_height, int delta,
 
     if (mv->ref >= 0) {
         AVFrame *ref = h->DPB[mv->ref].f;
-        mc_dir_part(h, ref, chroma_height, delta, 0,
+        mc_dir_part(h, ref, chroma_height, 0,
                     dest_y, dest_cb, dest_cr, x_offset, y_offset,
                     qpix_op, chroma_op, mv);
 
@@ -484,7 +485,7 @@ static inline void mc_part_std(AVSContext *h, int chroma_height, int delta,
 
     if ((mv + MV_BWD_OFFS)->ref >= 0) {
         AVFrame *ref = h->DPB[0].f;
-        mc_dir_part(h, ref, chroma_height, delta, 1,
+        mc_dir_part(h, ref, chroma_height, 1,
                     dest_y, dest_cb, dest_cr, x_offset, y_offset,
                     qpix_op, chroma_op, mv + MV_BWD_OFFS);
     }
@@ -493,32 +494,32 @@ static inline void mc_part_std(AVSContext *h, int chroma_height, int delta,
 void ff_cavs_inter(AVSContext *h, enum cavs_mb mb_type)
 {
     if (ff_cavs_partition_flags[mb_type] == 0) { // 16x16
-        mc_part_std(h, 8, 0, h->cy, h->cu, h->cv, 0, 0,
+        mc_part_std(h, 8, h->cy, h->cu, h->cv, 0, 0,
                     h->cdsp.put_cavs_qpel_pixels_tab[0],
                     h->h264chroma.put_h264_chroma_pixels_tab[0],
                     h->cdsp.avg_cavs_qpel_pixels_tab[0],
                     h->h264chroma.avg_h264_chroma_pixels_tab[0],
                     &h->mv[MV_FWD_X0]);
     } else {
-        mc_part_std(h, 4, 0, h->cy, h->cu, h->cv, 0, 0,
+        mc_part_std(h, 4, h->cy, h->cu, h->cv, 0, 0,
                     h->cdsp.put_cavs_qpel_pixels_tab[1],
                     h->h264chroma.put_h264_chroma_pixels_tab[1],
                     h->cdsp.avg_cavs_qpel_pixels_tab[1],
                     h->h264chroma.avg_h264_chroma_pixels_tab[1],
                     &h->mv[MV_FWD_X0]);
-        mc_part_std(h, 4, 0, h->cy, h->cu, h->cv, 4, 0,
+        mc_part_std(h, 4, h->cy, h->cu, h->cv, 4, 0,
                     h->cdsp.put_cavs_qpel_pixels_tab[1],
                     h->h264chroma.put_h264_chroma_pixels_tab[1],
                     h->cdsp.avg_cavs_qpel_pixels_tab[1],
                     h->h264chroma.avg_h264_chroma_pixels_tab[1],
                     &h->mv[MV_FWD_X1]);
-        mc_part_std(h, 4, 0, h->cy, h->cu, h->cv, 0, 4,
+        mc_part_std(h, 4, h->cy, h->cu, h->cv, 0, 4,
                     h->cdsp.put_cavs_qpel_pixels_tab[1],
                     h->h264chroma.put_h264_chroma_pixels_tab[1],
                     h->cdsp.avg_cavs_qpel_pixels_tab[1],
                     h->h264chroma.avg_h264_chroma_pixels_tab[1],
                     &h->mv[MV_FWD_X2]);
-        mc_part_std(h, 4, 0, h->cy, h->cu, h->cv, 4, 4,
+        mc_part_std(h, 4, h->cy, h->cu, h->cv, 4, 4,
                     h->cdsp.put_cavs_qpel_pixels_tab[1],
                     h->h264chroma.put_h264_chroma_pixels_tab[1],
                     h->cdsp.avg_cavs_qpel_pixels_tab[1],
@@ -726,9 +727,9 @@ int ff_cavs_init_pic(AVSContext *h)
     /* clear some predictors */
     for (i = 0; i <= 20; i += 4)
         h->mv[i] = un_mv;
-    h->mv[MV_BWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_BWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_BWD_X0], BLK_16X16);
-    h->mv[MV_FWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_FWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_FWD_X0], BLK_16X16);
     h->pred_mode_Y[3] = h->pred_mode_Y[6] = NOT_AVAIL;
     h->cy             = h->cur.f->data[0];
@@ -770,11 +771,10 @@ int ff_cavs_init_top_lines(AVSContext *h)
     h->col_mv        = av_calloc(h->mb_width * h->mb_height,
                                  4 * sizeof(*h->col_mv));
     h->col_type_base = av_mallocz(h->mb_width * h->mb_height);
-    h->block         = av_mallocz(64 * sizeof(int16_t));
 
     if (!h->top_qp || !h->top_mv[0] || !h->top_mv[1] || !h->top_pred_Y ||
         !h->top_border_y || !h->top_border_u || !h->top_border_v ||
-        !h->col_mv || !h->col_type_base || !h->block) {
+        !h->col_mv || !h->col_type_base) {
         av_freep(&h->top_qp);
         av_freep(&h->top_mv[0]);
         av_freep(&h->top_mv[1]);
@@ -784,7 +784,6 @@ int ff_cavs_init_top_lines(AVSContext *h)
         av_freep(&h->top_border_v);
         av_freep(&h->col_mv);
         av_freep(&h->col_type_base);
-        av_freep(&h->block);
         return AVERROR(ENOMEM);
     }
     return 0;
@@ -850,7 +849,6 @@ av_cold int ff_cavs_end(AVCodecContext *avctx)
     av_freep(&h->top_border_v);
     av_freep(&h->col_mv);
     av_freep(&h->col_type_base);
-    av_freep(&h->block);
     av_freep(&h->edge_emu_buffer);
     return 0;
 }

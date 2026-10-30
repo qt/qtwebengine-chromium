@@ -21,6 +21,7 @@
 #ifndef AVFILTER_CONVOLUTION_H
 #define AVFILTER_CONVOLUTION_H
 #include "avfilter.h"
+#include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 
 enum MatrixMode {
@@ -71,11 +72,8 @@ static void setup_3x3(int radius, const uint8_t *c[], const uint8_t *src, int st
     int i;
 
     for (i = 0; i < 9; i++) {
-        int xoff = FFABS(x + ((i % 3) - 1));
-        int yoff = FFABS(y + (i / 3) - 1);
-
-        xoff = xoff >= w ? 2 * w - 1 - xoff : xoff;
-        yoff = yoff >= h ? 2 * h - 1 - yoff : yoff;
+        int xoff = avpriv_mirror(x + (i % 3) - 1, w - 1);
+        int yoff = avpriv_mirror(y + (i / 3) - 1, h - 1);
 
         c[i] = src + xoff * bpc + yoff * stride;
     }
@@ -132,7 +130,7 @@ static inline void ff_sobel_init(ConvolutionContext *s, int depth, int nb_planes
     if (s->depth > 8)
         for (int i = 0; i < 4; i++)
             s->filter[i] = filter16_sobel;
-#if ARCH_X86_64
+#if ARCH_X86_64 && HAVE_X86ASM
     ff_sobel_init_x86(s, depth, nb_planes);
 #endif
 }

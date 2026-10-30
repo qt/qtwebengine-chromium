@@ -188,8 +188,7 @@ static int parse_ext_v1(DOVIContext *s, GetBitContext *gb, AVDOVIDmData *dm)
             dm->l255.dm_debug[i] = get_bits(gb, 8);
         break;
     default:
-        av_log(s->logctx, AV_LOG_WARNING,
-               "Unknown Dolby Vision DM v1 level: %u\n", dm->level);
+        avpriv_request_sample(s->logctx, "Dolby Vision DM v1 level %u", dm->level);
     }
 
     return 0;
@@ -262,20 +261,15 @@ static int parse_ext_v2(DOVIContext *s, GetBitContext *gb, AVDOVIDmData *dm,
         dm->l11.whitepoint = get_bits(gb, 4);
         dm->l11.reference_mode_flag = get_bits1(gb);
         skip_bits(gb, 3); /* reserved */
-        dm->l11.sharpness = get_bits(gb, 2);
-        dm->l11.noise_reduction = get_bits(gb, 2);
-        dm->l11.mpeg_noise_reduction = get_bits(gb, 2);
-        dm->l11.frame_rate_conversion = get_bits(gb, 2);
-        dm->l11.brightness = get_bits(gb, 2);
-        dm->l11.color = get_bits(gb, 2);
+        skip_bits(gb, 8); /* reserved */
+        skip_bits(gb, 8); /* reserved */
         break;
     case 254:
         dm->l254.dm_mode = get_bits(gb, 8);
         dm->l254.dm_version_index = get_bits(gb, 8);
         break;
     default:
-        av_log(s->logctx, AV_LOG_WARNING,
-               "Unknown Dolby Vision DM v2 level: %u\n", dm->level);
+        avpriv_request_sample(s->logctx, "Dolby Vision DM v2 level %u", dm->level);
     }
 
     return 0;
@@ -328,12 +322,15 @@ static int parse_ext_blocks(DOVIContext *s, GetBitContext *gb, int ver,
         switch (ver) {
         case 1: ret = parse_ext_v1(s, gb, dm); break;
         case 2: ret = parse_ext_v2(s, gb, dm, ext_block_length); break;
-        default: return AVERROR_BUG;
+        default:
+            avpriv_request_sample(s->logctx, "Dolby Vision DM v%d", ver);
+            goto skip;
         }
 
         if (ret < 0)
             return ret;
 
+skip:
         parsed_bits = get_bits_count(gb) - start_pos;
         if (parsed_bits > ext_block_length * 8)
             return AVERROR_INVALIDDATA;
@@ -364,7 +361,7 @@ int ff_dovi_rpu_parse(DOVIContext *s, const uint8_t *rpu, size_t rpu_size,
 
     /* Container */
     if (s->cfg.dv_profile == 10 /* dav1.10 */) {
-        /* DV inside AV1 re-uses an EMDF container skeleton, but with fixed
+        /* DV inside AV1 reuses an EMDF container skeleton, but with fixed
          * values - so we can effectively treat this as a magic byte sequence.
          *
          * The exact fields are, as follows:
@@ -408,22 +405,9 @@ int ff_dovi_rpu_parse(DOVIContext *s, const uint8_t *rpu, size_t rpu_size,
         VALIDATE(rpu[0], 25, 25); /* NAL prefix */
         rpu++;
         rpu_size--;
-        /* Strip trailing padding bytes */
-        while (rpu_size && rpu[rpu_size - 1] == 0)
+        /* Strip trailing padding zero bytes */
+        while (rpu_size && !rpu[rpu_size - 1])
             rpu_size--;
-    }
-
-    if (!rpu_size || rpu[rpu_size - 1] != 0x80)
-        return AVERROR_INVALIDDATA;
-
-    if (err_recognition & AV_EF_CRCCHECK) {
-        uint32_t crc = av_bswap32(av_crc(av_crc_get_table(AV_CRC_32_IEEE),
-                                  -1, rpu, rpu_size - 1)); /* exclude 0x80 */
-        if (crc) {
-            av_log(s->logctx, AV_LOG_ERROR, "RPU CRC mismatch: %X\n", crc);
-            if (err_recognition & AV_EF_EXPLODE)
-                return AVERROR_INVALIDDATA;
-        }
     }
 
     if ((ret = init_get_bits8(gb, rpu, rpu_size)) < 0)
@@ -601,6 +585,8 @@ int ff_dovi_rpu_parse(DOVIContext *s, const uint8_t *rpu, size_t rpu_size,
 
         mapping->num_x_partitions = get_ue_golomb_long(gb) + 1;
         mapping->num_y_partitions = get_ue_golomb_long(gb) + 1;
+        VALIDATE(mapping->num_x_partitions, 1, 0xFFFF);
+        VALIDATE(mapping->num_y_partitions, 1, 0xFFFF);
         /* End of rpu_data_header(), start of vdr_rpu_data_payload() */
 
         for (int c = 0; c < 3; c++) {
@@ -727,7 +713,8 @@ int ff_dovi_rpu_parse(DOVIContext *s, const uint8_t *rpu, size_t rpu_size,
             return ret;
         }
 
-        if (get_bits_left(gb) > 48 /* padding + CRC32 + terminator */) {
+        /* ue(1) + ue(0) + level + CRC32 + terminator */
+        if (get_bits_left(gb) >= 3 + 1 + 8 + 32 + 8) {
             if ((ret = parse_ext_blocks(s, gb, 2, dm_compression, err_recognition)) < 0) {
                 ff_dovi_ctx_unref(s);
                 return ret;
@@ -736,6 +723,48 @@ int ff_dovi_rpu_parse(DOVIContext *s, const uint8_t *rpu, size_t rpu_size,
     } else {
         s->color = &ff_dovi_color_default;
         av_refstruct_unref(&s->ext_blocks);
+    }
+
+    int aligned = get_bits_count(gb) % 8 == 0;
+    align_get_bits(gb);
+
+    /* The payload is followed by a CRC32 and a 0x80 terminator. Some encoders
+     * emit an extra zero padding byte before the CRC32 when the payload already
+     * ended on a byte boundary. A leading zero byte is then ambiguous: it may
+     * be that padding, or simply a CRC32 that starts with a zero byte. If only
+     * the padded position holds the terminator, assume the padding is real. If
+     * both do (the last CRC32 byte is 0x80 or there is stray 0x80 after real
+     * payload) the terminator position is ambiguous. Calculate CRC twice when
+     * AV_EF_CRCCHECK is requested. Note that this situation is extremely
+     * unlikely, there shouldn't be non-zero data after payload. */
+    int pad = aligned && show_bits(gb, 8) == 0;
+    skip_bits(gb, 32); /* CRC32 */
+    int term_unpadded = get_bits(gb, 8) == 0x80;       /* terminator w/o padding */
+    int term_padded = pad && show_bits(gb, 8) == 0x80; /* terminator w/ padding */
+
+    if (!term_unpadded && !term_padded) {
+        avpriv_request_sample(s->logctx, "Unexpected RPU format");
+        ff_dovi_ctx_unref(s);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    if (err_recognition & AV_EF_CRCCHECK) {
+        if (term_padded && !term_unpadded)
+            skip_bits(gb, 8); /* unambiguously padded */
+        rpu_size = get_bits_count(gb) / 8;
+        uint32_t crc = av_bswap32(av_crc(av_crc_get_table(AV_CRC_32_IEEE),
+                                  -1, rpu, rpu_size - 1)); /* exclude 0x80 */
+        if (crc && term_padded && term_unpadded) {
+            crc = av_bswap32(av_crc(av_crc_get_table(AV_CRC_32_IEEE),
+                                    -1, rpu, rpu_size)); /* include padding byte */
+        }
+        if (crc) {
+            av_log(s->logctx, AV_LOG_ERROR, "RPU CRC mismatch: %X\n", crc);
+            if (err_recognition & AV_EF_EXPLODE) {
+                ff_dovi_ctx_unref(s);
+                return AVERROR_INVALIDDATA;
+            }
+        }
     }
 
     return 0;

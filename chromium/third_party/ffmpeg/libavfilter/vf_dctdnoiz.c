@@ -632,7 +632,7 @@ static av_cold int init(AVFilterContext *ctx)
         s->overlap = s->bsize - 1;
 
     if (s->overlap > s->bsize - 1) {
-        av_log(s, AV_LOG_ERROR, "Overlap value can not except %d "
+        av_log(ctx, AV_LOG_ERROR, "Overlap value can not except %d "
                "with a block size of %dx%d\n",
                s->bsize - 1, s->bsize, s->bsize);
         return AVERROR(EINVAL);
@@ -675,8 +675,8 @@ static int filter_slice(AVFilterContext *ctx,
     const ThreadData *td = arg;
     const int w = s->pr_width;
     const int h = s->pr_height;
-    const int slice_start = (h *  jobnr   ) / nb_jobs;
-    const int slice_end   = (h * (jobnr+1)) / nb_jobs;
+    const int slice_start = ff_slice_pos(h, jobnr, nb_jobs);
+    const int slice_end   = ff_slice_pos(h, jobnr + 1, nb_jobs);
     const int slice_start_ctx = FFMAX(slice_start - s->bsize + 1, 0);
     const int slice_end_ctx   = FFMIN(slice_end, h - s->bsize + 1);
     const int slice_h = slice_end_ctx - slice_start_ctx;

@@ -31,15 +31,13 @@ SECTION .text
 
 INIT_XMM sse2
 cglobal add_bytes_l2, 4, 6, 2, dst, src1, src2, wa, w, i
-%if ARCH_X86_64
-    movsxd             waq, wad
-%endif
-    xor                 iq, iq
+    xor                 id, id
 
     ; vector loop
-    mov                 wq, waq
-    and                waq, ~(mmsize*2-1)
-    jmp .end_v
+    mov                 wd, wad
+    and                wad, ~(mmsize*2-1)
+    jz               .tail
+
 .loop_v:
     movu                m0, [src2q+iq]
     movu                m1, [src2q+iq+mmsize]
@@ -47,22 +45,23 @@ cglobal add_bytes_l2, 4, 6, 2, dst, src1, src2, wa, w, i
     paddb               m1, [src1q+iq+mmsize]
     movu  [dstq+iq       ], m0
     movu  [dstq+iq+mmsize], m1
-    add                 iq, mmsize*2
-.end_v:
-    cmp                 iq, waq
+    add                 id, mmsize*2
+    cmp                 id, wad
     jl .loop_v
 
     ; vector loop
-    mov                waq, wq
-    and                waq, ~7
+.tail:
+    mov                wad, wd
+    and                wad, ~7
     jmp .end_l
 .loop_l:
-    movq               mm0, [src1q+iq]
-    paddb              mm0, [src2q+iq]
-    movq  [dstq+iq       ], mm0
-    add                 iq, 8
+    movq                m0, [src2q+iq]
+    movq                m1, [src1q+iq]
+    paddb               m0, m1
+    movq  [dstq+iq       ], m0
+    add                 id, 8
 .end_l:
-    cmp                 iq, waq
+    cmp                 id, wad
     jl .loop_l
 
     ; scalar loop for leftover
@@ -71,19 +70,19 @@ cglobal add_bytes_l2, 4, 6, 2, dst, src1, src2, wa, w, i
     mov                wab, [src1q+iq]
     add                wab, [src2q+iq]
     mov          [dstq+iq], wab
-    inc                 iq
+    inc                 id
 .end_s:
-    cmp                 iq, wq
+    cmp                 id, wd
     jl .loop_s
     RET
 
-%macro ADD_PAETH_PRED_FN 1
-cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
+INIT_XMM ssse3
+cglobal png_add_paeth_prediction, 5, 7, 8, dst, src, top, w, bpp, end, cntr
 %if ARCH_X86_64
     movsxd            bppq, bppd
     movsxd              wq, wd
 %endif
-    lea               endq, [dstq+wq-(mmsize/2-1)]
+    lea               endq, [dstq+wq-(mmsize/4-1)]
     sub               topq, dstq
     sub               srcq, dstq
     sub               dstq, bppq
@@ -91,17 +90,17 @@ cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
 
     PUSH              dstq
     lea              cntrq, [bppq-1]
-    shr              cntrq, 2 + mmsize/16
+    shr              cntrq, 2 + mmsize/32
 .bpp_loop:
-    lea               dstq, [dstq+cntrq*(mmsize/2)]
-    movh                m0, [dstq]
-    movh                m1, [topq+dstq]
+    lea               dstq, [dstq+cntrq*(mmsize/4)]
+    movd                m0, [dstq]
+    movd                m1, [topq+dstq]
     punpcklbw           m0, m7
     punpcklbw           m1, m7
     add               dstq, bppq
 .loop:
     mova                m2, m1
-    movh                m1, [topq+dstq]
+    movd                m1, [topq+dstq]
     mova                m3, m2
     punpcklbw           m1, m7
     mova                m4, m2
@@ -109,21 +108,9 @@ cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
     psubw               m4, m0
     mova                m5, m3
     paddw               m5, m4
-%if cpuflag(ssse3)
     pabsw               m3, m3
     pabsw               m4, m4
     pabsw               m5, m5
-%else ; !cpuflag(ssse3)
-    psubw               m7, m5
-    pmaxsw              m5, m7
-    pxor                m6, m6
-    pxor                m7, m7
-    psubw               m6, m3
-    psubw               m7, m4
-    pmaxsw              m3, m6
-    pmaxsw              m4, m7
-    pxor                m7, m7
-%endif ; cpuflag(ssse3)
     mova                m6, m4
     pminsw              m6, m5
     pcmpgtw             m3, m6
@@ -132,7 +119,7 @@ cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
     pand                m4, m3
     pandn               m6, m3
     pandn               m3, m0
-    movh                m0, [srcq+dstq]
+    movd                m0, [srcq+dstq]
     pand                m6, m1
     pand                m2, m4
     punpcklbw           m0, m7
@@ -142,7 +129,7 @@ cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
     pand                m0, [pw_255]
     mova                m3, m0
     packuswb            m3, m3
-    movh            [dstq], m3
+    movd            [dstq], m3
     add               dstq, bppq
     cmp               dstq, endq
     jl .loop
@@ -152,10 +139,3 @@ cglobal add_png_paeth_prediction, 5, 7, %1, dst, src, top, w, bpp, end, cntr
     jge .bpp_loop
     POP               dstq
     RET
-%endmacro
-
-INIT_MMX mmxext
-ADD_PAETH_PRED_FN 0
-
-INIT_MMX ssse3
-ADD_PAETH_PRED_FN 0

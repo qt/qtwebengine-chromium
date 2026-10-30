@@ -43,6 +43,7 @@
 #include "libavcodec/mpeg4audio.h"
 
 #include "aacdec_ac.h"
+#include "aacdec_usac_mps212.h"
 
 typedef struct AACDecContext AACDecContext;
 
@@ -95,6 +96,12 @@ enum AACUsacExtension {
 enum AACUSACLoudnessExt {
     UNIDRCLOUDEXT_TERM = 0x0,
     UNIDRCLOUDEXT_EQ = 0x1,
+};
+
+enum AACUSACDRCExt {
+    UNIDRCCONFEXT_TERM = 0x0,
+    UNIDRCCONFEXT_PARAM_DRC = 0x1,
+    UNIDRCCONFEXT_V1 = 0x2,
 };
 
 // Supposed to be equal to AAC_RENAME() in case of USE_FIXED.
@@ -229,6 +236,33 @@ typedef struct SingleChannelElement {
     };
 } SingleChannelElement;
 
+typedef struct AACUsacMPSData {
+    /* Framing */
+    int framing_type;
+    int nb_param_sets;
+    int param_sets[MPS_MAX_PARAM_SETS];
+
+    /* OTT */
+    AACMPSLosslessData ott[MPS_ELE_NB];
+    int ott_idx[MPS_ELE_NB][MPS_MAX_PARAM_SETS][MPS_MAX_PARAM_BANDS];
+    bool opd_smoothing_mode;
+
+    /* SMG */
+    int smooth_mode[MPS_MAX_PARAM_SETS];
+    int smooth_time[MPS_MAX_PARAM_SETS];
+    int freq_res_stride_smg[MPS_MAX_PARAM_SETS];
+    bool smg_data[MPS_MAX_PARAM_SETS][MPS_MAX_PARAM_BANDS];
+
+    /* TSD */
+    bool tsd_enable;
+    bool temp_shape_enable;
+    bool temp_shape_enable_ch[2];
+    int16_t temp_shape_data[MPS_MAX_TIME_SLOTS];
+
+    int tsd_num_tr_slots;
+    int tsd_phase_data[64];
+} AACUsacMPSData;
+
 typedef struct AACUsacStereo {
     uint8_t common_window;
     uint8_t common_tw;
@@ -243,6 +277,8 @@ typedef struct AACUsacStereo {
     uint8_t complex_coef;
 
     uint8_t pred_used[128];
+
+    AACUsacMPSData mps;
 
     INTFLOAT_ALIGNED_UNION(32, alpha_q_re, 1024);
     INTFLOAT_ALIGNED_UNION(32, alpha_q_im, 1024);
@@ -272,6 +308,7 @@ typedef struct ChannelElement {
 
 typedef struct AACUSACLoudnessInfo {
     uint8_t drc_set_id : 6;
+    uint8_t eq_set_id : 6; /* loudnessInfoV1() only, 0 otherwise */
     uint8_t downmix_id : 7;
     struct {
         uint16_t lvl : 12;
@@ -332,6 +369,7 @@ typedef struct AACUsacElemConfig {
         uint8_t high_rate_mode : 1; /* bsHighRateMode */
         uint8_t phase_coding : 1; /* bsPhaseCoding */
 
+        uint8_t otts_bands_phase_present; /* bsOttBandsPhasePresent */
         uint8_t otts_bands_phase; /* bsOttBandsPhase */
         uint8_t residual_coding; /* bsResidualCoding */
         uint8_t residual_bands; /* bsResidualBands */
@@ -344,8 +382,15 @@ typedef struct AACUsacElemConfig {
         uint8_t payload_frag;
         uint32_t default_len;
         uint32_t pl_data_offset;
-        uint8_t *pl_data;
+        uint8_t *pl_buf;
     } ext;
+
+    struct {
+        struct {
+            int lower;
+            int upper;
+        } loudness;
+    } drc;
 } AACUsacElemConfig;
 
 typedef struct AACUSACConfig {
@@ -353,7 +398,7 @@ typedef struct AACUSACConfig {
     uint16_t core_frame_len;
     uint16_t stream_identifier;
 
-    AACUsacElemConfig elems[64];
+    AACUsacElemConfig elems[MAX_ELEM_ID];
     int nb_elems;
 
     struct {
@@ -361,6 +406,13 @@ typedef struct AACUSACConfig {
         AACUSACLoudnessInfo album_info[64];
         uint8_t nb_info;
         AACUSACLoudnessInfo info[64];
+
+        /**
+         * Raw bsMethodValue (μ) of the program/anchor-loudness measurement
+         * selected for normalization at config time. -1 == none found.
+         * L_LKFS = -57.75 + 0.25 * input_method_val.
+         */
+        int input_method_val;
     } loudness;
 } AACUSACConfig;
 
@@ -402,9 +454,9 @@ typedef struct AACDecProc {
 
     int (*sbr_ctx_alloc_init)(AACDecContext *ac, ChannelElement **che, int id_aac);
     int (*sbr_decode_extension)(AACDecContext *ac, ChannelElement *che,
-                                GetBitContext *gb, int crc, int cnt, int id_aac);
-    void (*sbr_apply)(AACDecContext *ac, ChannelElement *che,
-                      int id_aac, void /* INTFLOAT */ *L, void /* INTFLOAT */ *R);
+                                GetBitContext *gb, int crc, int cnt, int id_aac, int fl960);
+    void (*sbr_apply)(AACDecContext *ac, ChannelElement *che, int id_aac, int fl960,
+                      void /* INTFLOAT */ *L, void /* INTFLOAT */ *R);
     void (*sbr_ctx_close)(ChannelElement *che);
 } AACDecProc;
 
@@ -524,9 +576,15 @@ struct AACDecContext {
 
     enum AACOutputChannelOrder output_channel_order;
 
+    /**
+     * Target output loudness in dBFS, used for xHE-AAC loudness normalization
+     * based on the parsed loudnessInfoSet() metadata. 0 disables normalization.
+     */
+    int target_level;
+    int warned_loudness_missing;
+
     OutputConfiguration oc[2];
     int warned_num_aac_frames;
-    int warned_960_sbr;
     unsigned warned_71_wide;
     int warned_gain_control;
     int warned_he_aac_mono;

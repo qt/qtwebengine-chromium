@@ -21,7 +21,8 @@
 #include "movenccenc.h"
 #include "libavcodec/av1_parse.h"
 #include "libavcodec/bytestream.h"
-#include "libavcodec/cbs_av1.h"
+#include "libavformat/cbs_av1.h"
+#include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "avio_internal.h"
@@ -422,7 +423,7 @@ int ff_mov_cenc_av1_write_obus(AVFormatContext *s, MOVMuxCencContext* ctx,
                 fh_data_size = unit->data_size;
                 break;
             }
-        // fall-through
+            av_fallthrough;
         case AV1_OBU_SEQUENCE_HEADER:
         case AV1_OBU_METADATA:
             avio_write(pb, unit->data, unit->data_size);
@@ -433,7 +434,7 @@ int ff_mov_cenc_av1_write_obus(AVFormatContext *s, MOVMuxCencContext* ctx,
             frame_header = &obu->obu.frame.header;
             fh_data      = unit->data;
             fh_data_size = unit->data_size;
-        // fall-through
+            av_fallthrough;
         case AV1_OBU_TILE_GROUP:
             {
                 const AV1RawTileGroup *tile_group;
@@ -627,6 +628,12 @@ int ff_mov_cenc_init(MOVMuxCencContext* ctx, uint8_t* encryption_key,
     }
 
     return 0;
+}
+
+void ff_mov_cenc_flush(MOVMuxCencContext* ctx)
+{
+    ctx->auxiliary_info_entries = 0;
+    ctx->auxiliary_info_size    = 0;
 }
 
 void ff_mov_cenc_free(MOVMuxCencContext* ctx)

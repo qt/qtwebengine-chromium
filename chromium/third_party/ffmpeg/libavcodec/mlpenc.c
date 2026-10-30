@@ -521,10 +521,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
         ctx->fs                   = 0x10 + 2;
         break;
     default:
-        av_log(avctx, AV_LOG_ERROR, "Unsupported sample rate %d. Supported "
-                            "sample rates are 44100, 88200, 176400, 48000, "
-                            "96000, and 192000.\n", avctx->sample_rate);
-        return AVERROR(EINVAL);
+        av_unreachable("Checked via CODEC_SAMPLERATES");
     }
     ctx->coded_sample_rate[1] = -1 & 0xf;
 
@@ -547,9 +544,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
         avctx->bits_per_raw_sample = 24;
         break;
     default:
-        av_log(avctx, AV_LOG_ERROR, "Sample format not supported. "
-               "Only 16- and 24-bit samples are supported.\n");
-        return AVERROR(EINVAL);
+        av_unreachable("Checked via CODEC_SAMPLEFMTS");
     }
     ctx->coded_sample_fmt[1] = -1 & 0xf;
 
@@ -613,7 +608,7 @@ static av_cold int mlp_encode_init(AVCodecContext *avctx)
             ctx->thd_substream_info  = 0x3C;
             break;
         default:
-            av_assert1(!"AVCodec.ch_layouts needs to be updated");
+            av_unreachable("Checked via CODEC_CH_LAYOUTS");
         }
         ctx->flags = 0;
         ctx->channel_occupancy = 0;
@@ -2246,10 +2241,9 @@ input_and_return:
         avctx->frame_num++;
 
     if (bytes_written > 0) {
-        ff_af_queue_remove(&ctx->afq,
-                           FFMIN(avctx->frame_size, ctx->afq.remaining_samples),
-                           &avpkt->pts,
-                           &avpkt->duration);
+        ret = ff_af_queue_remove(&ctx->afq, avctx->frame_size, avpkt);
+        if (ret < 0)
+            return ret;
 
         av_shrink_packet(avpkt, bytes_written);
 

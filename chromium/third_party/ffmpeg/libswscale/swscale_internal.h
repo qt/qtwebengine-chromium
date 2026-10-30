@@ -28,6 +28,7 @@
 #include "swscale.h"
 #include "graph.h"
 
+#include "libavfilter/framepool.h"
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/frame.h"
@@ -37,10 +38,14 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/slicethread.h"
-#if HAVE_ALTIVEC
-#include "libavutil/ppc/util_altivec.h"
-#endif
 #include "libavutil/half2float.h"
+
+#if HAVE_ALTIVEC
+#define SWSINTERNAL_ADDITIONAL_ASM_SIZE (7*16 + 2*8 + /* alignment */ 16)
+#endif
+#ifndef SWSINTERNAL_ADDITIONAL_ASM_SIZE
+#define SWSINTERNAL_ADDITIONAL_ASM_SIZE 0
+#endif
 
 #define STR(s) AV_TOSTRING(s) // AV_STRINGIFY is too long
 
@@ -76,6 +81,8 @@ static inline SwsInternal *sws_internal(const SwsContext *sws)
     return (SwsInternal *) sws;
 }
 
+SwsBackend ff_sws_enabled_backends(const SwsContext *ctx);
+
 typedef struct Range {
     unsigned int start;
     unsigned int len;
@@ -92,6 +99,19 @@ int ff_range_add(RangeList *r, unsigned int start, unsigned int len);
 typedef int (*SwsFunc)(SwsInternal *c, const uint8_t *const src[],
                        const int srcStride[], int srcSliceY, int srcSliceH,
                        uint8_t *const dst[], const int dstStride[]);
+
+typedef void (*SwsColorFunc)(const SwsInternal *c, uint8_t *dst, int dst_stride,
+                             const uint8_t *src, int src_stride, int w, int h);
+
+typedef struct SwsLuts {
+    uint16_t *in;
+    uint16_t *out;
+} SwsLuts;
+
+typedef struct SwsColorXform {
+    SwsLuts gamma;
+    int16_t mat[3][3];
+} SwsColorXform;
 
 /**
  * Write one line of horizontally scaled data to planar output
@@ -169,10 +189,10 @@ typedef void (*yuv2interleavedX_fn)(enum AVPixelFormat dstFormat,
  *                to write into dest[]
  * @param uvalpha chroma scaling coefficient for the second line of chroma
  *                pixels, either 2048 or 0. If 0, one chroma input is used
- *                for 2 output pixels (or if the SWS_FLAG_FULL_CHR_INT flag
+ *                for 2 output pixels (or if the SWS_FULL_CHR_H_INT flag
  *                is set, it generates 1 output pixel). If 2048, two chroma
  *                input pixels should be averaged for 2 output pixels (this
- *                only happens if SWS_FLAG_FULL_CHR_INT is not set)
+ *                only happens if SWS_FULL_CHR_H_INT is not set)
  * @param y       vertical line number for this output. This does not need
  *                to be used to calculate the offset in the destination,
  *                but can be used to generate comfort noise using dithering
@@ -323,7 +343,6 @@ struct SwsInternal {
 
     AVSliceThread      *slicethread;
     SwsContext        **slice_ctx;
-    int                *slice_err;
     int              nb_slice_ctx;
 
     /* Scaling graph, reinitialized dynamically as needed. */
@@ -359,7 +378,7 @@ struct SwsInternal {
 
     RangeList src_ranges;
 
-    /* The cascaded_* fields allow spliting a scaler task into multiple
+    /* The cascaded_* fields allow splitting a scaler task into multiple
      * sequential steps, this is for example used to limit the maximum
      * downscaling factor that needs to be supported in one scaler.
      */
@@ -531,28 +550,15 @@ struct SwsInternal {
 
     const uint8_t *chrDither8, *lumDither8;
 
-#if HAVE_ALTIVEC
-    vector signed short   CY;
-    vector signed short   CRV;
-    vector signed short   CBU;
-    vector signed short   CGU;
-    vector signed short   CGV;
-    vector signed short   OY;
-    vector unsigned short CSHIFT;
-    vector signed short  *vYCoeffsBank, *vCCoeffsBank;
-#endif
-
     int use_mmx_vfilter;
 
 /* pre defined color-spaces gamma */
-#define XYZ_GAMMA (2.6f)
-#define RGB_GAMMA (2.2f)
-    uint16_t *xyzgamma;
-    uint16_t *rgbgamma;
-    uint16_t *xyzgammainv;
-    uint16_t *rgbgammainv;
-    int16_t xyz2rgb_matrix[3][4];
-    int16_t rgb2xyz_matrix[3][4];
+#define XYZ_GAMMA (2.6)
+#define RGB_GAMMA (2.2)
+    SwsColorFunc  xyz12Torgb48;
+    SwsColorFunc  rgb48Toxyz12;
+    SwsColorXform xyz2rgb;
+    SwsColorXform rgb2xyz;
 
     /* function pointers for swscale() */
     yuv2planar1_fn yuv2plane1;
@@ -595,7 +601,7 @@ struct SwsInternal {
      *   pixels to interpolate the output pixel. Since you can use at most
      *   two input pixels per output pixel in bilinear scaling, this is
      *   impossible and thus downscaling by any size will create artifacts.
-     * To enable this type of scaling, set SWS_FLAG_FAST_BILINEAR
+     * To enable this type of scaling, set SWS_FAST_BILINEAR
      * in SwsInternal->flags.
      */
     /** @{ */
@@ -690,6 +696,13 @@ struct SwsInternal {
     int          color_conversion_warned;
 
     Half2FloatTables *h2f_tables;
+
+    // Hardware specific private data
+    void *hw_priv; /* refstruct */
+
+    int is_legacy_init;
+
+    FFFramePool frame_pool; /* for sws_scale_frame() data allocations */
 };
 //FIXME check init (where 0)
 
@@ -720,9 +733,15 @@ av_cold void ff_sws_init_range_convert_loongarch(SwsInternal *c);
 av_cold void ff_sws_init_range_convert_riscv(SwsInternal *c);
 av_cold void ff_sws_init_range_convert_x86(SwsInternal *c);
 
+av_cold void ff_sws_init_xyzdsp(SwsInternal *c);
+av_cold void ff_sws_init_xyzdsp_aarch64(SwsInternal *c);
+
+av_cold int ff_sws_fill_xyztables(SwsInternal *c);
+
 SwsFunc ff_yuv2rgb_init_x86(SwsInternal *c);
 SwsFunc ff_yuv2rgb_init_ppc(SwsInternal *c);
 SwsFunc ff_yuv2rgb_init_loongarch(SwsInternal *c);
+SwsFunc ff_yuv2rgb_init_aarch64(SwsInternal *c);
 
 static av_always_inline int is16BPS(enum AVPixelFormat pix_fmt)
 {
@@ -1020,6 +1039,9 @@ void ff_sws_init_swscale_arm(SwsInternal *c);
 void ff_sws_init_swscale_loongarch(SwsInternal *c);
 void ff_sws_init_swscale_riscv(SwsInternal *c);
 
+int ff_sws_init_altivec_bufs(SwsInternal *c);
+void ff_sws_free_altivec_bufs(SwsInternal *c);
+
 void ff_hyscale_fast_c(SwsInternal *c, int16_t *dst, int dstWidth,
                        const uint8_t *src, int srcW, int xInc);
 void ff_hcscale_fast_c(SwsInternal *c, int16_t *dst1, int16_t *dst2,
@@ -1042,12 +1064,6 @@ int ff_sws_alphablendaway(SwsInternal *c, const uint8_t *const src[],
 void ff_copyPlane(const uint8_t *src, int srcStride,
                   int srcSliceY, int srcSliceH, int width,
                   uint8_t *dst, int dstStride);
-
-void ff_xyz12Torgb48(const SwsInternal *c, uint8_t *dst, int dst_stride,
-                     const uint8_t *src, int src_stride, int w, int h);
-
-void ff_rgb48Toxyz12(const SwsInternal *c, uint8_t *dst, int dst_stride,
-                     const uint8_t *src, int src_stride, int w, int h);
 
 static inline void fillPlane16(uint8_t *plane, int stride, int width, int height, int y,
                                int alpha, int bits, const int big_endian)
@@ -1172,13 +1188,21 @@ void ff_init_vscale_pfn(SwsInternal *c, yuv2planar1_fn yuv2plane1, yuv2planarX_f
     yuv2interleavedX_fn yuv2nv12cX, yuv2packed1_fn yuv2packed1, yuv2packed2_fn yuv2packed2,
     yuv2packedX_fn yuv2packedX, yuv2anyX_fn yuv2anyX, int use_mmx);
 
-void ff_sws_slice_worker(void *priv, int jobnr, int threadnr,
-                         int nb_jobs, int nb_threads);
+int ff_sws_slice_worker(void *priv, int jobnr, int threadnr,
+                        int nb_jobs, int nb_threads);
 
 int ff_swscale(SwsInternal *c, const uint8_t *const src[], const int srcStride[],
                int srcSliceY, int srcSliceH, uint8_t *const dst[],
                const int dstStride[], int dstSliceY, int dstSliceH);
 
+/**
+ * Helper for dispatching a single function across multiple threads. This is
+ * a wrapper around avpriv_slicethread_create2() + avpriv_slicethread_execute2(),
+ * falling back to direct invocation if threading is not available.
+ */
+int ff_sws_thread_exec(void *priv,
+                       int (*func)(void *priv, int jobnr, int threadnr, int nb_jobs, int nb_threads),
+                       int nb_threads, int nb_jobs);
 
 //number of extra lines to process
 #define MAX_LINES_AHEAD 4

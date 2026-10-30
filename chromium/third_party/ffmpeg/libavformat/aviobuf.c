@@ -125,6 +125,11 @@ AVIOContext *avio_alloc_context(
 
 void avio_context_free(AVIOContext **ps)
 {
+    AVIOContext *s = *ps;
+    if (s) {
+        av_freep(&s->protocol_whitelist);
+        av_freep(&s->protocol_blacklist);
+    }
     av_freep(ps);
 }
 
@@ -233,10 +238,9 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
     FFIOContext *const ctx = ffiocontext(s);
     int64_t offset1;
     int64_t pos;
-    int force = whence & AVSEEK_FORCE;
     int buffer_size;
     int short_seek;
-    whence &= ~AVSEEK_FORCE;
+    whence &= ~AVSEEK_FORCE; // force flag does nothing
 
     if(!s)
         return AVERROR(EINVAL);
@@ -277,8 +281,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
     } else if ((!(s->seekable & AVIO_SEEKABLE_NORMAL) ||
                offset1 <= buffer_size + short_seek) &&
                !s->write_flag && offset1 >= 0 &&
-               (!s->direct || !s->seek) &&
-              (whence != SEEK_END || force)) {
+               (!s->direct || !s->seek)) {
         while(s->pos < offset && !s->eof_reached)
             fill_buffer(s);
         if (s->eof_reached)
@@ -295,7 +298,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
         s->pos = pos;
         s->eof_reached = 0;
         fill_buffer(s);
-        return avio_seek(s, offset, SEEK_SET | force);
+        return avio_seek(s, offset, SEEK_SET);
     } else {
         int64_t res;
         if (s->write_flag) {
@@ -308,7 +311,7 @@ int64_t avio_seek(AVIOContext *s, int64_t offset, int whence)
         ctx->seek_count++;
         if (!s->write_flag)
             s->buf_end = s->buffer;
-        s->buf_ptr = s->buf_ptr_max = s->buffer;
+        s->checksum_ptr = s->buf_ptr = s->buf_ptr_max = s->buffer;
         s->pos = offset;
     }
     s->eof_reached = 0;
@@ -389,10 +392,10 @@ static inline int put_str16(AVIOContext *s, const char *str, const int be)
 
     while (*q) {
         uint32_t ch;
-        uint16_t tmp;
+        uint16_t tmp16;
 
         GET_UTF8(ch, *q++, goto invalid;)
-        PUT_UTF16(ch, tmp, be ? avio_wb16(s, tmp) : avio_wl16(s, tmp);
+        PUT_UTF16(ch, tmp16, be ? avio_wb16(s, tmp16) : avio_wl16(s, tmp16);
                   ret += 2;)
         continue;
 invalid:
@@ -711,61 +714,28 @@ int avio_read_partial(AVIOContext *s, unsigned char *buf, int size)
     return len;
 }
 
-unsigned int avio_rl16(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_r8(s);
-    val |= avio_r8(s) << 8;
-    return val;
+#define AVIO_READER(name, type, bytes, load, read1, shift1, read2, shift2) \
+type name(AVIOContext *s)                                       \
+{                                                               \
+    type val;                                                   \
+    if (s->buf_end - s->buf_ptr >= bytes) {                     \
+        val = load(s->buf_ptr);                                 \
+        s->buf_ptr += bytes;                                    \
+    } else {                                                    \
+        val  = (type)read1(s) << shift1;                        \
+        val |= (type)read2(s) << shift2;                        \
+    }                                                           \
+    return val;                                                 \
 }
 
-unsigned int avio_rl24(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_rl16(s);
-    val |= avio_r8(s) << 16;
-    return val;
-}
-
-unsigned int avio_rl32(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_rl16(s);
-    val |= avio_rl16(s) << 16;
-    return val;
-}
-
-uint64_t avio_rl64(AVIOContext *s)
-{
-    uint64_t val;
-    val = (uint64_t)avio_rl32(s);
-    val |= (uint64_t)avio_rl32(s) << 32;
-    return val;
-}
-
-unsigned int avio_rb16(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_r8(s) << 8;
-    val |= avio_r8(s);
-    return val;
-}
-
-unsigned int avio_rb24(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_rb16(s) << 8;
-    val |= avio_r8(s);
-    return val;
-}
-unsigned int avio_rb32(AVIOContext *s)
-{
-    unsigned int val;
-    val = avio_rb16(s) << 16;
-    val |= avio_rb16(s);
-    return val;
-}
-
+AVIO_READER(avio_rl16, unsigned int, 2, AV_RL16, avio_r8,    0, avio_r8,    8)
+AVIO_READER(avio_rl24, unsigned int, 3, AV_RL24, avio_rl16,  0, avio_r8,   16)
+AVIO_READER(avio_rl32, unsigned int, 4, AV_RL32, avio_rl16,  0, avio_rl16, 16)
+AVIO_READER(avio_rl64, uint64_t,     8, AV_RL64, avio_rl32,  0, avio_rl32, 32)
+AVIO_READER(avio_rb16, unsigned int, 2, AV_RB16, avio_r8,    8, avio_r8,    0)
+AVIO_READER(avio_rb24, unsigned int, 3, AV_RB24, avio_rb16,  8, avio_r8,    0)
+AVIO_READER(avio_rb32, unsigned int, 4, AV_RB32, avio_rb16, 16, avio_rb16,  0)
+AVIO_READER(avio_rb64, uint64_t,     8, AV_RB64, avio_rb32, 32, avio_rb32,  0)
 int ff_get_line(AVIOContext *s, char *buf, int maxlen)
 {
     int i = 0;
@@ -905,14 +875,6 @@ GET_STR16(be, avio_rb16)
 
 #undef GET_STR16
 
-uint64_t avio_rb64(AVIOContext *s)
-{
-    uint64_t val;
-    val = (uint64_t)avio_rb32(s) << 32;
-    val |= (uint64_t)avio_rb32(s);
-    return val;
-}
-
 uint64_t ffio_read_varlen(AVIOContext *bc){
     uint64_t val = 0;
     int tmp;
@@ -991,7 +953,7 @@ void ffio_write_lines(AVIOContext *s, const unsigned char *buf, int size,
 int ffio_copy_url_options(AVIOContext* pb, AVDictionary** avio_opts)
 {
     const char *opts[] = {
-        "headers", "user_agent", "cookies", "http_proxy", "referer", "rw_timeout", "icy", NULL };
+        "headers", "user_agent", "cookies", "http_proxy", "referer", "rw_timeout", "icy", "prefer_libcurl", NULL };
     const char **opt = opts;
     uint8_t *buf = NULL;
     int ret = 0;
@@ -1448,6 +1410,8 @@ static int null_buf_write(void *opaque, const uint8_t *buf, int buf_size)
 {
     DynBuffer *d = opaque;
 
+    if ((unsigned)d->pos + (unsigned)buf_size > INT_MAX)
+        return AVERROR(ERANGE);
     d->pos += buf_size;
     if (d->pos > d->size)
         d->size = d->pos;
@@ -1471,7 +1435,7 @@ int ffio_close_null_buf(AVIOContext *s)
 
     avio_flush(s);
 
-    size = d->size;
+    size = s->error ? s->error : d->size;
 
     avio_context_free(&s);
 

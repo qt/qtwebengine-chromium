@@ -61,6 +61,7 @@ typedef struct AMFEncoderContext {
     int64_t             dts_delay;
     int64_t             submitted_frame;
     int64_t             encoded_frame;
+    AVFifo             *output_list;
 
     // common encoder options
 
@@ -114,8 +115,10 @@ typedef struct AMFEncoderContext {
 
     // AV1 - specific options
 
-    enum AMF_VIDEO_ENCODER_AV1_ALIGNMENT_MODE_ENUM                 align;
-    enum AMF_VIDEO_ENCODER_AV1_AQ_MODE_ENUM                        aq_mode;
+    /* enum AMF_VIDEO_ENCODER_AV1_ALIGNMENT_MODE_ENUM, use int for AVOption */
+    int                 align;
+    /* enum AMF_VIDEO_ENCODER_AV1_AQ_MODE_ENUM */
+    int                 aq_mode;
 
     // Preanalysis - specific options
 
@@ -159,8 +162,6 @@ int ff_amf_receive_packet(AVCodecContext *avctx, AVPacket *avpkt);
 * Supported formats
 */
 extern const enum AVPixelFormat ff_amf_pix_fmts[];
-
-int ff_amf_get_color_profile(AVCodecContext *avctx);
 
 /**
 * Error handling helper

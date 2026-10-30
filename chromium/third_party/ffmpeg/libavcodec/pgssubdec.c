@@ -447,7 +447,7 @@ static int parse_presentation_segment(AVCodecContext *avctx,
         PGSSubObjectRef *const object = &ctx->presentation.objects[i];
 
         if (buf_end - buf < 8) {
-            av_log(avctx, AV_LOG_ERROR, "Insufficent space for object\n");
+            av_log(avctx, AV_LOG_ERROR, "Insufficient space for object\n");
             ctx->presentation.object_count = i;
             return AVERROR_INVALIDDATA;
         }
@@ -537,6 +537,16 @@ static int display_end_segment(AVCodecContext *avctx, AVSubtitle *sub,
         sub->rects[sub->num_rects++] = rect;
         rect->type = SUBTITLE_BITMAP;
 
+        /* Allocate the palette now so that the error paths below, which
+         * leave the rect empty, still hand consumers a complete bitmap
+         * rect rather than one with a NULL palette. */
+        rect->nb_colors = 256;
+        rect->data[1]   = av_mallocz(AVPALETTE_SIZE);
+        if (!rect->data[1])
+            return AVERROR(ENOMEM);
+        if (!ctx->forced_subs_only || ctx->presentation.objects[i].composition_flag & 0x40)
+            memcpy(rect->data[1], palette->clut, rect->nb_colors * sizeof(uint32_t));
+
         /* Process bitmap */
         object = find_object(ctx->presentation.objects[i].id, &ctx->objects);
         if (!object) {
@@ -577,14 +587,6 @@ static int display_end_segment(AVCodecContext *avctx, AVSubtitle *sub,
                 continue;
             }
         }
-        /* Allocate memory for colors */
-        rect->nb_colors = 256;
-        rect->data[1]   = av_mallocz(AVPALETTE_SIZE);
-        if (!rect->data[1])
-            return AVERROR(ENOMEM);
-
-        if (!ctx->forced_subs_only || ctx->presentation.objects[i].composition_flag & 0x40)
-            memcpy(rect->data[1], palette->clut, rect->nb_colors * sizeof(uint32_t));
     }
     return 1;
 }

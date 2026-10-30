@@ -64,12 +64,16 @@ static void get_linear_array(GetBitContext *gb, int32_t *array, int size, int n)
         array[i] = get_linear(gb, n);
 }
 
-static void get_rice_array(GetBitContext *gb, int32_t *array, int size, int k)
+static int get_rice_array(GetBitContext *gb, int32_t *array, int size, int k)
 {
     int i;
 
-    for (i = 0; i < size; i++)
+    for (i = 0; i < size && get_bits_left(gb) > k; i++)
         array[i] = get_rice(gb, k);
+
+    if (i < size)
+        return AVERROR_INVALIDDATA;
+    return 0;
 }
 
 static int parse_dmix_coeffs(DCAXllDecoder *s, DCAXllChSet *c)
@@ -311,7 +315,7 @@ static int chs_parse_header(DCAXllDecoder *s, DCAXllChSet *c, DCAExssAsset *asse
                 b->highest_pred_order = b->adapt_pred_order[i];
         }
         if (b->highest_pred_order > s->nsegsamples) {
-            av_log(s->avctx, AV_LOG_ERROR, "Invalid XLL adaptive predicition order\n");
+            av_log(s->avctx, AV_LOG_ERROR, "Invalid XLL adaptive prediction order\n");
             return AVERROR_INVALIDDATA;
         }
 
@@ -529,8 +533,10 @@ static int chs_parse_band_data(DCAXllDecoder *s, DCAXllChSet *c, int band, int s
         } else {
             // Rice codes
             // Unpack all residuals of part A of segment 0
-            get_rice_array(&s->gb, part_a, c->nsamples_part_a[k],
-                           c->bitalloc_part_a[k]);
+            int ret = get_rice_array(&s->gb, part_a, c->nsamples_part_a[k],
+                                     c->bitalloc_part_a[k]);
+            if (ret < 0)
+                return ret;
 
             if (c->bitalloc_hybrid_linear[k]) {
                 // Hybrid Rice codes
@@ -560,7 +566,9 @@ static int chs_parse_band_data(DCAXllDecoder *s, DCAXllChSet *c, int band, int s
             } else {
                 // Rice codes
                 // Unpack all residuals of part B of segment 0 and others
-                get_rice_array(&s->gb, part_b, nsamples_part_b, c->bitalloc_part_b[k]);
+                ret = get_rice_array(&s->gb, part_b, nsamples_part_b, c->bitalloc_part_b[k]);
+                if (ret < 0)
+                    return ret;
             }
         }
     }
@@ -666,7 +674,7 @@ static void chs_filter_band_data(DCAXllDecoder *s, DCAXllChSet *c, int band)
         }
     }
 
-    // Inverse pairwise channel decorrellation
+    // Inverse pairwise channel decorrelation
     if (b->decor_enabled) {
         int32_t *tmp[DCA_XLL_CHANNELS_MAX];
 
@@ -1094,6 +1102,7 @@ static int copy_to_pbr(DCAXllDecoder *s, const uint8_t *data, int size, int dela
         return AVERROR(ENOMEM);
 
     memcpy(s->pbr_buffer, data, size);
+    memset(s->pbr_buffer + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     s->pbr_length = size;
     s->pbr_delay = delay;
     return 0;
@@ -1148,6 +1157,7 @@ static int parse_frame_pbr(DCAXllDecoder *s, const uint8_t *data, int size, DCAE
 
     memcpy(s->pbr_buffer + s->pbr_length, data, size);
     s->pbr_length += size;
+    memset(s->pbr_buffer + s->pbr_length, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     // Respect decoding delay after synchronization error
     if (s->pbr_delay > 0 && --s->pbr_delay)
@@ -1489,6 +1499,17 @@ int ff_dca_xll_filter_frame(DCAXllDecoder *s, AVFrame *frame)
     } else if (request_mask != s->output_mask && p->dmix_type == DCA_DMIX_TYPE_LtRt) {
         matrix_encoding = AV_MATRIX_ENCODING_DOLBY;
     }
+
+    // TODO: Support downmix when the primary channel set lacks coeffs.
+    if (p->ch_mask == s->output_mask && !dca->request_channel_layout &&
+        p->dmix_embedded && (p->dmix_type == DCA_DMIX_TYPE_LoRo ||
+                             p->dmix_type == DCA_DMIX_TYPE_LtRt)) {
+        ret = ff_dca_export_downmix_matrix(avctx, frame, p->dmix_type, s->output_mask,
+                                           p->dmix_coeff);
+        if (ret < 0)
+            return ret;
+    }
+
     if ((ret = ff_side_data_update_matrix_encoding(frame, matrix_encoding)) < 0)
         return ret;
 

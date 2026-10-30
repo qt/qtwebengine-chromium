@@ -41,7 +41,6 @@
 #include "codec_internal.h"
 #include "encode.h"
 #include "mpegutils.h"
-#include "packet_internal.h"
 
 #if HAVE_UNISTD_H
 #include <unistd.h>
@@ -408,12 +407,14 @@ static av_cold int xvid_encode_init(AVCodecContext *avctx)
     case 5:
         x->me_flags |= XVID_ME_EXTSEARCH16 |
                        XVID_ME_EXTSEARCH8;
+        av_fallthrough;
     case 4:
     case 3:
         x->me_flags |= XVID_ME_ADVANCEDDIAMOND8 |
                        XVID_ME_HALFPELREFINE8   |
                        XVID_ME_CHROMA_PVOP      |
                        XVID_ME_CHROMA_BVOP;
+        av_fallthrough;
     case 2:
     case 1:
         x->me_flags |= XVID_ME_ADVANCEDDIAMOND16 |
@@ -428,11 +429,13 @@ static av_cold int xvid_encode_init(AVCodecContext *avctx)
                          XVID_ME_QUARTERPELREFINE8_RD |
                          XVID_ME_EXTSEARCH_RD         |
                          XVID_ME_CHECKPREDICTION_RD;
+        av_fallthrough;
     case FF_MB_DECISION_BITS:
         if (!(x->vop_flags & XVID_VOP_MODEDECISION_RD))
             x->vop_flags |= XVID_VOP_FAST_MODEDECISION_RD;
         x->me_flags |= XVID_ME_HALFPELREFINE16_RD |
                        XVID_ME_QUARTERPELREFINE16_RD;
+        av_fallthrough;
     default:
         break;
     }
@@ -818,7 +821,7 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     if (xerr > 0) {
-        int pict_type;
+        enum AVPictureType pict_type;
 
         *got_packet = 1;
 
@@ -831,7 +834,7 @@ static int xvid_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         else
             pict_type = AV_PICTURE_TYPE_I;
 
-        ff_side_data_set_encoder_stats(pkt, xvid_enc_stats.quant * FF_QP2LAMBDA, NULL, 0, pict_type);
+        ff_encode_add_stats_side_data(pkt, xvid_enc_stats.quant * FF_QP2LAMBDA, NULL, 0, pict_type);
 
         if (xvid_enc_frame.out_flags & XVID_KEYFRAME) {
             pkt->flags  |= AV_PKT_FLAG_KEY;

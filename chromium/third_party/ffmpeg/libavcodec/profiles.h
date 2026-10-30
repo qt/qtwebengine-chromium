@@ -62,6 +62,7 @@ extern const AVProfile ff_aac_profiles[];
 extern const AVProfile ff_dca_profiles[];
 extern const AVProfile ff_eac3_profiles[];
 extern const AVProfile ff_truehd_profiles[];
+extern const AVProfile ff_mpegh_3da_profiles[];
 extern const AVProfile ff_dnxhd_profiles[];
 extern const AVProfile ff_h264_profiles[];
 extern const AVProfile ff_hevc_profiles[];
@@ -74,9 +75,11 @@ extern const AVProfile ff_vp9_profiles[];
 extern const AVProfile ff_av1_profiles[];
 extern const AVProfile ff_sbc_profiles[];
 extern const AVProfile ff_prores_profiles[];
+extern const AVProfile ff_prores_raw_profiles[];
 extern const AVProfile ff_mjpeg_profiles[];
 extern const AVProfile ff_arib_caption_profiles[];
 extern const AVProfile ff_evc_profiles[];
 extern const AVProfile ff_apv_profiles[];
+extern const AVProfile ff_astc_profiles[];
 
 #endif /* AVCODEC_PROFILES_H */

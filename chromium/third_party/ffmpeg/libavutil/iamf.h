@@ -213,11 +213,11 @@ typedef struct AVIAMFParamDefinition {
     enum AVIAMFParamDefinitionType type;
 
     /**
-     * Identifier for the paremeter substream.
+     * Identifier for the parameter substream.
      */
     unsigned int parameter_id;
     /**
-     * Sample rate for the paremeter substream. It must not be 0.
+     * Sample rate for the parameter substream. It must not be 0.
      */
     unsigned int parameter_rate;
 
@@ -330,14 +330,17 @@ typedef struct AVIAMFLayer {
     /**
      * Demixing matrix as defined in section 3.6.3 of IAMF.
      *
-     * The length of the array is ch_layout.nb_channels multiplied by the sum of
-     * the amount of streams in the group plus the amount of streams in the group
-     * that are stereo.
-     *
      * May be set only if @ref ambisonics_mode == AV_IAMF_AMBISONICS_MODE_PROJECTION,
      * must be NULL otherwise.
      */
     AVRational *demixing_matrix;
+
+    /**
+     * The length of the Demixing matrix array. Must be ch_layout.nb_channels multiplied
+     * by the sum of the amount of streams in the group plus the amount of streams in
+     * the group that are stereo.
+     */
+    unsigned int nb_demixing_matrix;
 } AVIAMFLayer;
 
 

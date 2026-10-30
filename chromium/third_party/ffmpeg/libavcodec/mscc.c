@@ -188,7 +188,7 @@ inflate_error:
                 s->pal[j] = 0xFF000000 | AV_RL32(pal + j * 4);
         } else if (pal) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Palette size %"SIZE_SPECIFIER" is wrong\n", size);
+                   "Palette size %zu is wrong\n", size);
         }
         memcpy(frame->data[1], s->pal, AVPALETTE_SIZE);
     }
@@ -233,7 +233,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     s->uncomp_size = avctx->height * stride;
-    if (!(s->uncomp_buf = av_malloc(s->uncomp_size)))
+    if (!(s->uncomp_buf = av_mallocz(s->uncomp_size)))
         return AVERROR(ENOMEM);
 
     return ff_inflate_init(&s->zstream, avctx);

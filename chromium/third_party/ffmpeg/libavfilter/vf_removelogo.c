@@ -49,7 +49,7 @@
  * remove rough edges, is stored in each pixel. This is done using an in-place
  * erosion algorithm, and incrementing each pixel that survives any given
  * erosion.  Once every pixel is eroded, the maximum value is recorded, and a
- * set of masks from size 0 to this size are generaged. The masks are circular
+ * set of masks from size 0 to this size are generated. The masks are circular
  * binary masks, where each pixel within a radius N (where N is the size of the
  * mask) is a 1, and all other pixels are a 0. Although a gaussian mask would be
  * more mathematically accurate, a binary mask works better in practice because
@@ -64,7 +64,7 @@
  * condition is met (that the image function itself is continuous), even if the
  * second boundary condition (that the derivative of the image function is
  * continuous) is not met. A masking algorithm that does preserve the second
- * boundary coundition (perhaps something based on a highly-modified bi-cubic
+ * boundary condition (perhaps something based on a highly-modified bi-cubic
  * algorithm) should offer even better results on paper, but the noise in a
  * typical TV signal should make anything based on derivatives hopelessly noisy.
  */
@@ -207,29 +207,35 @@ static int load_mask(uint8_t **mask, int *w, int *h,
                      const char *filename, void *log_ctx)
 {
     int ret;
-    enum AVPixelFormat pix_fmt;
-    uint8_t *src_data[4], *gray_data[4];
-    int src_linesize[4], gray_linesize[4];
+    uint8_t *gray_data[4];
+    AVFrame *src_frame;
+    int gray_linesize[4];
 
     /* load image from file */
-    if ((ret = ff_load_image(src_data, src_linesize, w, h, &pix_fmt, filename, log_ctx)) < 0)
+    ret = ff_load_image(&src_frame, filename, log_ctx);
+    if (ret < 0)
         return ret;
+    *w = src_frame->width;
+    *h = src_frame->height;
 
     /* convert the image to GRAY8 */
-    if ((ret = ff_scale_image(gray_data, gray_linesize, *w, *h, AV_PIX_FMT_GRAY8,
-                              src_data, src_linesize, *w, *h, pix_fmt,
-                              log_ctx)) < 0)
+    ret = ff_scale_image(gray_data, gray_linesize, *w, *h, AV_PIX_FMT_GRAY8,
+                         src_frame->data, src_frame->linesize, *w, *h,
+                         src_frame->format, log_ctx);
+    if (ret < 0)
         goto end;
 
     /* copy mask to a newly allocated array */
     *mask = av_malloc(*w * *h);
-    if (!*mask)
+    if (!*mask) {
         ret = AVERROR(ENOMEM);
+        goto end;
+    }
     av_image_copy_plane(*mask, *w, gray_data[0], gray_linesize[0], *w, *h);
 
 end:
-    av_freep(&src_data[0]);
     av_freep(&gray_data[0]);
+    av_frame_free(&src_frame);
     return ret;
 }
 
@@ -305,22 +311,18 @@ static av_cold int init(AVFilterContext *ctx)
        the filter is applied, the mask size is determined on a pixel
        by pixel basis, with pixels nearer the edge of the logo getting
        smaller mask sizes. */
-    mask = (int ***)av_malloc_array(s->max_mask_size + 1, sizeof(int **));
+    mask = av_calloc(s->max_mask_size + 1, sizeof(*mask));
     if (!mask)
         return AVERROR(ENOMEM);
 
     for (a = 0; a <= s->max_mask_size; a++) {
-        mask[a] = (int **)av_malloc_array((a * 2) + 1, sizeof(int *));
-        if (!mask[a]) {
-            av_free(mask);
-            return AVERROR(ENOMEM);
-        }
+        mask[a] = av_calloc((a * 2) + 1, sizeof(*mask[a]));
+        if (!mask[a])
+            goto mask_fail;
         for (b = -a; b <= a; b++) {
-            mask[a][b + a] = (int *)av_malloc_array((a * 2) + 1, sizeof(int));
-            if (!mask[a][b + a]) {
-                av_free(mask);
-                return AVERROR(ENOMEM);
-            }
+            mask[a][b + a] = av_malloc_array((a * 2) + 1, sizeof(*mask[a][b + a]));
+            if (!mask[a][b + a])
+                goto mask_fail;
             for (c = -a; c <= a; c++) {
                 if ((b * b) + (c * c) <= (a * a)) /* Circular 0/1 mask. */
                     mask[a][b + a][c + a] = 1;
@@ -345,6 +347,16 @@ static av_cold int init(AVFilterContext *ctx)
     SHOW_LOGO_INFO(half);
 
     return 0;
+
+mask_fail:
+    for (a = 0; a <= s->max_mask_size; a++) {
+        if (mask[a])
+            for (b = 0; b < (a * 2) + 1; b++)
+                av_free(mask[a][b]);
+        av_free(mask[a]);
+    }
+    av_free(mask);
+    return AVERROR(ENOMEM);
 }
 
 static int config_props_input(AVFilterLink *inlink)

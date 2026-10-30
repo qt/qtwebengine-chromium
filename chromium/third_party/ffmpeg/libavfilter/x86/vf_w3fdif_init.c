@@ -20,7 +20,6 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavfilter/w3fdif.h"
 
@@ -56,7 +55,9 @@ av_cold void ff_w3fdif_init_x86(W3FDIFDSPContext *dsp, int depth)
         dsp->filter_scale        = ff_w3fdif_scale_sse2;
     }
 
-    if (ARCH_X86_64 && EXTERNAL_SSE2(cpu_flags) && depth <= 8) {
+#if ARCH_X86_64
+    if (EXTERNAL_SSE2(cpu_flags) && depth <= 8) {
         dsp->filter_complex_high = ff_w3fdif_complex_high_sse2;
     }
+#endif
 }

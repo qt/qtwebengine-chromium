@@ -69,6 +69,7 @@ static av_cold int cri_decode_init(AVCodecContext *avctx)
     s->jpeg_avctx->flags = avctx->flags;
     s->jpeg_avctx->flags2 = avctx->flags2;
     s->jpeg_avctx->idct_algo = avctx->idct_algo;
+    s->jpeg_avctx->max_pixels = avctx->max_pixels;
     ret = avcodec_open2(s->jpeg_avctx, NULL, NULL);
     if (ret < 0)
         return ret;
@@ -218,10 +219,12 @@ static int cri_decode_frame(AVCodecContext *avctx, AVFrame *p,
             if (bytestream2_get_le32(gb) != 0)
                 return AVERROR_INVALIDDATA;
             break;
-        case 102:
-            bytestream2_get_buffer(gb, codec_name, FFMIN(length, sizeof(codec_name) - 1));
-            length -= FFMIN(length, sizeof(codec_name) - 1);
-            if (strncmp(codec_name, "cintel_craw", FFMIN(length, sizeof(codec_name) - 1)))
+        case 102:;
+            int read_len = FFMIN(length, sizeof(codec_name) - 1);
+            if (read_len != bytestream2_get_buffer(gb, codec_name, read_len))
+                return AVERROR_INVALIDDATA;
+            length -= read_len;
+            if (strncmp(codec_name, "cintel_craw", read_len))
                 return AVERROR_INVALIDDATA;
             compressed = 1;
             goto skip;

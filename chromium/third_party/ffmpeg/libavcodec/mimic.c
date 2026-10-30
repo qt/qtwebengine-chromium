@@ -152,6 +152,12 @@ static int mimic_decode_update_thread_context(AVCodecContext *avctx, const AVCod
     dst->cur_index  = src->next_cur_index;
     dst->prev_index = src->next_prev_index;
 
+    if (src->avctx) {
+        dst->avctx = avctx;
+        memcpy(dst->num_vblocks, src->num_vblocks, sizeof(dst->num_vblocks));
+        memcpy(dst->num_hblocks, src->num_hblocks, sizeof(dst->num_hblocks));
+    }
+
     for (int i = 0; i < FF_ARRAY_ELEMS(dst->frames); i++) {
         ff_progress_frame_unref(&dst->frames[i]);
         if (i != src->next_cur_index && src->frames[i].f)
@@ -399,7 +405,9 @@ static int mimic_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     ctx->bbdsp.bswap_buf(ctx->swap_buf,
                          (const uint32_t *) (buf + MIMIC_HEADER_SIZE),
                          swap_buf_size >> 2);
-    init_get_bits(&ctx->gb, ctx->swap_buf, swap_buf_size << 3);
+    res = init_get_bits8(&ctx->gb, ctx->swap_buf, swap_buf_size);
+    if (res < 0)
+        return res;
 
     res = decode(ctx, quality, num_coeffs, !is_pframe);
     ff_progress_frame_report(&ctx->frames[ctx->cur_index], INT_MAX);

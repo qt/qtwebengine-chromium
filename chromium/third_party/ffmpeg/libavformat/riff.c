@@ -309,11 +309,6 @@ const AVCodecTag ff_codec_bmp_tags[] = {
     { AV_CODEC_ID_R210,         MKTAG('r', '2', '1', '0') },
     { AV_CODEC_ID_V210,         MKTAG('v', '2', '1', '0') },
     { AV_CODEC_ID_V210,         MKTAG('C', '2', '1', '0') },
-#if FF_API_V408_CODECID
-    { AV_CODEC_ID_V308,         MKTAG('v', '3', '0', '8') },
-    { AV_CODEC_ID_V408,         MKTAG('v', '4', '0', '8') },
-    { AV_CODEC_ID_V410,         MKTAG('v', '4', '1', '0') },
-#endif
     { AV_CODEC_ID_YUV4,         MKTAG('y', 'u', 'v', '4') },
     { AV_CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '1') },
     { AV_CODEC_ID_INDEO3,       MKTAG('I', 'V', '3', '2') },
@@ -569,6 +564,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     { AV_CODEC_ID_METASOUND,       0x0075 },
     { AV_CODEC_ID_G729,            0x0083 },
     { AV_CODEC_ID_AAC,             0x00ff },
+    { AV_CODEC_ID_ADPCM_RHETOREX,  0x0100 },
     { AV_CODEC_ID_G723_1,          0x0111 },
     { AV_CODEC_ID_ADPCM_SANYO,     0x0125 },
     { AV_CODEC_ID_SIPR,            0x0130 },
@@ -596,6 +592,7 @@ const AVCodecTag ff_codec_wav_tags[] = {
     /* ADTS AAC */
     { AV_CODEC_ID_AAC,             0x1600 },
     { AV_CODEC_ID_AAC_LATM,        0x1602 },
+    { AV_CODEC_ID_AAC,             0x1610 },
     { AV_CODEC_ID_AC3,             0x2000 },
     /* There is no Microsoft Format Tag for E-AC3, the GUID has to be used */
     { AV_CODEC_ID_EAC3,            0x2000 },

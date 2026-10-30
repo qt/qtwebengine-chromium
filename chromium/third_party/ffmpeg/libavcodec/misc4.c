@@ -57,6 +57,12 @@ static av_cold int misc4_init(AVCodecContext *avctx)
 {
     MISC4Context *s = avctx->priv_data;
 
+    if (avctx->sample_rate <= 0)
+        return AVERROR_INVALIDDATA;
+
+    if (avctx->ch_layout.nb_channels != 1 && avctx->ch_layout.nb_channels != 2)
+        return AVERROR_INVALIDDATA;
+
     avctx->sample_fmt = AV_SAMPLE_FMT_S16;
     switch (avctx->sample_rate) {
     case 8000:
@@ -181,5 +187,4 @@ const FFCodec ff_misc4_decoder = {
     FF_CODEC_DECODE_CB(misc4_decode),
     .p.capabilities   = AV_CODEC_CAP_DR1 |
                         AV_CODEC_CAP_CHANNEL_CONF,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
 };

@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
 
@@ -38,12 +39,15 @@ typedef struct DXVContext {
     GetByteContext gbc;
 
     uint8_t *tex_data;   // Compressed texture
+    unsigned tex_data_size;
     uint8_t *ctex_data;  // Compressed chroma texture
+    unsigned ctex_data_size;
 
-    int64_t tex_size;    // Texture size
+    size_t tex_size;     // Texture size
     int64_t ctex_size;   // Chroma texture size
 
     uint8_t *op_data[4]; // Opcodes
+    unsigned op_data_size[4];
     int64_t op_size[4];  // Opcodes size
 } DXVContext;
 
@@ -274,7 +278,9 @@ static int dxv_decompress_opcodes(GetByteContext *gb, void *dstp, size_t op_size
 
     if ((flag & 3) == 0) {
         bytestream2_skip(gb, 1);
-        bytestream2_get_buffer(gb, dstp, op_size);
+        int read_size = bytestream2_get_buffer(gb, dstp, op_size);
+        if (read_size != op_size)
+            return AVERROR_INVALIDDATA;
     } else if ((flag & 3) == 1) {
         bytestream2_skip(gb, 1);
         memset(dstp, bytestream2_get_byte(gb), op_size);
@@ -823,7 +829,12 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
 static int dxv_decompress_lzf(AVCodecContext *avctx)
 {
     DXVContext *ctx = avctx->priv_data;
-    return ff_lzf_uncompress(&ctx->gbc, &ctx->tex_data, &ctx->tex_size);
+    unsigned old_size = ctx->tex_data_size;
+    int ret = ff_lzf_uncompress(&ctx->gbc, &ctx->tex_data, &ctx->tex_size, &ctx->tex_data_size);
+    old_size = FFMAX(old_size, ctx->tex_size);
+    if (ctx->tex_data_size > old_size)
+        memset(ctx->tex_data + old_size, 0, ctx->tex_data_size - old_size);
+    return ret;
 }
 
 static int dxv_decompress_raw(AVCodecContext *avctx)
@@ -935,6 +946,8 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         }
         break;
     }
+    if (avctx->coded_height / 2 / TEXTURE_BLOCK_H < 1)
+        return AVERROR_INVALIDDATA;
 
     texdsp_ctx.slice_count  = av_clip(avctx->thread_count, 1,
                                       avctx->coded_height / TEXTURE_BLOCK_H);
@@ -969,9 +982,14 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
     ctx->tex_size = avctx->coded_width  / (texdsp_ctx.raw_ratio / (avctx->pix_fmt == AV_PIX_FMT_RGBA ? 4 : 1)) *
                     avctx->coded_height / TEXTURE_BLOCK_H *
                     texdsp_ctx.tex_ratio;
-    ret = av_reallocp(&ctx->tex_data, ctx->tex_size + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (ret < 0)
-        return ret;
+    unsigned old_size = ctx->tex_data_size;
+    void *ptr = av_fast_realloc(ctx->tex_data, &ctx->tex_data_size, ctx->tex_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!ptr)
+        return AVERROR(ENOMEM);
+    ctx->tex_data = ptr;
+
+    if (ctx->tex_data_size > old_size)
+        memset(ctx->tex_data + old_size, 0, ctx->tex_data_size - old_size);
 
     if (avctx->pix_fmt != AV_PIX_FMT_RGBA) {
         int i;
@@ -985,13 +1003,20 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         ctx->op_size[2] = avctx->coded_width * avctx->coded_height / 32;
         ctx->op_size[3] = avctx->coded_width * avctx->coded_height / 16;
 
-        ret = av_reallocp(&ctx->ctex_data, ctx->ctex_size + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (ret < 0)
-            return ret;
+        old_size = ctx->ctex_data_size;
+        ptr = av_fast_realloc(ctx->ctex_data, &ctx->ctex_data_size, ctx->ctex_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!ptr)
+            return AVERROR(ENOMEM);
+        ctx->ctex_data = ptr;
+        if (old_size < ctx->ctex_data_size)
+            memset(ctx->ctex_data + old_size, 0, ctx->ctex_data_size - old_size);
+
         for (i = 0; i < 4; i++) {
-            ret = av_reallocp(&ctx->op_data[i], ctx->op_size[i]);
-            if (ret < 0)
-                return ret;
+            old_size = ctx->op_data_size[i];
+            ptr = av_fast_realloc(ctx->op_data[i], &ctx->op_data_size[i], ctx->op_size[i]);
+            if (!ptr)
+                return AVERROR(ENOMEM);
+            ctx->op_data[i] = ptr;
         }
     }
 
@@ -1017,7 +1042,7 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         ret = ff_texturedsp_exec_decompress_threads(avctx, &texdsp_ctx);
         if (ret < 0)
             return ret;
-        /* fallthrough */
+        av_fallthrough;
     case DXV_FMT_YCG6:
         /* BC5 texture with Co in the first half of each block and Cg in the second */
         ctexdsp_ctx.tex_data.in    = ctx->ctex_data;
@@ -1032,7 +1057,7 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         ret = ff_texturedsp_exec_decompress_threads(avctx, &ctexdsp_ctx);
         if (ret < 0)
             return ret;
-        /* fallthrough */
+        av_fallthrough;
     case DXV_FMT_DXT1:
     case DXV_FMT_DXT5:
         /* For DXT1 and DXT5, self explanatory
@@ -1064,8 +1089,8 @@ static av_cold int dxv_init(AVCodecContext *avctx)
         return ret;
     }
 
-    /* Since codec is based on 4x4 blocks, size is aligned to 4 */
-    avctx->coded_width  = FFALIGN(avctx->width,  TEXTURE_BLOCK_W);
+    /* Codec is based on 4x4 blocks, but in practice width is aligned to 16 */
+    avctx->coded_width  = FFALIGN(avctx->width,  16);
     avctx->coded_height = FFALIGN(avctx->height, TEXTURE_BLOCK_H);
 
     ff_texturedsp_init(&ctx->texdsp);
@@ -1078,11 +1103,16 @@ static av_cold int dxv_close(AVCodecContext *avctx)
     DXVContext *ctx = avctx->priv_data;
 
     av_freep(&ctx->tex_data);
+    ctx->tex_data_size = 0;
+
     av_freep(&ctx->ctex_data);
+    ctx->ctex_data_size = 0;
+
     av_freep(&ctx->op_data[0]);
     av_freep(&ctx->op_data[1]);
     av_freep(&ctx->op_data[2]);
     av_freep(&ctx->op_data[3]);
+    memset(ctx->op_data_size, 0, sizeof(ctx->op_data_size));
 
     return 0;
 }

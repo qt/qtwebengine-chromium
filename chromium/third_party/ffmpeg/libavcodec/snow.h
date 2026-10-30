@@ -45,7 +45,7 @@
 #define FRAC_BITS 4
 #define MAX_REF_FRAMES 8
 
-#define LOG2_OBMC_MAX 8
+#define LOG2_OBMC_MAX 6
 #define OBMC_MAX (1<<(LOG2_OBMC_MAX))
 typedef struct BlockNode{
     int16_t mx;                 ///< Motion vector component X, see mv_scale
@@ -92,7 +92,7 @@ typedef struct SubBand{
     int stride_line; ///< Stride measured in lines, not pixels.
     x_and_coeff * x_coeff;
     struct SubBand *parent;
-    uint8_t state[/*7*2*/ 7 + 512][32];
+    uint8_t state[34][32];
 }SubBand;
 
 typedef struct Plane{
@@ -116,7 +116,11 @@ typedef struct SnowContext{
     RangeCoder c;
     HpelDSPContext hdsp;
     VideoDSPContext vdsp;
-    H264QpelContext h264qpel;
+    union {
+        /// everything except size 2 are from H.264
+        qpel_mc_func put_snow_qpel_pixels_tab[4][16];
+        H264QpelContext h264qpel;
+    };
     SnowDWTContext dwt;
     AVFrame *input_picture;              ///< new_picture with the internal linesizes
     AVFrame *current_picture;
@@ -164,7 +168,6 @@ typedef struct SnowContext{
     slice_buffer sb;
 
     uint8_t *scratchbuf;
-    uint8_t *emu_edge_buffer;
 
     AVMotionVector *avmv;
     unsigned avmv_size;
@@ -310,7 +313,7 @@ static av_always_inline void add_yblock(SnowContext *s, int sliced, slice_buffer
         ff_snow_pred_block(s, block[3], tmp, src_stride, src_x, src_y, b_w, b_h, rb, plane_index, w, h);
     }
     if(sliced){
-        s->dwt.inner_add_yblock(obmc, obmc_stride, block, b_w, b_h, src_x,src_y, src_stride, sb, add, dst8);
+        s->dwt.inner_add_yblock(obmc, obmc_stride, block, b_w, b_h, src_x, src_stride, sb->line + src_y, add, dst8);
     }else{
         for(y=0; y<b_h; y++){
             //FIXME ugly misuse of obmc_stride

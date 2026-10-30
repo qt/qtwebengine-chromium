@@ -113,6 +113,8 @@ static int fastaudio_decode(AVCodecContext *avctx, AVFrame *frame,
     int ret;
 
     subframes = pkt->size / (40 * avctx->ch_layout.nb_channels);
+    if (subframes <= 0 || subframes > INT_MAX / 256)
+        return AVERROR_INVALIDDATA;
     frame->nb_samples = subframes * 256;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
@@ -196,5 +198,4 @@ const FFCodec ff_fastaudio_decoder = {
     FF_CODEC_DECODE_CB(fastaudio_decode),
     .close          = fastaudio_close,
     .p.capabilities = AV_CODEC_CAP_DR1,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLTP),
 };

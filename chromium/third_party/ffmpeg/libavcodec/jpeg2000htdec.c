@@ -1219,7 +1219,7 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
     uint8_t *block_states = NULL;
 
     int32_t n, val;             // Post-processing
-    const uint32_t mask  = UINT32_MAX >> (M_b + 1); // bit mask for ROI detection
+    const uint32_t mask  = (int64_t)UINT32_MAX >> (M_b + 1); // bit mask for ROI detection
 
     uint8_t num_rempass;
 
@@ -1254,6 +1254,11 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
                "Cleanup pass length must be at least 2 bytes in length\n");
         return AVERROR_INVALIDDATA;
     }
+    // this might arise either if the codestream is corrupted; or contains multiple HT Sets
+    // (see Rec. ITU-T T.814, Annex B.1), which the parser does not currently support
+    if (Lcup + Lref != cblk->length)
+        return AVERROR_INVALIDDATA;
+
     Dcup = cblk->data;
     Dref  = cblk->data + Lcup; // Dref comes after the refinement segment
 
@@ -1262,6 +1267,11 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
     S_blk = p0 + cblk->zbp;
     cblk->zbp = S_blk - 1;
     pLSB  = 30 - S_blk;
+
+    if (pLSB <= 1 || pLSB >= 31) {
+        avpriv_request_sample(s->avctx, "pLSB %d", pLSB);
+        return AVERROR_PATCHWELCOME;
+    }
 
     Scup = (Dcup[Lcup - 1] << 4) + (Dcup[Lcup - 2] & 0x0F);
 
@@ -1324,8 +1334,19 @@ ff_jpeg2000_decode_htj2k(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *c
             sign = val & INT32_MIN;
             val &= INT32_MAX;
             /* ROI shift, if necessary */
-            if (roi_shift && (((uint32_t)val & ~mask) == 0))
-                val <<= roi_shift;
+            if (roi_shift && (((uint32_t)val & ~mask) == 0)) {
+                if ((32 - ff_clz(val | 1)) < roi_shift)
+                    // Assuming that the internal precision for codeblock decoding is 32 bits.
+                    val <<= roi_shift;
+                else {
+                    av_log(s->avctx, AV_LOG_ERROR,
+                        "Pixel precision in ROI is beyond the supported range.\n"
+                    );
+                    ret = AVERROR_PATCHWELCOME;
+                    goto free;
+                }
+
+            }
             t1->data[n] = val | sign; /* NOTE: Binary point for reconstruction value is located in 31 - M_b */
         }
     }

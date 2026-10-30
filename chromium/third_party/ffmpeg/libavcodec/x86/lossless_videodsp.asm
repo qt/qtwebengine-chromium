@@ -27,9 +27,8 @@ SECTION_RODATA
 
 cextern pb_15
 pb_zzzzzzzz77777777: times 8 db -1
-pb_7: times 8 db 7
+                     times 8 db 7
 pb_ef: times 8 db 14,15
-pb_67: times 8 db  6, 7
 pb_zzzz3333zzzzbbbb: db -1,-1,-1,-1,3,3,3,3,-1,-1,-1,-1,11,11,11,11
 pb_zz11zz55zz99zzdd: db -1,-1,1,1,-1,-1,5,5,-1,-1,9,9,-1,-1,13,13
 pb_zzzz2323zzzzabab: db -1,-1,-1,-1, 2, 3, 2, 3,-1,-1,-1,-1,10,11,10,11
@@ -47,7 +46,7 @@ cglobal add_median_pred, 6,6,8, dst, top, diff, w, left, left_top
     movu    m0, [topq]
     mova    m2, m0
     movd    m4, [left_topq]
-    LSHIFT  m2, 1
+    pslldq  m2, 1
     mova    m1, m0
     por     m4, m2
     movd    m3, [leftq]
@@ -60,7 +59,7 @@ cglobal add_median_pred, 6,6,8, dst, top, diff, w, left, left_top
 .loop:
     movu    m4, [topq+wq]
     mova    m0, m4
-    LSHIFT  m4, 1
+    pslldq  m4, 1
     por     m4, m1
     mova    m1, m0 ; t
     psubb   m0, m4 ; t-tl
@@ -78,17 +77,17 @@ cglobal add_median_pred, 6,6,8, dst, top, diff, w, left, left_top
     paddb   m3, m2 ; +residual
 %if i==0
     mova    m7, m3
-    LSHIFT  m7, mmsize-1
+    pslldq  m7, mmsize-1
 %else
     mova    m6, m3
-    RSHIFT  m7, 1
-    LSHIFT  m6, mmsize-1
+    psrldq  m7, 1
+    pslldq  m6, mmsize-1
     por     m7, m6
 %endif
 %if i<mmsize-1
-    RSHIFT  m0, 1
-    RSHIFT  m1, 1
-    RSHIFT  m2, 1
+    psrldq  m0, 1
+    psrldq  m1, 1
+    psrldq  m2, 1
 %endif
 %assign i i+1
 %endrep
@@ -102,46 +101,30 @@ cglobal add_median_pred, 6,6,8, dst, top, diff, w, left, left_top
     RET
 
 
-%macro ADD_LEFT_LOOP 2 ; %1 = dst_is_aligned, %2 = src_is_aligned
+%macro ADD_LEFT_LOOP 2 ; %1 = dst alignment (a/u), %2 = src alignment (a/u)
     add     srcq, wq
     add     dstq, wq
     neg     wq
 %%.loop:
     pshufb  xm0, xm5
-%if %2
-    mova    m1, [srcq+wq]
-%else
-    movu    m1, [srcq+wq]
-%endif
+    mov%2   m1, [srcq+wq]
     psllw   m2, m1, 8
     paddb   m1, m2
     pshufb  m2, m1, m3
     paddb   m1, m2
     pshufb  m2, m1, m4
     paddb   m1, m2
-%if mmsize >= 16
     pshufb  m2, m1, m6
     paddb   m1, m2
-%endif
     paddb   xm0, xm1
-%if %1
-    mova    [dstq+wq], xm0
-%else
-    movq    [dstq+wq], xm0
-    movhps  [dstq+wq+8], xm0
-%endif
+    mov%1   [dstq+wq], xm0
 
 %if mmsize == 32
     vextracti128    xm2, m1, 1 ; get second lane of the ymm
     pshufb          xm0, xm5   ; set alls val to last val of the first lane
     paddb           xm0, xm2
 ;store val
-%if %1
-    mova    [dstq+wq+16], xm0
-%else;
-    movq    [dstq+wq+16], xm0
-    movhps  [dstq+wq+16+8], xm0
-%endif
+    mov%1   [dstq+wq+16], xm0
 %endif
     add     wq, mmsize
     jl %%.loop
@@ -160,16 +143,6 @@ cglobal add_median_pred, 6,6,8, dst, top, diff, w, left, left_top
 ;------------------------------------------------------------------------------
 ; int ff_add_left_pred(uint8_t *dst, const uint8_t *src, int w, int left)
 ;------------------------------------------------------------------------------
-INIT_MMX ssse3
-cglobal add_left_pred, 3,3,7, dst, src, w, left
-.skip_prologue:
-    mova    m5, [pb_7]
-    mova    m4, [pb_zzzz3333zzzzbbbb]
-    mova    m3, [pb_zz11zz55zz99zzdd]
-    movd    m0, leftm
-    psllq   m0, 56
-    ADD_LEFT_LOOP 1, 1
-
 %macro ADD_LEFT_PRED_UNALIGNED 0
 cglobal add_left_pred_unaligned, 3,3,7, dst, src, w, left
     mova    xm5, [pb_15]
@@ -178,15 +151,17 @@ cglobal add_left_pred_unaligned, 3,3,7, dst, src, w, left
     VBROADCASTI128    m3, [pb_zz11zz55zz99zzdd]
     movd    xm0, leftm
     pslldq  xm0, 15
+%if notcpuflag(avx2)
     test    srcq, mmsize - 1
     jnz .src_unaligned
     test    dstq, mmsize - 1
     jnz .dst_unaligned
-    ADD_LEFT_LOOP 1, 1
+    ADD_LEFT_LOOP a, a
 .dst_unaligned:
-    ADD_LEFT_LOOP 0, 1
+    ADD_LEFT_LOOP u, a
 .src_unaligned:
-    ADD_LEFT_LOOP 0, 0
+%endif
+    ADD_LEFT_LOOP u, u
 %endmacro
 
 INIT_XMM ssse3
@@ -255,19 +230,12 @@ ADD_BYTES
     pshufb  m1, m3
     paddw   m1, m2
     pshufb  m0, m5
-%if mmsize == 16
     mova    m2, m1
     pshufb  m1, m4
     paddw   m1, m2
-%endif
     paddw   m0, m1
-    pand    m0, m7
-%ifidn %1, a
-    mova    [dstq+wq], m0
-%else
-    movq    [dstq+wq], m0
-    movhps  [dstq+wq+8], m0
-%endif
+    pand    m0, m6
+    mov%1   [dstq+wq], m0
     add     wq, mmsize
     jl %%.loop
     mov     eax, mmsize-1
@@ -284,26 +252,15 @@ ADD_BYTES
 ;---------------------------------------------------------------------------------------------
 ; int add_left_pred_int16(uint16_t *dst, const uint16_t *src, unsigned mask, int w, int left)
 ;---------------------------------------------------------------------------------------------
-INIT_MMX ssse3
-cglobal add_left_pred_int16, 4,4,8, dst, src, mask, w, left
-.skip_prologue:
-    mova    m5, [pb_67]
-    mova    m3, [pb_zzzz2323zzzzabab]
-    movd    m0, leftm
-    psllq   m0, 48
-    movd    m7, maskm
-    SPLATW  m7 ,m7
-    ADD_HFYU_LEFT_LOOP_INT16 a, a
-
 INIT_XMM ssse3
-cglobal add_left_pred_int16_unaligned, 4,4,8, dst, src, mask, w, left
+cglobal add_left_pred_int16_unaligned, 4,4,7, dst, src, mask, w, left
     mova    m5, [pb_ef]
     mova    m4, [pb_zzzzzzzz67676767]
     mova    m3, [pb_zzzz2323zzzzabab]
     movd    m0, leftm
+    movd    m6, maskm
     pslldq  m0, 14
-    movd    m7, maskm
-    SPLATW  m7 ,m7
+    SPLATW  m6, m6
     test    srcq, 15
     jnz .src_unaligned
     test    dstq, 15
@@ -319,14 +276,14 @@ cglobal add_left_pred_int16_unaligned, 4,4,8, dst, src, mask, w, left
 ; void add_gradient_pred(uint8_t *src, const ptrdiff_t stride, const ptrdiff_t width)
 ;---------------------------------------------------------------------------------------------
 %macro ADD_GRADIENT_PRED 0
-cglobal add_gradient_pred, 3,4,5, src, stride, width, tmp
+cglobal add_gradient_pred, 3,3,4, src, stride, width
     mova         xm0, [pb_15]
 
 ;load src - 1 in xm1
-    movd         xm1, [srcq-1]
 %if cpuflag(avx2)
-    vpbroadcastb xm1, xm1
+    vpbroadcastb xm1, [srcq-1]
 %else
+    movd         xm1, [srcq-1]
     pxor         xm2, xm2
     pshufb       xm1, xm2
 %endif
@@ -334,16 +291,17 @@ cglobal add_gradient_pred, 3,4,5, src, stride, width, tmp
     add    srcq, widthq
     neg  widthq
     neg strideq
+    add strideq, srcq
+    DEFINE_ARGS src, top, width
 
 .loop:
-    lea    tmpq, [srcq + strideq]
-    mova     m2, [tmpq + widthq] ; A = src[x-stride]
-    movu     m3, [tmpq + widthq - 1] ; B = src[x - (stride + 1)]
-    mova     m4, [srcq + widthq] ; current val (src[x])
+    mova     m2, [srcq + widthq]     ; current val (src[x])
+    paddb    m2, [topq + widthq]     ; add A = src[x-stride]
+    movu     m3, [topq + widthq - 1] ; B = src[x - (stride + 1)]
 
-    psubb    m2, m3; A - B
+    psubb    m2, m3                  ; cur + A - B
 
-; prefix sum A-B
+; prefix sum
     pslldq   m3, m2, 1
     paddb    m2, m3
     pslldq   m3, m2, 2
@@ -352,19 +310,6 @@ cglobal add_gradient_pred, 3,4,5, src, stride, width, tmp
     paddb    m2, m3
     pslldq   m3, m2, 8
     paddb    m2, m3
-
-; prefix sum current val
-    pslldq   m3, m4, 1
-    paddb    m4, m3
-    pslldq   m3, m4, 2
-    paddb    m4, m3
-    pslldq   m3, m4, 4
-    paddb    m4, m3
-    pslldq   m3, m4, 8
-    paddb    m4, m3
-
-; last sum
-    paddb                    m2, m4 ; current + (A - B)
 
     paddb                   xm1, xm2 ; += C
     mova        [srcq + widthq], xm1 ; store

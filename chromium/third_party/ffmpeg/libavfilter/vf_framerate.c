@@ -262,7 +262,7 @@ void ff_framerate_init(FrameRateContext *s)
         s->blend_factor_max = 1 << BLEND_FACTOR_DEPTH(16);
         s->blend = blend_frames16_c;
     }
-#if ARCH_X86
+#if ARCH_X86 && HAVE_X86ASM
     ff_framerate_init_x86(s);
 #endif
 }
@@ -282,7 +282,7 @@ static int config_input(AVFilterLink *inlink)
 
     s->bitdepth = pix_desc->comp[0].depth;
 
-    s->sad = ff_scene_sad_get_fn(s->bitdepth == 8 ? 8 : 16);
+    s->sad = ff_scene_sad_get_fn(s->bitdepth);
     if (!s->sad)
         return AVERROR(EINVAL);
 

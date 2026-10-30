@@ -132,8 +132,9 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
             goto fail;
         }
 
-        if ((ret = fwrite(buffer, 1, size, output_file)) < 0) {
+        if (fwrite(buffer, 1, size, output_file) != size) {
             fprintf(stderr, "Failed to dump raw data.\n");
+            ret = -1;
             goto fail;
         }
 
@@ -215,8 +216,10 @@ int main(int argc, char *argv[])
         return AVERROR(ENOMEM);
 
     video = input_ctx->streams[video_stream];
-    if (avcodec_parameters_to_context(decoder_ctx, video->codecpar) < 0)
+    if (avcodec_parameters_to_context(decoder_ctx, video->codecpar) < 0) {
+        avcodec_free_context(&decoder_ctx);
         return -1;
+    }
 
     decoder_ctx->get_format  = get_hw_format;
 
@@ -230,6 +233,10 @@ int main(int argc, char *argv[])
 
     /* open the file to dump raw data */
     output_file = fopen(argv[3], "w+b");
+    if (!output_file) {
+        fprintf(stderr, "Cannot open output file '%s'\n", argv[3]);
+        return -1;
+    }
 
     /* actual decoding and dump the raw data */
     while (ret >= 0) {

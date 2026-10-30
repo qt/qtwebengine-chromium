@@ -46,6 +46,9 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CBS_H266
     &CBS_FUNC(type_h266),
 #endif
+#if CBS_LCEVC
+    &CBS_FUNC(type_lcevc),
+#endif
 #if CBS_JPEG
     &CBS_FUNC(type_jpeg),
 #endif
@@ -58,37 +61,6 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CBS_VP9
     &CBS_FUNC(type_vp9),
 #endif
-};
-
-const enum AVCodecID CBS_FUNC(all_codec_ids)[] = {
-#if CBS_APV
-    AV_CODEC_ID_APV,
-#endif
-#if CBS_AV1
-    AV_CODEC_ID_AV1,
-#endif
-#if CBS_H264
-    AV_CODEC_ID_H264,
-#endif
-#if CBS_H265
-    AV_CODEC_ID_H265,
-#endif
-#if CBS_H266
-    AV_CODEC_ID_H266,
-#endif
-#if CBS_JPEG
-    AV_CODEC_ID_MJPEG,
-#endif
-#if CBS_MPEG2
-    AV_CODEC_ID_MPEG2VIDEO,
-#endif
-#if CBS_VP8
-    AV_CODEC_ID_VP8,
-#endif
-#if CBS_VP9
-    AV_CODEC_ID_VP9,
-#endif
-    AV_CODEC_ID_NONE
 };
 
 av_cold int CBS_FUNC(init)(CodedBitstreamContext **ctx_ptr,
@@ -231,7 +203,8 @@ static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
             unit->content = NULL;
         } else if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to read unit %d "
-                   "(type %"PRIu32").\n", i, unit->type);
+                   "(type %"PRIu32"): %s.\n",
+                   i, unit->type, av_err2str(err));
             return err;
         }
     }
@@ -375,7 +348,7 @@ static int cbs_write_unit_data(CodedBitstreamContext *ctx,
         if (ret < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Unable to allocate a "
                    "sufficiently large write buffer (last attempt "
-                   "%"SIZE_SPECIFIER" bytes).\n", ctx->write_buffer_size);
+                   "%zu bytes).\n", ctx->write_buffer_size);
             return ret;
         }
     }
@@ -890,7 +863,7 @@ void CBS_FUNC(delete_unit)(CodedBitstreamFragment *frag,
 
 static void cbs_default_free_unit_content(AVRefStructOpaque opaque, void *content)
 {
-    const CodedBitstreamUnitTypeDescriptor *desc = opaque.c;
+    CodedBitstreamUnitTypeDescriptor *desc = opaque.c;
 
     for (int i = 0; i < desc->type.ref.nb_offsets; i++) {
         void **ptr = (void**)((char*)content + desc->type.ref.offsets[i]);
@@ -898,11 +871,11 @@ static void cbs_default_free_unit_content(AVRefStructOpaque opaque, void *conten
     }
 }
 
-static const CodedBitstreamUnitTypeDescriptor
+static CodedBitstreamUnitTypeDescriptor
     *cbs_find_unit_type_desc(CodedBitstreamContext *ctx,
                              CodedBitstreamUnit *unit)
 {
-    const CodedBitstreamUnitTypeDescriptor *desc;
+    CodedBitstreamUnitTypeDescriptor *desc;
     int i, j;
 
     if (!ctx->codec->unit_types)
@@ -926,7 +899,7 @@ static const CodedBitstreamUnitTypeDescriptor
     return NULL;
 }
 
-static void *cbs_alloc_content(const CodedBitstreamUnitTypeDescriptor *desc)
+static void *cbs_alloc_content(CodedBitstreamUnitTypeDescriptor *desc)
 {
     return av_refstruct_alloc_ext_c(desc->content_size, 0,
                                     (AVRefStructOpaque){ .c = desc },
@@ -938,7 +911,7 @@ static void *cbs_alloc_content(const CodedBitstreamUnitTypeDescriptor *desc)
 int CBS_FUNC(alloc_unit_content)(CodedBitstreamContext *ctx,
                               CodedBitstreamUnit *unit)
 {
-    const CodedBitstreamUnitTypeDescriptor *desc;
+    CodedBitstreamUnitTypeDescriptor *desc;
 
     av_assert0(!unit->content && !unit->content_ref);
 
@@ -956,11 +929,11 @@ int CBS_FUNC(alloc_unit_content)(CodedBitstreamContext *ctx,
 
 static int cbs_clone_noncomplex_unit_content(void **clonep,
                                              const CodedBitstreamUnit *unit,
-                                             const CodedBitstreamUnitTypeDescriptor *desc)
+                                             CodedBitstreamUnitTypeDescriptor *desc)
 {
     const uint8_t *src;
     uint8_t *copy;
-    int err, i;
+    int err;
 
     av_assert0(unit->content);
     src = unit->content;
@@ -975,7 +948,7 @@ static int cbs_clone_noncomplex_unit_content(void **clonep,
         *(ptr + 1) = NULL;
     }
 
-    for (i = 0; i < desc->type.ref.nb_offsets; i++) {
+    for (int i = 0; i < desc->type.ref.nb_offsets; i++) {
         const uint8_t *const *src_ptr = (const uint8_t* const*)(src + desc->type.ref.offsets[i]);
         const AVBufferRef *src_buf = *(AVBufferRef**)(src_ptr + 1);
         uint8_t **copy_ptr = (uint8_t**)(copy + desc->type.ref.offsets[i]);
@@ -1016,7 +989,7 @@ fail:
 static int cbs_clone_unit_content(CodedBitstreamContext *ctx,
                                   CodedBitstreamUnit *unit)
 {
-    const CodedBitstreamUnitTypeDescriptor *desc;
+    CodedBitstreamUnitTypeDescriptor *desc;
     void *new_content;
     int err;
 

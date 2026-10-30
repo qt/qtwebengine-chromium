@@ -77,7 +77,7 @@ enum GraticuleType {
 };
 
 typedef struct GraticuleLine {
-    const char *name;
+    char name[6];
     uint16_t pos;
 } GraticuleLine;
 
@@ -114,7 +114,7 @@ typedef struct WaveformContext {
     int            scale;
     uint8_t        grat_yuva_color[4];
     int            shift_w[4], shift_h[4];
-    GraticuleLines *glines;
+    const GraticuleLines *glines;
     int            nb_glines;
     int            rgb;
     float          ftint[2];
@@ -345,7 +345,7 @@ static int query_formats(AVFilterContext *ctx)
     }
 
     if (!ctx->inputs[0]->outcfg.formats) {
-        if ((ret = ff_formats_ref(ff_make_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
+        if ((ret = ff_formats_ref(ff_make_pixel_format_list(in_pix_fmts), &ctx->inputs[0]->outcfg.formats)) < 0)
             return ret;
     }
 
@@ -393,7 +393,7 @@ static int query_formats(AVFilterContext *ctx)
         out_pix_fmts = out_yuv12_lowpass_pix_fmts;
     else
         return AVERROR(EAGAIN);
-    if ((ret = ff_formats_ref(ff_make_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
+    if ((ret = ff_formats_ref(ff_make_pixel_format_list(out_pix_fmts), &ctx->outputs[0]->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -705,10 +705,10 @@ static av_always_inline void lowpass16(WaveformContext *s,
     const int max = limit - intensity;
     const int src_h = AV_CEIL_RSHIFT(in->height, shift_h);
     const int src_w = AV_CEIL_RSHIFT(in->width, shift_w);
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int step = column ? 1 << shift_w : 1 << shift_h;
     const uint16_t *src_data = (const uint16_t *)in->data[plane] + sliceh_start * src_linesize;
     uint16_t *dst_data = (uint16_t *)out->data[dplane] + (offset_y + sliceh_start * step) * dst_linesize + offset_x;
@@ -842,10 +842,10 @@ static av_always_inline void lowpass(WaveformContext *s,
     const int max = 255 - intensity;
     const int src_h = AV_CEIL_RSHIFT(in->height, shift_h);
     const int src_w = AV_CEIL_RSHIFT(in->width, shift_w);
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int step = column ? 1 << shift_w : 1 << shift_h;
     const uint8_t *src_data = in->data[plane] + sliceh_start * src_linesize;
     uint8_t *dst_data = out->data[dplane] + (offset_y + sliceh_start * step) * dst_linesize + offset_x;
@@ -986,10 +986,10 @@ static av_always_inline void flat16(WaveformContext *s,
     const int mid = s->max / 2;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     int x, y;
 
     if (column) {
@@ -1123,10 +1123,10 @@ static av_always_inline void flat(WaveformContext *s,
     const int max = 255 - intensity;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     int x, y;
 
     if (column) {
@@ -1269,10 +1269,10 @@ static int name(AVFilterContext *ctx,                                           
     const int mid = s->max / 2;                                                                                    \
     const int src_h = in->height;                                                                                  \
     const int src_w = in->width;                                                                                   \
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;                                              \
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;                                        \
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;                                               \
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;                                         \
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;                                    \
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;                              \
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;                                     \
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;                               \
     int x, y;                                                                                                      \
                                                                                                                    \
     if (column) {                                                                                                  \
@@ -1386,10 +1386,10 @@ static int name(AVFilterContext *ctx,                                           
     int offset_x = td->offset_x;                                                                      \
     const int src_h = in->height;                                                                     \
     const int src_w = in->width;                                                                      \
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;                                 \
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;                           \
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;                                  \
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;                            \
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;                       \
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;                 \
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;                        \
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;                  \
     const int intensity = s->intensity;                                                               \
     const int plane = s->desc->comp[component].plane;                                                 \
     const int c0_linesize = in->linesize[ plane + 0 ];                                                \
@@ -1550,10 +1550,10 @@ static av_always_inline void chroma16(WaveformContext *s,
     const int c1_shift_h = s->shift_h[(component + 2) % s->ncomp];
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     int x, y;
 
     if (column) {
@@ -1646,10 +1646,10 @@ static av_always_inline void chroma(WaveformContext *s,
     const int plane = s->desc->comp[component].plane;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int c0_linesize = in->linesize[(plane + 1) % s->ncomp];
     const int c1_linesize = in->linesize[(plane + 2) % s->ncomp];
     const int dst_linesize = out->linesize[plane];
@@ -1751,10 +1751,10 @@ static av_always_inline void color16(WaveformContext *s,
     const int limit = s->max - 1;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int c0_linesize = in->linesize[ plane + 0 ] / 2;
     const int c1_linesize = in->linesize[(plane + 1) % s->ncomp] / 2;
     const int c2_linesize = in->linesize[(plane + 2) % s->ncomp] / 2;
@@ -1883,10 +1883,10 @@ static av_always_inline void color(WaveformContext *s,
     const int plane = s->desc->comp[component].plane;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int c0_linesize = in->linesize[ plane + 0 ];
     const int c1_linesize = in->linesize[(plane + 1) % s->ncomp];
     const int c2_linesize = in->linesize[(plane + 2) % s->ncomp];
@@ -2017,10 +2017,10 @@ static av_always_inline void acolor16(WaveformContext *s,
     const int max = limit - intensity;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int c0_shift_h = s->shift_h[ component + 0 ];
     const int c1_shift_h = s->shift_h[(component + 1) % s->ncomp];
     const int c2_shift_h = s->shift_h[(component + 2) % s->ncomp];
@@ -2149,10 +2149,10 @@ static av_always_inline void acolor(WaveformContext *s,
     const int plane = s->desc->comp[component].plane;
     const int src_h = in->height;
     const int src_w = in->width;
-    const int sliceh_start = !column ? (src_h * jobnr) / nb_jobs : 0;
-    const int sliceh_end = !column ? (src_h * (jobnr+1)) / nb_jobs : src_h;
-    const int slicew_start = column ? (src_w * jobnr) / nb_jobs : 0;
-    const int slicew_end = column ? (src_w * (jobnr+1)) / nb_jobs : src_w;
+    const int sliceh_start = !column ? ff_slice_pos(src_h, jobnr, nb_jobs) : 0;
+    const int sliceh_end = !column ? ff_slice_pos(src_h, jobnr + 1, nb_jobs) : src_h;
+    const int slicew_start = column ? ff_slice_pos(src_w, jobnr, nb_jobs) : 0;
+    const int slicew_end = column ? ff_slice_pos(src_w, jobnr + 1, nb_jobs) : src_w;
     const int c0_shift_w = s->shift_w[ component + 0 ];
     const int c1_shift_w = s->shift_w[(component + 1) % s->ncomp];
     const int c2_shift_w = s->shift_w[(component + 2) % s->ncomp];
@@ -2635,7 +2635,7 @@ static void draw_htext(AVFrame *out, int x, int y, int mult, float o1, float o2,
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2661,7 +2661,7 @@ static void draw_htext16(AVFrame *out, int x, int y, int mult, float o1, float o
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2687,7 +2687,7 @@ static void draw_vtext(AVFrame *out, int x, int y, int mult, float o1, float o2,
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2712,7 +2712,7 @@ static void draw_vtext16(AVFrame *out, int x, int y, int mult, float o1, float o
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2779,7 +2779,7 @@ static void idraw_htext(AVFrame *out, int x, int y, int mult, float o1, float o2
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2805,7 +2805,7 @@ static void idraw_htext16(AVFrame *out, int x, int y, int mult, float o1, float 
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2831,7 +2831,7 @@ static void idraw_vtext(AVFrame *out, int x, int y, int mult, float o1, float o2
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -2856,7 +2856,7 @@ static void idraw_vtext16(AVFrame *out, int x, int y, int mult, float o1, float 
     int font_height;
     int i, plane;
 
-    font = avpriv_cga_font,   font_height =  8;
+    font = avpriv_cga_font_get(),   font_height =  8;
 
     for (plane = 0; plane < 4 && out->data[plane]; plane++) {
         for (i = 0; txt[i]; i++) {
@@ -3180,26 +3180,26 @@ static int config_input(AVFilterLink *inlink)
         switch (s->scale) {
         case DIGITAL:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)digital8;  s->nb_glines = FF_ARRAY_ELEMS(digital8);  break;
-            case  9: s->glines = (GraticuleLines *)digital9;  s->nb_glines = FF_ARRAY_ELEMS(digital9);  break;
-            case 10: s->glines = (GraticuleLines *)digital10; s->nb_glines = FF_ARRAY_ELEMS(digital10); break;
-            case 12: s->glines = (GraticuleLines *)digital12; s->nb_glines = FF_ARRAY_ELEMS(digital12); break;
+            case  8: s->glines = digital8;  s->nb_glines = FF_ARRAY_ELEMS(digital8);  break;
+            case  9: s->glines = digital9;  s->nb_glines = FF_ARRAY_ELEMS(digital9);  break;
+            case 10: s->glines = digital10; s->nb_glines = FF_ARRAY_ELEMS(digital10); break;
+            case 12: s->glines = digital12; s->nb_glines = FF_ARRAY_ELEMS(digital12); break;
             }
             break;
         case MILLIVOLTS:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(millivolts8);  break;
-            case  9: s->glines = (GraticuleLines *)millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(millivolts9);  break;
-            case 10: s->glines = (GraticuleLines *)millivolts10; s->nb_glines = FF_ARRAY_ELEMS(millivolts10); break;
-            case 12: s->glines = (GraticuleLines *)millivolts12; s->nb_glines = FF_ARRAY_ELEMS(millivolts12); break;
+            case  8: s->glines = millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(millivolts8);  break;
+            case  9: s->glines = millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(millivolts9);  break;
+            case 10: s->glines = millivolts10; s->nb_glines = FF_ARRAY_ELEMS(millivolts10); break;
+            case 12: s->glines = millivolts12; s->nb_glines = FF_ARRAY_ELEMS(millivolts12); break;
             }
             break;
         case IRE:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)ire8;  s->nb_glines = FF_ARRAY_ELEMS(ire8);  break;
-            case  9: s->glines = (GraticuleLines *)ire9;  s->nb_glines = FF_ARRAY_ELEMS(ire9);  break;
-            case 10: s->glines = (GraticuleLines *)ire10; s->nb_glines = FF_ARRAY_ELEMS(ire10); break;
-            case 12: s->glines = (GraticuleLines *)ire12; s->nb_glines = FF_ARRAY_ELEMS(ire12); break;
+            case  8: s->glines = ire8;  s->nb_glines = FF_ARRAY_ELEMS(ire8);  break;
+            case  9: s->glines = ire9;  s->nb_glines = FF_ARRAY_ELEMS(ire9);  break;
+            case 10: s->glines = ire10; s->nb_glines = FF_ARRAY_ELEMS(ire10); break;
+            case 12: s->glines = ire12; s->nb_glines = FF_ARRAY_ELEMS(ire12); break;
             }
             break;
         }
@@ -3208,26 +3208,26 @@ static int config_input(AVFilterLink *inlink)
         switch (s->scale) {
         case DIGITAL:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)chroma_digital8;  s->nb_glines = FF_ARRAY_ELEMS(chroma_digital8);  break;
-            case  9: s->glines = (GraticuleLines *)chroma_digital9;  s->nb_glines = FF_ARRAY_ELEMS(chroma_digital9);  break;
-            case 10: s->glines = (GraticuleLines *)chroma_digital10; s->nb_glines = FF_ARRAY_ELEMS(chroma_digital10); break;
-            case 12: s->glines = (GraticuleLines *)chroma_digital12; s->nb_glines = FF_ARRAY_ELEMS(chroma_digital12); break;
+            case  8: s->glines = chroma_digital8;  s->nb_glines = FF_ARRAY_ELEMS(chroma_digital8);  break;
+            case  9: s->glines = chroma_digital9;  s->nb_glines = FF_ARRAY_ELEMS(chroma_digital9);  break;
+            case 10: s->glines = chroma_digital10; s->nb_glines = FF_ARRAY_ELEMS(chroma_digital10); break;
+            case 12: s->glines = chroma_digital12; s->nb_glines = FF_ARRAY_ELEMS(chroma_digital12); break;
             }
             break;
         case MILLIVOLTS:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(millivolts8);  break;
-            case  9: s->glines = (GraticuleLines *)millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(millivolts9);  break;
-            case 10: s->glines = (GraticuleLines *)millivolts10; s->nb_glines = FF_ARRAY_ELEMS(millivolts10); break;
-            case 12: s->glines = (GraticuleLines *)millivolts12; s->nb_glines = FF_ARRAY_ELEMS(millivolts12); break;
+            case  8: s->glines = millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(millivolts8);  break;
+            case  9: s->glines = millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(millivolts9);  break;
+            case 10: s->glines = millivolts10; s->nb_glines = FF_ARRAY_ELEMS(millivolts10); break;
+            case 12: s->glines = millivolts12; s->nb_glines = FF_ARRAY_ELEMS(millivolts12); break;
             }
             break;
         case IRE:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)ire8;  s->nb_glines = FF_ARRAY_ELEMS(ire8);  break;
-            case  9: s->glines = (GraticuleLines *)ire9;  s->nb_glines = FF_ARRAY_ELEMS(ire9);  break;
-            case 10: s->glines = (GraticuleLines *)ire10; s->nb_glines = FF_ARRAY_ELEMS(ire10); break;
-            case 12: s->glines = (GraticuleLines *)ire12; s->nb_glines = FF_ARRAY_ELEMS(ire12); break;
+            case  8: s->glines = ire8;  s->nb_glines = FF_ARRAY_ELEMS(ire8);  break;
+            case  9: s->glines = ire9;  s->nb_glines = FF_ARRAY_ELEMS(ire9);  break;
+            case 10: s->glines = ire10; s->nb_glines = FF_ARRAY_ELEMS(ire10); break;
+            case 12: s->glines = ire12; s->nb_glines = FF_ARRAY_ELEMS(ire12); break;
             }
             break;
         }
@@ -3238,26 +3238,26 @@ static int config_input(AVFilterLink *inlink)
         switch (s->scale) {
         case DIGITAL:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)aflat_digital8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_digital8);  break;
-            case  9: s->glines = (GraticuleLines *)aflat_digital9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_digital9);  break;
-            case 10: s->glines = (GraticuleLines *)aflat_digital10; s->nb_glines = FF_ARRAY_ELEMS(aflat_digital10); break;
-            case 12: s->glines = (GraticuleLines *)aflat_digital12; s->nb_glines = FF_ARRAY_ELEMS(aflat_digital12); break;
+            case  8: s->glines = aflat_digital8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_digital8);  break;
+            case  9: s->glines = aflat_digital9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_digital9);  break;
+            case 10: s->glines = aflat_digital10; s->nb_glines = FF_ARRAY_ELEMS(aflat_digital10); break;
+            case 12: s->glines = aflat_digital12; s->nb_glines = FF_ARRAY_ELEMS(aflat_digital12); break;
             }
             break;
         case MILLIVOLTS:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)aflat_millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts8);  break;
-            case  9: s->glines = (GraticuleLines *)aflat_millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts9);  break;
-            case 10: s->glines = (GraticuleLines *)aflat_millivolts10; s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts10); break;
-            case 12: s->glines = (GraticuleLines *)aflat_millivolts12; s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts12); break;
+            case  8: s->glines = aflat_millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts8);  break;
+            case  9: s->glines = aflat_millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts9);  break;
+            case 10: s->glines = aflat_millivolts10; s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts10); break;
+            case 12: s->glines = aflat_millivolts12; s->nb_glines = FF_ARRAY_ELEMS(aflat_millivolts12); break;
             }
             break;
         case IRE:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)aflat_ire8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_ire8);  break;
-            case  9: s->glines = (GraticuleLines *)aflat_ire9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_ire9);  break;
-            case 10: s->glines = (GraticuleLines *)aflat_ire10; s->nb_glines = FF_ARRAY_ELEMS(aflat_ire10); break;
-            case 12: s->glines = (GraticuleLines *)aflat_ire12; s->nb_glines = FF_ARRAY_ELEMS(aflat_ire12); break;
+            case  8: s->glines = aflat_ire8;  s->nb_glines = FF_ARRAY_ELEMS(aflat_ire8);  break;
+            case  9: s->glines = aflat_ire9;  s->nb_glines = FF_ARRAY_ELEMS(aflat_ire9);  break;
+            case 10: s->glines = aflat_ire10; s->nb_glines = FF_ARRAY_ELEMS(aflat_ire10); break;
+            case 12: s->glines = aflat_ire12; s->nb_glines = FF_ARRAY_ELEMS(aflat_ire12); break;
             }
             break;
         }
@@ -3266,26 +3266,26 @@ static int config_input(AVFilterLink *inlink)
         switch (s->scale) {
         case DIGITAL:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)flat_digital8;  s->nb_glines = FF_ARRAY_ELEMS(flat_digital8);  break;
-            case  9: s->glines = (GraticuleLines *)flat_digital9;  s->nb_glines = FF_ARRAY_ELEMS(flat_digital9);  break;
-            case 10: s->glines = (GraticuleLines *)flat_digital10; s->nb_glines = FF_ARRAY_ELEMS(flat_digital10); break;
-            case 12: s->glines = (GraticuleLines *)flat_digital12; s->nb_glines = FF_ARRAY_ELEMS(flat_digital12); break;
+            case  8: s->glines = flat_digital8;  s->nb_glines = FF_ARRAY_ELEMS(flat_digital8);  break;
+            case  9: s->glines = flat_digital9;  s->nb_glines = FF_ARRAY_ELEMS(flat_digital9);  break;
+            case 10: s->glines = flat_digital10; s->nb_glines = FF_ARRAY_ELEMS(flat_digital10); break;
+            case 12: s->glines = flat_digital12; s->nb_glines = FF_ARRAY_ELEMS(flat_digital12); break;
             }
             break;
         case MILLIVOLTS:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)flat_millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts8);  break;
-            case  9: s->glines = (GraticuleLines *)flat_millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts9);  break;
-            case 10: s->glines = (GraticuleLines *)flat_millivolts10; s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts10); break;
-            case 12: s->glines = (GraticuleLines *)flat_millivolts12; s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts12); break;
+            case  8: s->glines = flat_millivolts8;  s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts8);  break;
+            case  9: s->glines = flat_millivolts9;  s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts9);  break;
+            case 10: s->glines = flat_millivolts10; s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts10); break;
+            case 12: s->glines = flat_millivolts12; s->nb_glines = FF_ARRAY_ELEMS(flat_millivolts12); break;
             }
             break;
         case IRE:
             switch (s->bits) {
-            case  8: s->glines = (GraticuleLines *)flat_ire8;  s->nb_glines = FF_ARRAY_ELEMS(flat_ire8);  break;
-            case  9: s->glines = (GraticuleLines *)flat_ire9;  s->nb_glines = FF_ARRAY_ELEMS(flat_ire9);  break;
-            case 10: s->glines = (GraticuleLines *)flat_ire10; s->nb_glines = FF_ARRAY_ELEMS(flat_ire10); break;
-            case 12: s->glines = (GraticuleLines *)flat_ire12; s->nb_glines = FF_ARRAY_ELEMS(flat_ire12); break;
+            case  8: s->glines = flat_ire8;  s->nb_glines = FF_ARRAY_ELEMS(flat_ire8);  break;
+            case  9: s->glines = flat_ire9;  s->nb_glines = FF_ARRAY_ELEMS(flat_ire9);  break;
+            case 10: s->glines = flat_ire10; s->nb_glines = FF_ARRAY_ELEMS(flat_ire10); break;
+            case 12: s->glines = flat_ire12; s->nb_glines = FF_ARRAY_ELEMS(flat_ire12); break;
             }
             break;
         }

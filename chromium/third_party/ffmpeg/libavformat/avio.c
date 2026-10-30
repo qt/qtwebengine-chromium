@@ -19,6 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
+#include <stdlib.h>
+
 #include "libavutil/avstring.h"
 #include "libavutil/dict.h"
 #include "libavutil/mem.h"
@@ -34,6 +38,7 @@
 #include "url.h"
 
 #define IO_BUFFER_SIZE 32768
+#define NETWORK_IO_BUFFER_SIZE 262144
 
 /** @name Logging context. */
 /*@{*/
@@ -57,17 +62,18 @@ static void *urlcontext_child_next(void *obj, void *prev)
 #define OFFSET(x) offsetof(URLContext,x)
 #define E AV_OPT_FLAG_ENCODING_PARAM
 #define D AV_OPT_FLAG_DECODING_PARAM
-static const AVOption options[] = {
+static const AVOption urlcontext_options[] = {
     {"protocol_whitelist", "List of protocols that are allowed to be used", OFFSET(protocol_whitelist), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, D },
     {"protocol_blacklist", "List of protocols that are not allowed to be used", OFFSET(protocol_blacklist), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, D },
     {"rw_timeout", "Timeout for IO operations (in microseconds)", offsetof(URLContext, rw_timeout), AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, INT64_MAX, AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_DECODING_PARAM },
+    {"prefer_libcurl", "use the libcurl protocol for http(s) URLs when available", OFFSET(prefer_libcurl), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, D },
     { NULL }
 };
 
 static const AVClass url_context_class = {
     .class_name       = "URLContext",
     .item_name        = urlcontext_to_name,
-    .option           = options,
+    .option           = urlcontext_options,
     .version          = LIBAVUTIL_VERSION_INT,
     .child_next       = urlcontext_child_next,
     .child_class_iterate = ff_urlcontext_child_class_iterate,
@@ -123,8 +129,8 @@ static int url_alloc_for_protocol(URLContext **puc, const URLProtocol *up,
     int err;
 
 #if CONFIG_NETWORK
-    if (up->flags & URL_PROTOCOL_FLAG_NETWORK && !ff_network_init())
-        return AVERROR(EIO);
+    if (up->flags & URL_PROTOCOL_FLAG_NETWORK && (err = ff_network_init()) < 0)
+        return err;
 #endif
     if ((flags & AVIO_FLAG_READ) && !up->url_read) {
         av_log(NULL, AV_LOG_ERROR,
@@ -147,6 +153,7 @@ static int url_alloc_for_protocol(URLContext **puc, const URLProtocol *up,
     uc->prot            = up;
     uc->flags           = flags;
     uc->is_streamed     = 0; /* default = not streamed */
+    uc->uses_network    = !!(up->flags & URL_PROTOCOL_FLAG_NETWORK);
     uc->max_packet_size = 0; /* default: stream file */
     if (up->priv_data_size) {
         uc->priv_data = av_mallocz(up->priv_data_size);
@@ -239,7 +246,7 @@ int ffurl_connect(URLContext *uc, AVDictionary **options)
     if ((err = av_dict_set(options, "protocol_whitelist", uc->protocol_whitelist, 0)) < 0)
         return err;
     if ((err = av_dict_set(options, "protocol_blacklist", uc->protocol_blacklist, 0)) < 0)
-        return err;
+        goto fail;
 
     err =
         uc->prot->url_open2 ? uc->prot->url_open2(uc,
@@ -260,6 +267,11 @@ int ffurl_connect(URLContext *uc, AVDictionary **options)
         if (!uc->is_streamed && ffurl_seek(uc, 0, SEEK_SET) < 0)
             uc->is_streamed = 1;
     return 0;
+
+fail:
+    if (options == &tmp_opts)
+        av_dict_free(&tmp_opts);
+    return err;
 }
 
 int ffurl_accept(URLContext *s, URLContext **c)
@@ -360,16 +372,54 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags,
     return AVERROR_PROTOCOL_NOT_FOUND;
 }
 
-int ffurl_open_whitelist(URLContext **puc, const char *filename, int flags,
-                         const AVIOInterruptCB *int_cb, AVDictionary **options,
-                         const char *whitelist, const char* blacklist,
-                         URLContext *parent)
+#if CONFIG_LIBCURL_PROTOCOL
+extern const URLProtocol ff_libcurl_protocol;
+
+/* Decide whether an http(s) URL should be routed to the libcurl protocol instead
+ * of the native one. Controlled by the per-open "prefer_libcurl" option. */
+static int prefer_libcurl(const char *filename, AVDictionary **options,
+                          URLContext *parent)
+{
+    URLContext dummy = { .av_class = &url_context_class };
+    AVDictionaryEntry *e;
+
+    if (!av_strstart(filename, "http://",  NULL) &&
+        !av_strstart(filename, "https://", NULL))
+        return 0;
+
+    if (parent && parent->prefer_libcurl)
+        return 1;
+
+    if (!options || !(e = av_dict_get(*options, "prefer_libcurl", NULL, 0)))
+        return 0;
+    if (av_opt_set(&dummy, "prefer_libcurl", e->value, 0) < 0)
+        return 0;
+
+    return dummy.prefer_libcurl;
+}
+#endif
+
+static int url_open_whitelist(URLContext **puc, const char *filename, int flags,
+                              const AVIOInterruptCB *int_cb, AVDictionary **options,
+                              const char *whitelist, const char* blacklist,
+                              URLContext *parent, AVFormatContext *avfc)
 {
     AVDictionary *tmp_opts = NULL;
     AVDictionaryEntry *e;
-    int ret = ffurl_alloc(puc, filename, flags, int_cb);
+    int ret;
+
+#if CONFIG_LIBCURL_PROTOCOL
+    /* The option itself is applied to the URLContext further down; here it only
+     * picks the protocol, before the context exists. */
+    if (prefer_libcurl(filename, options, parent))
+        ret = url_alloc_for_protocol(puc, &ff_libcurl_protocol, filename, flags,
+                                     int_cb);
+    else
+#endif
+        ret = ffurl_alloc(puc, filename, flags, int_cb);
     if (ret < 0)
         return ret;
+    (*puc)->avfc = avfc;
     if (parent) {
         ret = av_opt_copy(*puc, parent);
         if (ret < 0)
@@ -403,11 +453,23 @@ int ffurl_open_whitelist(URLContext **puc, const char *filename, int flags,
 
     ret = ffurl_connect(*puc, options);
 
-    if (!ret)
+    if (!ret) {
+        if (parent)
+            parent->uses_network |= (*puc)->uses_network;
         return 0;
+    }
 fail:
     ffurl_closep(puc);
     return ret;
+}
+
+int ffurl_open_whitelist(URLContext **puc, const char *filename, int flags,
+                         const AVIOInterruptCB *int_cb, AVDictionary **options,
+                         const char *whitelist, const char* blacklist,
+                         URLContext *parent)
+{
+    return url_open_whitelist(puc, filename, flags, int_cb, options,
+                              whitelist, blacklist, parent, NULL);
 }
 
 int ffio_fdopen(AVIOContext **sp, URLContext *h)
@@ -419,6 +481,8 @@ int ffio_fdopen(AVIOContext **sp, URLContext *h)
     max_packet_size = h->max_packet_size;
     if (max_packet_size) {
         buffer_size = max_packet_size; /* no need to bufferize more than one packet */
+    } else if (h->uses_network && !(h->flags & AVIO_FLAG_WRITE)) {
+        buffer_size = NETWORK_IO_BUFFER_SIZE;
     } else {
         buffer_size = IO_BUFFER_SIZE;
     }
@@ -469,16 +533,18 @@ int ffio_fdopen(AVIOContext **sp, URLContext *h)
     return 0;
 }
 
-int ffio_open_whitelist(AVIOContext **s, const char *filename, int flags,
-                        const AVIOInterruptCB *int_cb, AVDictionary **options,
-                        const char *whitelist, const char *blacklist)
+int ffio_open_whitelist2(AVIOContext **s, const char *filename, int flags,
+                         const AVIOInterruptCB *int_cb, AVDictionary **options,
+                         const char *whitelist, const char *blacklist,
+                         AVFormatContext *avfc)
 {
     URLContext *h;
     int err;
 
     *s = NULL;
 
-    err = ffurl_open_whitelist(&h, filename, flags, int_cb, options, whitelist, blacklist, NULL);
+    err = url_open_whitelist(&h, filename, flags, int_cb, options, whitelist,
+                             blacklist, NULL, avfc);
     if (err < 0)
         return err;
     err = ffio_fdopen(s, h);
@@ -487,6 +553,14 @@ int ffio_open_whitelist(AVIOContext **s, const char *filename, int flags,
         return err;
     }
     return 0;
+}
+
+int ffio_open_whitelist(AVIOContext **s, const char *filename, int flags,
+                        const AVIOInterruptCB *int_cb, AVDictionary **options,
+                        const char *whitelist, const char *blacklist)
+{
+    return ffio_open_whitelist2(s, filename, flags, int_cb, options,
+                                whitelist, blacklist, NULL);
 }
 
 int avio_open2(AVIOContext **s, const char *filename, int flags,

@@ -71,6 +71,7 @@
 #include "bytestream.h"
 #include "jpeg2000.h"
 #include "version.h"
+#include "libavutil/attributes.h"
 #include "libavutil/common.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
@@ -147,88 +148,19 @@ typedef struct {
 } Jpeg2000EncoderContext;
 
 
-/* debug */
-#if 0
-#undef ifprintf
-#undef printf
-
-static void nspaces(FILE *fd, int n)
-{
-    while(n--) putc(' ', fd);
-}
-
-static void printcomp(Jpeg2000Component *comp)
-{
-    int i;
-    for (i = 0; i < comp->y1 - comp->y0; i++)
-        ff_jpeg2000_printv(comp->i_data + i * (comp->x1 - comp->x0), comp->x1 - comp->x0);
-}
-
-static void dump(Jpeg2000EncoderContext *s, FILE *fd)
-{
-    int tileno, compno, reslevelno, bandno, precno;
-    fprintf(fd, "XSiz = %d, YSiz = %d, tile_width = %d, tile_height = %d\n"
-                "numXtiles = %d, numYtiles = %d, ncomponents = %d\n"
-                "tiles:\n",
-            s->width, s->height, s->tile_width, s->tile_height,
-            s->numXtiles, s->numYtiles, s->ncomponents);
-    for (tileno = 0; tileno < s->numXtiles * s->numYtiles; tileno++){
-        Jpeg2000Tile *tile = s->tile + tileno;
-        nspaces(fd, 2);
-        fprintf(fd, "tile %d:\n", tileno);
-        for(compno = 0; compno < s->ncomponents; compno++){
-            Jpeg2000Component *comp = tile->comp + compno;
-            nspaces(fd, 4);
-            fprintf(fd, "component %d:\n", compno);
-            nspaces(fd, 4);
-            fprintf(fd, "x0 = %d, x1 = %d, y0 = %d, y1 = %d\n",
-                        comp->x0, comp->x1, comp->y0, comp->y1);
-            for(reslevelno = 0; reslevelno < s->nreslevels; reslevelno++){
-                Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
-                nspaces(fd, 6);
-                fprintf(fd, "reslevel %d:\n", reslevelno);
-                nspaces(fd, 6);
-                fprintf(fd, "x0 = %d, x1 = %d, y0 = %d, y1 = %d, nbands = %d\n",
-                        reslevel->x0, reslevel->x1, reslevel->y0,
-                        reslevel->y1, reslevel->nbands);
-                for(bandno = 0; bandno < reslevel->nbands; bandno++){
-                    Jpeg2000Band *band = reslevel->band + bandno;
-                    nspaces(fd, 8);
-                    fprintf(fd, "band %d:\n", bandno);
-                    nspaces(fd, 8);
-                    fprintf(fd, "x0 = %d, x1 = %d, y0 = %d, y1 = %d,"
-                                "codeblock_width = %d, codeblock_height = %d cblknx = %d cblkny = %d\n",
-                                band->x0, band->x1,
-                                band->y0, band->y1,
-                                band->codeblock_width, band->codeblock_height,
-                                band->cblknx, band->cblkny);
-                    for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++){
-                        Jpeg2000Prec *prec = band->prec + precno;
-                        nspaces(fd, 10);
-                        fprintf(fd, "prec %d:\n", precno);
-                        nspaces(fd, 10);
-                        fprintf(fd, "xi0 = %d, xi1 = %d, yi0 = %d, yi1 = %d\n",
-                                     prec->xi0, prec->xi1, prec->yi0, prec->yi1);
-                    }
-                }
-            }
-        }
-    }
-}
-#endif
-
 /* bitstream routines */
 
 /** put n times val bit */
 static void put_bits(Jpeg2000EncoderContext *s, int val, int n) // TODO: optimize
 {
+    val <<= 7;
     while (n-- > 0){
         if (s->bit_index == 8)
         {
             s->bit_index = *s->buf == 0xff;
             *(++s->buf) = 0;
         }
-        *s->buf |= val << (7 - s->bit_index++);
+        *s->buf |= val >> s->bit_index++;
     }
 }
 
@@ -244,6 +176,8 @@ static void j2k_flush(Jpeg2000EncoderContext *s)
 {
     if (s->bit_index){
         s->bit_index = 0;
+        if (*s->buf == 0xff)
+            *(++s->buf) = 0;
         s->buf++;
     }
 }
@@ -580,7 +514,7 @@ static void init_quantization(Jpeg2000EncoderContext *s)
     }
 }
 
-static void init_luts(void)
+static av_cold void init_luts(void)
 {
     int i, a,
         mask = ~((1<<NMSEDEC_FRACBITS)-1);
@@ -787,15 +721,16 @@ static int encode_packet(Jpeg2000EncoderContext *s, Jpeg2000ResLevel *rlevel, in
 {
     int bandno, empty = 1;
     int i;
-    // init bitstream
-    *s->buf = 0;
-    s->bit_index = 0;
-
     if (s->sop) {
         bytestream_put_be16(&s->buf, JPEG2000_SOP);
         bytestream_put_be16(&s->buf, 4);
         bytestream_put_be16(&s->buf, packetno);
     }
+
+    // init bitstream
+    *s->buf = 0;
+    s->bit_index = 0;
+
     // header
 
     if (!layno) {
@@ -847,6 +782,9 @@ static int encode_packet(Jpeg2000EncoderContext *s, Jpeg2000ResLevel *rlevel, in
                 break;
         }
     }
+
+    if (s->buf_end - s->buf < 3)
+        return -1;
 
     put_bits(s, !empty, 1);
     if (empty){
@@ -909,6 +847,10 @@ static int encode_packet(Jpeg2000EncoderContext *s, Jpeg2000ResLevel *rlevel, in
             }
         }
     }
+
+    if (s->buf_end - s->buf < 2 + 2 * s->eph)
+        return -1;
+
     j2k_flush(s);
     if (s->eph) {
         bytestream_put_be16(&s->buf, JPEG2000_EPH);
@@ -1268,7 +1210,7 @@ static void makelayer(Jpeg2000EncoderContext *s, int layno, double thresh, Jpeg2
 
 static void makelayers(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile)
 {
-    int precno, compno, reslevelno, bandno, cblkno, lev, passno, layno;
+    int precno, compno, reslevelno, bandno, cblkno, passno, layno;
     int i;
     double min = DBL_MAX;
     double max = 0;
@@ -1279,7 +1221,7 @@ static void makelayers(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile)
     for (compno = 0; compno < s->ncomponents; compno++){
         Jpeg2000Component *comp = tile->comp + compno;
 
-        for (reslevelno = 0, lev = codsty->nreslevels-1; reslevelno < codsty->nreslevels; reslevelno++, lev--){
+        for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++){
             Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
 
             for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++){
@@ -1453,11 +1395,12 @@ static int encode_tile(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile, int tileno
                                 }
                             }
                         } else{
+                            int64_t multiplier = (int64_t)(16384 * 65536 / band->i_stepsize);
                             for (y = yy0; y < yy1; y++){
                                 int *ptr = t1.data + (y-yy0)*t1.stride;
                                 for (x = xx0; x < xx1; x++){
                                     *ptr = (comp->i_data[(comp->coord[0][1] - comp->coord[0][0]) * y + x]);
-                                    *ptr = (int64_t)*ptr * (int64_t)(16384 * 65536 / band->i_stepsize) >> 15 - NMSEDEC_FRACBITS;
+                                    *ptr = (int64_t)*ptr * multiplier >> 15 - NMSEDEC_FRACBITS;
                                     ptr++;
                                 }
                             }
@@ -1802,7 +1745,7 @@ static int j2kenc_destroy(AVCodecContext *avctx)
     return 0;
 }
 
-// taken from the libopenjpeg wraper so it matches
+// taken from the libopenjpeg wrapper so it matches
 
 #define OFFSET(x) offsetof(Jpeg2000EncoderContext, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM

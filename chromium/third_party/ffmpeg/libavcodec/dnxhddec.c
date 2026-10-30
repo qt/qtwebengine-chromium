@@ -208,8 +208,13 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     ctx->mbaff = (buf[0x6] >> 5) & 1;
     ctx->alpha = buf[0x7] & 1;
     ctx->lla   = (buf[0x7] >> 1) & 1;
-    if (ctx->alpha)
-        avpriv_request_sample(ctx->avctx, "alpha");
+    if (ctx->alpha) {
+        if (ctx->lla) {
+            avpriv_request_sample(ctx->avctx, "RLE block alpha decoding");
+        } else {
+            avpriv_request_sample(ctx->avctx, "DCT block alpha decoding");
+        }
+    }
 
     ctx->height = AV_RB16(buf + 0x18);
     ctx->width  = AV_RB16(buf + 0x1a);
@@ -333,7 +338,7 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
 
     if (ctx->mb_height > FF_ARRAY_ELEMS(ctx->mb_scan_index)) {
         av_log(ctx->avctx, AV_LOG_ERROR,
-               "mb_height too big (%d > %"SIZE_SPECIFIER").\n", ctx->mb_height, FF_ARRAY_ELEMS(ctx->mb_scan_index));
+               "mb_height too big (%d > %zu).\n", ctx->mb_height, FF_ARRAY_ELEMS(ctx->mb_scan_index));
         return AVERROR_INVALIDDATA;
     }
 

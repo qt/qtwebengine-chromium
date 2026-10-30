@@ -109,7 +109,7 @@ static av_cold int query_formats(const AVFilterContext *ctx,
     AVFilterFormats *formats;
     int ret;
 
-    formats = ff_make_format_list(sample_fmts);
+    formats = ff_make_sample_format_list(sample_fmts);
     if (!formats)
         return AVERROR(ENOMEM);
     if ((ret = ff_formats_ref(formats, &cfg_out[0]->formats)) < 0)
@@ -161,7 +161,7 @@ static av_cold int config_props(AVFilterLink *outlink)
     s->dir = 1;
     s->prev_intpart = INT64_MIN;
 
-    ret = ff_draw_init2(&s->draw, outlink->format, outlink->colorspace, outlink->color_range, 0);
+    ret = ff_draw_init_from_link(&s->draw, outlink, 0);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "Failed to initialize FFDrawContext\n");
         return ret;
@@ -252,6 +252,7 @@ static int audio_frame(AVFilterLink *outlink)
 static void draw_text(FFDrawContext *draw, AVFrame *out, FFDrawColor *color,
                       int x0, int y0, const uint8_t *text)
 {
+    const uint8_t *cga_font = avpriv_cga_font_get();
     int x = x0;
 
     for (; *text; text++) {
@@ -262,7 +263,7 @@ static void draw_text(FFDrawContext *draw, AVFrame *out, FFDrawColor *color,
         }
         ff_blend_mask(draw, color, out->data, out->linesize,
                       out->width, out->height,
-                      avpriv_cga_font + *text * 8, 1, 8, 8, 0, 0, x, y0);
+                      &cga_font[*text * 8], 1, 8, 8, 0, 0, x, y0);
         x += 8;
     }
 }

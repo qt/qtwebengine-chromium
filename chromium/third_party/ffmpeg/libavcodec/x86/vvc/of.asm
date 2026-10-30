@@ -32,9 +32,8 @@ SECTION_RODATA 32
 pd_15                   times 8 dd 15
 pd_m15                  times 8 dd -15
 
-pb_shuffle_w8  times 2 db   0, 1, 0xff, 0xff, 8, 9, 0xff, 0xff, 6, 7, 0xff, 0xff, 14, 15, 0xff, 0xff
-pb_shuffle_w16 times 2 db   0, 1, 0xff, 0xff, 6, 7, 0xff, 0xff, 8, 9, 0xff, 0xff, 14, 15, 0xff, 0xff
-pd_perm_w16            dd   0, 2, 1, 4, 3, 6, 5, 7
+pb_shuffle     times 2 db   0, 1, 0xff, 0xff, 8, 9, 0xff, 0xff, 6, 7, 0xff, 0xff, 14, 15, 0xff, 0xff
+pd_perm_w16            dd   0, 1, 2, 4, 3, 5, 6, 7
 %if ARCH_X86_64
 
 %if HAVE_AVX2_EXTERNAL
@@ -70,45 +69,44 @@ INIT_YMM avx2
     paddw                         %4, [src1q + (%5 + 1) * SRC_STRIDE + SRC_PS]
     paddsw                        %1, %4                                         ; src0[x] + src1[x] + bdof_offset
     pmulhrsw                      %1, m11
-    CLIPW                         %1, m9, m10
 %endmacro
 
-%macro SAVE_8BPC 2 ; dst, src
-    packuswb                   m%2, m%2
-    vpermq                     m%2, m%2, q0020
-
-    cmp                         wd, 16
-    je                       %%w16
-    movq                        %1, xm%2
-    jmp                     %%wend
-%%w16:
-    movu                        %1, xm%2
-%%wend:
-%endmacro
-
-%macro SAVE_16BPC 2 ; dst, src
-    cmp                         wd, 16
-    je                       %%w16
-    movu                        %1, xm%2
-    jmp                     %%wend
-%%w16:
-    movu                        %1, m%2
-%%wend:
-%endmacro
-
-%macro SAVE 2 ; dst, src
+%macro SAVE 2-3 ""; dst, src, jump target
     cmp                 pixel_maxd, (1 << 8) - 1
     jne               %%save_16bpc
-    SAVE_8BPC                   %1, %2
+
+    packuswb                   m%2, m%2
+
+    cmp                         wd, 16
+    je                       %%w16_8
+    movq                        %1, xm%2
+%ifnidn %3, ""
+    jmp                         %3
+%else
     jmp                      %%end
+%endif
+
 %%save_16bpc:
-    SAVE_16BPC                   %1, %2
+    CLIPW                      m%2, m9, m10
+    cmp                         wd, 16
+    jne                       %%w8_16
+    movu                        %1, m%2
+%ifnidn %3, ""
+    jmp                         %3
+%else
+    jmp                      %%end
+%endif
+
+%%w16_8:
+    vpermq                     m%2, m%2, q0020
+%%w8_16:
+    movu                        %1, xm%2
 %%end:
 %endmacro
 
 ; [rsp + even * mmsize] are gradient_h[0] - gradient_h[1]
 ; [rsp +  odd * mmsize] are gradient_v[0] - gradient_v[1]
-%macro APPLY_BDOF_MIN_BLOCK 4 ; block_num, vx, vy, bd
+%macro APPLY_BDOF_MIN_BLOCK 3-4 ""; block_num, vx, vy, jump target
     pxor                          m9, m9
 
     movd                        xm10, pixel_maxd
@@ -128,21 +126,29 @@ INIT_YMM avx2
     SAVE                        [dstq + 2 * dsq], 6
 
     APPLY_BDOF_MIN_BLOCK_LINE    m6, %2, %3, m7, (%1) * 4 + 3
-    SAVE                        [dstq + ds3q], 6
+    SAVE                        [dstq + ds3q], 6, %4
 %endmacro
 
-%macro SUM_MIN_BLOCK_W16 4 ; src/dst, shuffle, perm, tmp
+%macro SUM_MIN_BLOCK_W16 4-5 ; src/dst, shuffle, perm, tmp, [dst]
     pshufb  %4, %1, %2
     vpermd  %4, %3, %4
+%if %0 == 4
     paddw   %1, %4
+%else
+    paddw   %5, %1, %4
+%endif
 %endmacro
 
-%macro SUM_MIN_BLOCK_W8 3 ; src/dst, shuffle, tmp
-    pshufb  %3, %1, %2
-    paddw   %1, %3
+%macro SUM_MIN_BLOCK_W8 3-4 ; src/dst, shuffle, tmp, [dst]
+    pshufb  xm%3, xm%1, xm%2
+%if %0 == 3
+    paddw   xm%1, xm%3
+%else
+    paddw   xm%4, xm%1, xm%3
+%endif
 %endmacro
 
-%macro BDOF_PROF_GRAD 2 ; line_no, last_line
+%macro BDOF_PROF_GRAD 2-3 0 ; line_no, last_line, assign (instead of add) to dst regs
 %assign i0 (%1 + 0) % 3
 %assign j0 (%1 + 1) % 3
 %assign k0 (%1 + 2) % 3
@@ -186,6 +192,9 @@ INIT_YMM avx2
 
     DIFF                     ndiff, c1, c0, SHIFT2, t0  ; -diff
 
+    ; use t0, t1 as temporary buffers
+    mova                        t0, [pb_shuffle]
+
     psignw                      m7, ndiff, m8           ; sgxdi
     psignw                      m9, ndiff, m6           ; sgydi
     psignw                     m10, m8, m6              ; sgxgy
@@ -193,26 +202,31 @@ INIT_YMM avx2
     pabsw                       m6, m6                  ; sgy2
     pabsw                       m8, m8                  ; sgx2
 
-    ; use t0, t1 as temporary buffers
     cmp                         wd, 16
 
     je                       %%w16
-    mova                        t0, [pb_shuffle_w8]
-    SUM_MIN_BLOCK_W8            m6, t0, m11
-    SUM_MIN_BLOCK_W8            m7, t0, m11
-    SUM_MIN_BLOCK_W8            m8, t0, m11
-    SUM_MIN_BLOCK_W8            m9, t0, m11
-    SUM_MIN_BLOCK_W8           m10, t0, m11
+    SUM_MIN_BLOCK_W8             6, i0, i1
+    SUM_MIN_BLOCK_W8             7, i0, i1
+    SUM_MIN_BLOCK_W8             8, i0, i1
+    SUM_MIN_BLOCK_W8             9, i0, i1
+%if (%3)
+    SUM_MIN_BLOCK_W8            10, i0, i1, 13
+%else
+    SUM_MIN_BLOCK_W8            10, i0, i1
+%endif
     jmp                     %%wend
 
 %%w16:
-    mova                        t0, [pb_shuffle_w16]
     mova                        t1, [pd_perm_w16]
     SUM_MIN_BLOCK_W16           m6, t0, t1, m11
     SUM_MIN_BLOCK_W16           m7, t0, t1, m11
     SUM_MIN_BLOCK_W16           m8, t0, t1, m11
     SUM_MIN_BLOCK_W16           m9, t0, t1, m11
+%if (%3)
+    SUM_MIN_BLOCK_W16          m10, t0, t1, m11, m13
+%else
     SUM_MIN_BLOCK_W16          m10, t0, t1, m11
+%endif
 
 %%wend:
     vpblendd                    m11, m8, m7, 10101010b
@@ -229,71 +243,61 @@ INIT_YMM avx2
     vpblendw                     m6, m8, m6, 01010101b
     pshuflw                      m6, m6, q2301
     pshufhw                      m6, m6, q2301
+%if (%3)
+    paddw                       m12, m6, m11                ; 4 x (4sgx2, 4sgy2, 4sgxdi, 4sgydi)
+%else
     paddw                        m8, m6, m11                ; 4 x (4sgx2, 4sgy2, 4sgxdi, 4sgydi)
+%endif
 
-%if (%1) == 0 || (%2)
-    ; pad for top and bottom
+%if (%1) == 0
+    ; pad for top and directly output to m12, m13
+    paddw                      m12, m8,  m8
+    paddw                      m13, m10, m10
+%elifn (%3)
+%if (%2)
+    ; pad for bottom
     paddw                       m8, m8
     paddw                      m10, m10
 %endif
 
     paddw                      m12, m8
     paddw                      m13, m10
+%endif
 %endmacro
 
 
-%macro LOG2 5 ; log_sum, src, cmp, shift, tmp
-    pcmpgtw               %5, %2, %3
-    pandd                 %5, %4
-    paddw                 %1, %5
-
-    psrlw                 %2, %5
-    psrlw                 %4, 1
-    psrlw                 %3, %4
-%endmacro
-
-%macro LOG2 2 ; dst/src, offset
-    pextrw              tmp0d, xm%1,  %2
-    bsr                 tmp0d, tmp0d
-    pinsrw               xm%1, tmp0d, %2
-%endmacro
-
-%macro LOG2 1 ; dst/src
-    LOG2                 %1, 0
-    LOG2                 %1, 1
-    LOG2                 %1, 2
-    LOG2                 %1, 3
-    LOG2                 %1, 4
-    LOG2                 %1, 5
-    LOG2                 %1, 6
-    LOG2                 %1, 7
+%macro LOG2 3 ; dst, src, tmp
+    cvtdq2ps             %1, %2
+    ; The exponent contains log2 biased by 127 unless the value is zero.
+    ; dst is only used as shift count where the value to be shifted is
+    ; always zero if src is zero, so avoid using saturated subtraction.
+    pcmpeqd              %3, %3
+    psrld                %3, 25        ; pd_127
+    psrld                %1, 23        ; floating point exponent
+    psubd                %1, %3
 %endmacro
 
 ; %1: 4 (sgx2, sgy2, sgxdi, gydi)
 ; %2: 4 (4sgxgy)
 %macro BDOF_VX_VY 2       ;
-    pshufd                  m6, m%1, q0032
-    punpckldq              m%1, m6
+    pshufd                 m%1, m%1, q3120
     vextracti128           xm7, m%1, 1
 
-    punpcklqdq              m8, m%1, m7             ; 4 (sgx2, sgy2)
-    punpckhqdq              m9, m%1, m7             ; 4 (sgxdi, sgydi)
-    mova                   m10, m8
-    LOG2                    10                      ; 4 (log2(sgx2), log2(sgy2))
+    punpcklqdq             xm8, xm%1, xm7           ; 4 (sgx2, sgy2)
+    punpckhqdq             xm9, xm%1, xm7           ; 4 (sgxdi, sgydi)
 
     ; Promote to dword since vpsrlvw is AVX-512 only
-    pmovsxwd                m8, xm8
+    pmovzxwd                m8, xm8
     pmovsxwd                m9, xm9
-    pmovsxwd               m10, xm10
+    LOG2                   m10, m8, m7              ; 4 (log2(sgx2), log2(sgy2))
 
-    pslld                   m9, 2                   ; 4 (log2(sgx2) << 2, log2(sgy2) << 2)
+    pslld                   m9, 2                   ; 4 (sgxdi, sgydi)
 
-    psignd                 m11, m9, m8
-    vpsravd                m11, m11, m10
+    vpsravd                m11, m9, m10
     CLIPD                  m11, [pd_m15], [pd_15]   ; 4 (vx, junk)
 
     pshuflw                m%1, m11, q0000
-    pshufhw                m%1, m%1, q0000          ; 4 (2junk, 2vx)
+    pshufhw                m%1, m%1, q0000          ; 4 (4vx)
 
     psllq                   m6, m%2, 32
     paddw                  m%2, m6
@@ -302,7 +306,6 @@ INIT_YMM avx2
     psrad                  m%2, 1
     psubd                   m9, m%2                 ; 4 (junk, (sgydi << 2) - (vx * sgxgy >> 1))
 
-    psignd                  m9, m8
     vpsravd                m%2, m9, m10
     CLIPD                  m%2, [pd_m15], [pd_15]   ; 4 (junk, vy)
 
@@ -319,51 +322,76 @@ INIT_YMM avx2
     movu                    m3, [src1q + 0 * SRC_STRIDE + SRC_PS]
     movu                    m4, [src1q + 1 * SRC_STRIDE + SRC_PS]
 
-    pxor                   m12, m12
-    pxor                   m13, m13
-
     BDOF_PROF_GRAD           0, 0
 %endif
 
+%if (%1) != 1
+    BDOF_PROF_GRAD  %1 * 4 + 1, 0
+    BDOF_PROF_GRAD  %1 * 4 + 2, 0
+%endif
+
+%if (%2)
+    BDOF_PROF_GRAD  %1 * 4 + 3, %2
+    BDOF_VX_VY              12, 13
+%if UNIX64
+    APPLY_BDOF_MIN_BLOCK    %1, m12, m13
+%else
+    APPLY_BDOF_MIN_BLOCK    %1, m12, m13, .end
+%endif
+
+%else
     mova                   m14, m12
     mova                   m15, m13
 
-    pxor                   m12, m12
-    pxor                   m13, m13
-    BDOF_PROF_GRAD  %1 * 4 + 1, 0
-    BDOF_PROF_GRAD  %1 * 4 + 2, 0
-    paddw                  m14, m12
-    paddw                  m15, m13
-
-    pxor                   m12, m12
-    pxor                   m13, m13
-    BDOF_PROF_GRAD  %1 * 4 + 3, %2
-%if (%2) == 0
+    BDOF_PROF_GRAD  %1 * 4 + 3, 0, 1
     BDOF_PROF_GRAD  %1 * 4 + 4, 0
-%endif
     paddw                  m14, m12
     paddw                  m15, m13
 
     BDOF_VX_VY              14, 15
-    APPLY_BDOF_MIN_BLOCK    %1, m14, m15, bd
+    APPLY_BDOF_MIN_BLOCK    %1, m14, m15
     lea                   dstq, [dstq + 4 * dsq]
+%endif
 %endmacro
 
-;void ff_vvc_apply_bdof_%1(uint8_t *dst, const ptrdiff_t dst_stride, int16_t *src0, int16_t *src1,
-;    const int w, const int h, const int int pixel_max)
-%macro BDOF_AVX2 0
-cglobal vvc_apply_bdof, 7, 10, 16, BDOF_STACK_SIZE*32, dst, ds, src0, src1, w, h, pixel_max, ds3, tmp0, tmp1
+%macro BDOF_WRAPPER 2 ; bpp, is_nonadjacent
+;void ff_vvc_apply_bdof_%1(uint8_t *dst, const ptrdiff_t dst_stride, const int16_t *src0,
+;                          const int16_t *src1, const int w, const int h)
+cglobal vvc_apply_bdof_%1
+    ; r6 is not used for parameter passing and is volatile both on UNIX64
+    ; and Win64, so it can be freely used
+    mov                    r6d, (1<<%1)-1
+%if %2
+    jmp        vvc_apply_bdof_ %+ cpuname
+%endif
+%endmacro
 
+%macro VVC_OF_AVX2 0
+    BDOF_WRAPPER 12, 1
+    BDOF_WRAPPER  8, 1
+    BDOF_WRAPPER 10, 0
+
+vvc_apply_bdof_ %+ cpuname:
+; the prologue on Win64 is big (10 xmm regs need saving), so use PROLOGUE
+; to avoid duplicating it.
+PROLOGUE 6, 9, 16, BDOF_STACK_SIZE*32, dst, ds, src0, src1, w, h, pixel_max, ds3, tmp0
     lea                   ds3q, [dsq * 3]
     sub                  src0q, SRC_STRIDE + SRC_PS
     sub                  src1q, SRC_STRIDE + SRC_PS
 
     BDOF_MINI_BLOCKS         0, 0
 
+    BDOF_PROF_GRAD  1 * 4 + 1, 0
+    BDOF_PROF_GRAD  1 * 4 + 2, 0
+
     cmp                     hd, 16
     je                    .h16
     BDOF_MINI_BLOCKS         1, 1
+%if UNIX64
+    RET
+%else
     jmp                   .end
+%endif
 
 .h16:
     BDOF_MINI_BLOCKS         1, 0
@@ -372,10 +400,6 @@ cglobal vvc_apply_bdof, 7, 10, 16, BDOF_STACK_SIZE*32, dst, ds, src0, src1, w, h
 
 .end:
     RET
-%endmacro
-
-%macro VVC_OF_AVX2 0
-    BDOF_AVX2
 %endmacro
 
 VVC_OF_AVX2

@@ -52,7 +52,7 @@ static void filter_line3_helper(void * dst1, int d_stride,
     // having to invoke the C version to clean up the tail.
     const int w1 = FFALIGN(w, 16);
     const int w0 = clip_max != 255 ? 0 :
-                   d_stride <= w1 && s_stride <= w1 ? w : w & ~15;
+                   d_stride >= w1 && s_stride >= w1 ? w : w & ~15;
 
     ff_bwdif_filter_line3_neon(dst1, d_stride,
                                prev1, cur1, next1, s_stride,
@@ -122,4 +122,3 @@ ff_bwdif_init_aarch64(BWDIFDSPContext *s, int bit_depth)
     s->filter_edge  = filter_edge_helper;
     s->filter_line3 = filter_line3_helper;
 }
-

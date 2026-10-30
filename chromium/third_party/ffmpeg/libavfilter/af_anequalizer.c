@@ -230,12 +230,12 @@ static int query_formats(const AVFilterContext *ctx,
     int ret;
 
     if (s->draw_curves) {
-        ret = ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
+        ret = ff_set_pixel_formats_from_list2(ctx, cfg_in, cfg_out, pix_fmts);
         if (ret < 0)
             return ret;
     }
 
-    ret = ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, sample_fmts);
+    ret = ff_set_sample_formats_from_list2(ctx, cfg_in, cfg_out, sample_fmts);
     if (ret < 0)
         return ret;
 
@@ -687,8 +687,8 @@ static int filter_channels(AVFilterContext *ctx, void *arg,
 {
     AudioNEqualizerContext *s = ctx->priv;
     AVFrame *buf = arg;
-    const int start = (buf->ch_layout.nb_channels * jobnr) / nb_jobs;
-    const int end = (buf->ch_layout.nb_channels * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(buf->ch_layout.nb_channels, jobnr, nb_jobs);
+    const int end = ff_slice_pos(buf->ch_layout.nb_channels, jobnr + 1, nb_jobs);
 
     for (int i = 0; i < s->nb_filters; i++) {
         EqualizatorFilter *f = &s->filters[i];

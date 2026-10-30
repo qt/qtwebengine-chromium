@@ -19,9 +19,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <string.h>
+
 #include "config_components.h"
 
 #include "libavutil/avstring.h"
+#include "libavutil/error.h"
 #include "libavutil/file_open.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
@@ -94,6 +97,7 @@ typedef struct FileContext {
     int fd;
     int trunc;
     int blocksize;
+    int pkt_size;
     int follow;
     int seekable;
 #if HAVE_DIRENT_H
@@ -106,6 +110,7 @@ static const AVOption file_options[] = {
     { "blocksize", "set I/O operation maximum block size", offsetof(FileContext, blocksize), AV_OPT_TYPE_INT, { .i64 = INT_MAX }, 1, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM },
     { "follow", "Follow a file as it is being written", offsetof(FileContext, follow), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, AV_OPT_FLAG_DECODING_PARAM },
     { "seekable", "Sets if the file is seekable", offsetof(FileContext, seekable), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 0, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
+    { "pkt_size", "Maximum packet size", offsetof(FileContext, pkt_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM },
     { NULL }
 };
 
@@ -231,6 +236,9 @@ static int64_t file_seek(URLContext *h, int64_t pos, int whence)
     FileContext *c = h->priv_data;
     int64_t ret;
 
+    if (c->follow && (whence == SEEK_END || whence == AVSEEK_SIZE))
+        return AVERROR(ENOSYS); /* true size is not known */
+
     if (whence == AVSEEK_SIZE) {
         struct stat st;
         ret = fstat(c->fd, &st);
@@ -310,10 +318,18 @@ static int file_open(URLContext *h, const char *filename, int flags)
 
     h->is_streamed = !fstat(fd, &st) && S_ISFIFO(st.st_mode);
 
-    /* Buffer writes more than the default 32k to improve throughput especially
+    if (c->pkt_size) {
+        h->max_packet_size = c->pkt_size;
+    } else {
+        /* Buffer writes more than the default 32k to improve throughput especially
+         * with networked file systems */
+        if (!h->is_streamed && flags & AVIO_FLAG_WRITE)
+             h->max_packet_size = 262144;
+    }
+    /* Disable per-packet flushing by default to improve throughput especially
      * with networked file systems */
     if (!h->is_streamed && flags & AVIO_FLAG_WRITE)
-        h->min_packet_size = h->max_packet_size = 262144;
+        h->min_packet_size = h->max_packet_size;
 
     if (c->seekable >= 0)
         h->is_streamed = !c->seekable;
@@ -621,6 +637,11 @@ static int android_content_open(URLContext *h, const char *filename, int flags)
     ret = ff_jni_exception_check(env, 1, c);
     if (ret < 0)
         goto done;
+    if (!parcel_file_descriptor) {
+        av_log(c, AV_LOG_ERROR, "file descriptor is null\n");
+        ret = AVERROR_EXTERNAL;
+        goto done;
+    }
 
     fd = (*env)->CallIntMethod(env, parcel_file_descriptor, jfields.detach_fd_id);
     ret = ff_jni_exception_check(env, 1, c);

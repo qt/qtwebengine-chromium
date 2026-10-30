@@ -25,6 +25,8 @@
 #include "decode.h"
 #include "zlib_wrapper.h"
 
+#include "libavutil/attributes.h"
+
 #include <zlib.h>
 
 typedef struct PDVContext {
@@ -75,6 +77,9 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR_INVALIDDATA;
     }
 
+    if (avpkt->size * 1032LL < ((avctx->width + 7) >> 3) * avctx->height) //Asymptotic max compression of deflate
+        return AVERROR_INVALIDDATA;
+
     if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
         return ret;
 
@@ -117,7 +122,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return avpkt->size;
 }
 
-static void decode_flush(AVCodecContext *avctx)
+static av_cold void decode_flush(AVCodecContext *avctx)
 {
     PDVContext *s = avctx->priv_data;
 

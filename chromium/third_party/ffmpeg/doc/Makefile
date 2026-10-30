@@ -28,6 +28,7 @@ HTMLPAGES   = $(AVPROGS-yes:%=doc/%.html) $(AVPROGS-yes:%=doc/%-all.html) $(COMP
               doc/mailing-list-faq.html                                 \
               doc/nut.html                                              \
               doc/platform.html                                         \
+              doc/drawvg-reference.html                                 \
               $(SRC_PATH)/doc/bootstrap.min.css                         \
               $(SRC_PATH)/doc/style.min.css                             \
               $(SRC_PATH)/doc/default.css                               \
@@ -53,7 +54,7 @@ TEXIDEP = perl $(SRC_PATH)/doc/texidep.pl $(SRC_PATH) $< $@ >$(@:%=%.d)
 doc/%.txt: TAG = TXT
 doc/%.txt: doc/%.texi
 	$(Q)$(TEXIDEP)
-	$(M)makeinfo --force --no-headers -o $@ $< 2>/dev/null
+	$(M)$(MAKEINFO) --force --no-headers -o $@ $< 2>/dev/null
 
 GENTEXI  = format codec
 GENTEXI := $(GENTEXI:%=doc/avoptions_%.texi)
@@ -68,11 +69,11 @@ doc/%-all.html: TAG = HTML
 ifdef HAVE_MAKEINFO_HTML
 doc/%.html: doc/%.texi $(SRC_PATH)/doc/t2h.pm $(GENTEXI)
 	$(Q)$(TEXIDEP)
-	$(M)makeinfo --html -I doc --no-split -D config-not-all --init-file=$(SRC_PATH)/doc/t2h.pm --output $@ $<
+	$(M)$(MAKEINFO) --html -I doc --no-split -D config-not-all --init-file=$(SRC_PATH)/doc/t2h.pm --output $@ $<
 
 doc/%-all.html: doc/%.texi $(SRC_PATH)/doc/t2h.pm $(GENTEXI)
 	$(Q)$(TEXIDEP)
-	$(M)makeinfo --html -I doc --no-split -D config-all --init-file=$(SRC_PATH)/doc/t2h.pm --output $@ $<
+	$(M)$(MAKEINFO) --html -I doc --no-split -D config-all --init-file=$(SRC_PATH)/doc/t2h.pm --output $@ $<
 else
 doc/%.html: doc/%.texi $(SRC_PATH)/doc/t2h.init $(GENTEXI)
 	$(Q)$(TEXIDEP)
@@ -119,7 +120,7 @@ install-progs-$(CONFIG_DOC): install-html
 
 install-html: $(HTMLPAGES)
 	$(Q)mkdir -p "$(DOCDIR)"
-	$(INSTALL) -m 644 $(HTMLPAGES) "$(DOCDIR)"
+	$(call INSTALL_FILES,-m 644,$(HTMLPAGES),$(DOCDIR))
 endif
 
 ifdef CONFIG_MANPAGES
@@ -127,9 +128,9 @@ install-progs-$(CONFIG_DOC): install-man
 
 install-man: $(MANPAGES)
 	$(Q)mkdir -p "$(MANDIR)/man1"
-	$(INSTALL) -m 644 $(MANPAGES1) "$(MANDIR)/man1"
+	$(call INSTALL_FILES,-m 644,$(MANPAGES1),$(MANDIR)/man1)
 	$(Q)mkdir -p "$(MANDIR)/man3"
-	$(INSTALL) -m 644 $(MANPAGES3) "$(MANDIR)/man3"
+	$(call INSTALL_FILES,-m 644,$(MANPAGES3),$(MANDIR)/man3)
 endif
 
 uninstall: uninstall-doc

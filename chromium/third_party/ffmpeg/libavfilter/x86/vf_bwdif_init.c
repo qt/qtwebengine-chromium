@@ -20,7 +20,6 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 #include "libavfilter/bwdifdsp.h"
 
@@ -36,6 +35,10 @@ void ff_bwdif_filter_line_avx2(void *dst, const void *prev, const void *cur, con
                                int w, int prefs, int mrefs, int prefs2,
                                int mrefs2, int prefs3, int mrefs3, int prefs4,
                                int mrefs4, int parity, int clip_max);
+void ff_bwdif_filter_line_avx512icl(void *dst, const void *prev, const void *cur, const void *next,
+                                    int w, int prefs, int mrefs, int prefs2,
+                                    int mrefs2, int prefs3, int mrefs3, int prefs4,
+                                    int mrefs4, int parity, int clip_max);
 
 void ff_bwdif_filter_line_12bit_sse2(void *dst, const void *prev, const void *cur, const void *next,
                                      int w, int prefs, int mrefs, int prefs2,
@@ -49,6 +52,10 @@ void ff_bwdif_filter_line_12bit_avx2(void *dst, const void *prev, const void *cu
                                      int w, int prefs, int mrefs, int prefs2,
                                      int mrefs2, int prefs3, int mrefs3, int prefs4,
                                      int mrefs4, int parity, int clip_max);
+void ff_bwdif_filter_line_12bit_avx512icl(void *dst, const void *prev, const void *cur, const void *next,
+                                          int w, int prefs, int mrefs, int prefs2,
+                                          int mrefs2, int prefs3, int mrefs3, int prefs4,
+                                          int mrefs4, int parity, int clip_max);
 
 av_cold void ff_bwdif_init_x86(BWDIFDSPContext *bwdif, int bit_depth)
 {
@@ -59,14 +66,22 @@ av_cold void ff_bwdif_init_x86(BWDIFDSPContext *bwdif, int bit_depth)
             bwdif->filter_line = ff_bwdif_filter_line_sse2;
         if (EXTERNAL_SSSE3(cpu_flags))
             bwdif->filter_line = ff_bwdif_filter_line_ssse3;
-        if (ARCH_X86_64 && EXTERNAL_AVX2_FAST(cpu_flags))
+#if ARCH_X86_64
+        if (EXTERNAL_AVX2_FAST(cpu_flags))
             bwdif->filter_line = ff_bwdif_filter_line_avx2;
+        if (EXTERNAL_AVX512ICL(cpu_flags))
+            bwdif->filter_line = ff_bwdif_filter_line_avx512icl;
+#endif
     } else if (bit_depth <= 12) {
         if (EXTERNAL_SSE2(cpu_flags))
             bwdif->filter_line = ff_bwdif_filter_line_12bit_sse2;
         if (EXTERNAL_SSSE3(cpu_flags))
             bwdif->filter_line = ff_bwdif_filter_line_12bit_ssse3;
-        if (ARCH_X86_64 && EXTERNAL_AVX2_FAST(cpu_flags))
+#if ARCH_X86_64
+        if (EXTERNAL_AVX2_FAST(cpu_flags))
             bwdif->filter_line = ff_bwdif_filter_line_12bit_avx2;
+        if (EXTERNAL_AVX512ICL(cpu_flags))
+            bwdif->filter_line = ff_bwdif_filter_line_12bit_avx512icl;
+#endif
     }
 }

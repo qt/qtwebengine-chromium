@@ -24,6 +24,7 @@ int avcodec_send_packet(AVCodecContext *avctx, const AVPacket *avpkt);
 int avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame);
 AVPacket *av_packet_alloc(void);
 void av_packet_free(AVPacket **pkt);
+void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height, int linesize_align[AV_NUM_DATA_POINTERS]);
 
 //------------------------------------------------
 // Functions from avformat used in chromium code.
@@ -51,6 +52,7 @@ int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags
 void av_dict_free(AVDictionary **m);
 int av_dict_count(const AVDictionary *m);
 AVDictionaryEntry *av_dict_get(const AVDictionary *m, const char *key, const AVDictionaryEntry *prev, int flags);
+int av_dynamic_hdr_smpte2094_app5_to_t35(const AVDynamicHDRSmpte2094App5* s, uint8_t** data, size_t* size);
 int av_samples_get_buffer_size(int *linesize, int nb_channels, int nb_samples, enum AVSampleFormat sample_fmt, int align);
 int av_image_check_size(unsigned int w, unsigned int h, int log_offset, void *log_ctx);
 AVBufferRef *av_buffer_create(uint8_t *data, int size, AVFreeOperation free, void *opaque, int flags);

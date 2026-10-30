@@ -288,7 +288,7 @@ static int opencl_check_device_extension(cl_device_id device_id,
     return found;
 }
 
-static av_unused int opencl_check_extension(AVHWDeviceContext *hwdev,
+av_unused static int opencl_check_extension(AVHWDeviceContext *hwdev,
                                             const char *name)
 {
     OpenCLDeviceContext    *priv = hwdev->hwctx;
@@ -2747,7 +2747,7 @@ static int opencl_map_from_drm_arm(AVHWFramesContext *dst_fc, AVFrame *dst,
                               &fd, desc->objects[i].size, &cle);
         if (!mapping->object_buffers[i]) {
             av_log(dst_fc, AV_LOG_ERROR, "Failed to create CL buffer "
-                   "from object %d (fd %d, size %"SIZE_SPECIFIER") of DRM frame: %d.\n",
+                   "from object %d (fd %d, size %zu) of DRM frame: %d.\n",
                    i, fd, desc->objects[i].size, cle);
             err = AVERROR(EIO);
             goto fail;
@@ -2937,32 +2937,38 @@ static int opencl_map_to(AVHWFramesContext *hwfc, AVFrame *dst,
     case AV_PIX_FMT_DRM_PRIME:
         if (priv->beignet_drm_mapping_usable)
             return opencl_map_from_drm_beignet(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_VAAPI_BEIGNET
     case AV_PIX_FMT_VAAPI:
         if (priv->beignet_drm_mapping_usable)
             return opencl_map_from_vaapi(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_VAAPI_INTEL_MEDIA
     case AV_PIX_FMT_QSV:
     case AV_PIX_FMT_VAAPI:
         if (priv->qsv_mapping_usable)
             return opencl_map_from_qsv(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_DXVA2
     case AV_PIX_FMT_DXVA2_VLD:
         if (priv->dxva2_mapping_usable)
             return opencl_map_from_dxva2(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_D3D11
     case AV_PIX_FMT_D3D11:
         if (priv->d3d11_mapping_usable)
             return opencl_map_from_d3d11(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_DRM_ARM
     case AV_PIX_FMT_DRM_PRIME:
         if (priv->drm_arm_mapping_usable)
             return opencl_map_from_drm_arm(hwfc, dst, src, flags);
+        break;
 #endif
 #if HAVE_OPENCL_VIDEOTOOLBOX
     case AV_PIX_FMT_VIDEOTOOLBOX:

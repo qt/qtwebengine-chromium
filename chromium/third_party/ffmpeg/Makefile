@@ -11,6 +11,8 @@ vpath %.asm  $(SRC_PATH)
 vpath %.rc   $(SRC_PATH)
 vpath %.v    $(SRC_PATH)
 vpath %.texi $(SRC_PATH)
+vpath %.glsl $(SRC_PATH)
+vpath %.spv  $(SRC_PATH)
 vpath %.cu   $(SRC_PATH)
 vpath %.ptx  $(SRC_PATH)
 vpath %.metal $(SRC_PATH)
@@ -45,6 +47,19 @@ SKIPHEADERS = compat/w32pthreads.h
 # first so "all" becomes default target
 all: all-yes
 
+# cl.exe cannot write make dependency files directly, the mscl helper
+# converts its -showIncludes output into .d files.
+MSCL := $(if $(filter -showIncludes,$(CC_DEPFLAGS) $(CXX_DEPFLAGS) $(OBJCC_DEPFLAGS) $(AS_DEPFLAGS) $(HOSTCC_DEPFLAGS)),ffbuild/mscl$(HOSTEXESUF))
+ifneq ($(MSCL),)
+MSCLCC := $(HOSTCC)
+$(foreach V,CC CXX OBJCC HOSTCC AS,\
+    $(if $(filter -showIncludes,$($(V)_DEPFLAGS)),$(eval $(V) := $(MSCL) $($(V)))))
+HOSTPROGS += ffbuild/mscl
+
+ffbuild/mscl.o: $(SRC_PATH)/compat/windows/mscl.c
+	$(MSCLCC) $(HOSTCCFLAGS) $(HOSTCC_C) $(HOSTCC_O) $<
+endif
+
 include $(SRC_PATH)/tools/Makefile
 include $(SRC_PATH)/ffbuild/common.mak
 
@@ -53,31 +68,31 @@ FF_DEP_LIBS  := $(DEP_LIBS)
 FF_STATIC_DEP_LIBS := $(STATIC_DEP_LIBS)
 
 $(TOOLS): %$(EXESUF): %.o
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $(filter-out $(FF_DEP_LIBS), $^) $(EXTRALIBS-$(*F)) $(EXTRALIBS) $(ELIBS)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $(filter-out $(FF_DEP_LIBS), $^) $(EXTRALIBS-$(*F)) $(EXTRALIBS) $(ELIBS))
 
 target_dec_%_fuzzer$(EXESUF): target_dec_%_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 target_enc_%_fuzzer$(EXESUF): target_enc_%_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/target_bsf_%_fuzzer$(EXESUF): tools/target_bsf_%_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 target_dem_%_fuzzer$(EXESUF): target_dem_%_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/target_dem_fuzzer$(EXESUF): tools/target_dem_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/target_io_dem_fuzzer$(EXESUF): tools/target_io_dem_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/target_sws_fuzzer$(EXESUF): tools/target_sws_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/target_swr_fuzzer$(EXESUF): tools/target_swr_fuzzer.o $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $^ $(ELIBS) $(FF_EXTRALIBS) $(LIBFUZZER_PATH))
 
 tools/enum_options$(EXESUF): ELIBS = $(FF_EXTRALIBS)
 tools/enum_options$(EXESUF): $(FF_DEP_LIBS)
@@ -104,13 +119,14 @@ ffbuild/.config: $(CONFIGURABLE_COMPONENTS)
 	@-printf '\nWARNING: $(?) newer than config_components.h, rerun configure\n\n'
 	@-tput sgr0 2>/dev/null
 
-SUBDIR_VARS := CLEANFILES FFLIBS HOSTPROGS TESTPROGS TOOLS               \
+SUBDIR_VARS := CLEANFILES FFLIBS DEVPROGS HOSTPROGS TESTPROGS TOOLS      \
                HEADERS ARCH_HEADERS BUILT_HEADERS SKIPHEADERS            \
                ARMV5TE-OBJS ARMV6-OBJS ARMV8-OBJS VFP-OBJS NEON-OBJS     \
-               ALTIVEC-OBJS VSX-OBJS MMX-OBJS X86ASM-OBJS                \
+               ALTIVEC-OBJS VSX-OBJS X86ASM-OBJS                         \
                MIPSFPU-OBJS MIPSDSPR2-OBJS MIPSDSP-OBJS MSA-OBJS         \
                MMI-OBJS LSX-OBJS LASX-OBJS RV-OBJS RVV-OBJS RVVB-OBJS    \
-               OBJS SHLIBOBJS STLIBOBJS HOSTOBJS TESTOBJS SIMD128-OBJS
+               OBJS SHLIBOBJS STLIBOBJS HOSTOBJS TESTOBJS SIMD128-OBJS   \
+               SVE-OBJS SVE2-OBJS SME-OBJS SME2-OBJS
 
 define RESET
 $(1) :=
@@ -140,11 +156,13 @@ ifeq ($(STRIPTYPE),direct)
 else
 	$(RM) $@
 	$(CP) $< $@
+ifneq ($(STRIPTYPE),nostrip)
 	$(STRIP) $@
+endif
 endif
 
 %$(PROGSSUF)_g$(EXESUF): $(FF_DEP_LIBS)
-	$(LD) $(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $(OBJS-$*) $(FF_EXTRALIBS)
+	$(call LINK,$(LDFLAGS) $(LDEXEFLAGS) $(LD_O) $(OBJS-$*) $(FF_EXTRALIBS))
 
 VERSION_SH  = $(SRC_PATH)/ffbuild/version.sh
 ifeq ($(VERSION_TRACKING),yes)
@@ -170,7 +188,7 @@ install-libs: install-libs-yes
 
 install-data: $(DATA_FILES)
 	$(Q)mkdir -p "$(DATADIR)"
-	$(INSTALL) -m 644 $(DATA_FILES) "$(DATADIR)"
+	$(call INSTALL_FILES,-m 644,$(DATA_FILES),$(DATADIR))
 
 uninstall: uninstall-data uninstall-headers uninstall-libs uninstall-pkgconfig
 
@@ -184,7 +202,8 @@ clean::
 	$(RM) -rf coverage.info coverage.info.in lcov
 
 distclean:: clean
-	$(RM) .version config.asm config.h config_components.h mapfile  \
+	$(RM) .version config.asm config.h config_components.* mapfile \
+		checkasm_config_generated.* checkasm_header_config_generated.h \
 		ffbuild/.config ffbuild/config.* libavutil/avconfig.h \
 		version.h libavutil/ffversion.h libavcodec/codec_names.h \
 		libavcodec/bsf_list.c libavformat/protocol_list.c \
@@ -199,8 +218,8 @@ endif
 config:
 	$(SRC_PATH)/configure $(value FFMPEG_CONFIGURATION)
 
-build: all alltools examples testprogs
-check: all alltools examples testprogs fate
+build: all alltools devprogs examples testprogs
+check: all alltools devprogs examples testprogs fate
 
 include $(SRC_PATH)/tests/Makefile
 

@@ -476,6 +476,7 @@ static int vaapi_encode_av1_init_picture_params(AVCodecContext *avctx,
     AV1RawFrameHeader                *fh = &fh_obu->obu.frame.header;
     VAEncPictureParameterBufferAV1 *vpic = vaapi_pic->codec_picture_params;
     CodedBitstreamFragment          *obu = &priv->current_obu;
+    CodedBitstreamAV1Context      *cbctx = priv->cbc->priv_data;
     FFHWBaseEncodePicture *ref;
     VAAPIEncodeAV1Picture *href;
     int slot, i;
@@ -523,6 +524,8 @@ static int vaapi_encode_av1_init_picture_params(AVCodecContext *avctx,
             fh->ref_frame_idx[3] = href->slot;
             fh->ref_order_hint[href->slot] = ref->display_order - href->last_idr_frame;
             vpic->ref_frame_ctrl_l0.fields.search_idx1 = AV1_REF_FRAME_GOLDEN;
+        } else {
+            fh->ref_order_hint[!href->slot] = cbctx->ref[!href->slot].order_hint;
         }
         break;
     case FF_HW_PICTURE_TYPE_B:
@@ -844,7 +847,7 @@ static const VAAPIEncodeProfile vaapi_encode_av1_profiles[] = {
 
 static const VAAPIEncodeType vaapi_encode_type_av1 = {
     .profiles        = vaapi_encode_av1_profiles,
-    .flags           = FF_HW_FLAG_B_PICTURES | FLAG_TIMESTAMP_NO_DELAY,
+    .flags           = FF_HW_FLAG_B_PICTURES | FF_HW_FLAG_TIMESTAMP_NO_DELAY,
     .default_quality = 25,
 
     .get_encoder_caps = &vaapi_encode_av1_get_encoder_caps,
@@ -1024,6 +1027,7 @@ static const FFCodecDefault vaapi_encode_av1_defaults[] = {
     { "g",              "120" },
     { "qmin",           "1"   },
     { "qmax",           "255" },
+    { "refs",           "0"   },
     { NULL },
 };
 

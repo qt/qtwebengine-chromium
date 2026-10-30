@@ -13,8 +13,9 @@ threaded error diffusion pass following a multi-threaded scaling pass.
 
 SwsGraph is internally recreated whenever the image format, dimensions or
 settings change in any way. sws_scale_frame() is itself just a light-weight
-wrapper that runs ff_sws_graph_create() whenever the format changes, splits
-interlaced images into separate fields, and calls ff_sws_graph_run() on each.
+wrapper that runs ff_sws_graph_reinit() initially and on format changes,
+splits interlaced images into separate fields, and calls ff_sws_graph_run()
+on each.
 
 From the point of view of SwsGraph itself, all inputs are progressive.
 
@@ -62,7 +63,7 @@ This overall approach has a considerable number of benefits:
    multiple levels of complicated, interwoven format handling code that is
    legacy swscale.
 
-2. Because most of the brains lives inside the the powerful optimizer, we get
+2. Because most of the brains lives inside the powerful optimizer, we get
    fast paths "for free" for any suitable format conversion, rather than having
    to enumerate them one by one. SIMD code itself can be written in a very
    general way and does need to be tied to specific pixel formats - subsequent
@@ -295,7 +296,7 @@ for improvements:
     - op_scale_1110
     - op_scale_1111
 
-   This reflects the four different arangements of pixel components that are
+   This reflects the four different arrangements of pixel components that are
    typically present (or absent). While best for performance, it does turn into
    a bit of a chore when implementing these kernels.
 

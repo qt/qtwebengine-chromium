@@ -28,7 +28,7 @@
 #define ff_dlog(a, ...) while(0)
 #define ff_tlog(a, ...) while(0)
 #define AVUTIL_MEM_H
-#define av_malloc(s) NULL
+#define av_mallocz(s) NULL
 #define av_malloc_array(a, b) NULL
 #define av_realloc_f(p, o, n) NULL
 #define av_free(p) while(0)
@@ -67,7 +67,7 @@ static void write_vlc_type(const VLC *vlc, const VLCElem *base_table, const char
     do {                                                \
         int i;                                          \
         const size_t array_size = FF_ARRAY_ELEMS(name); \
-        printf(prefix" VLC "#name"[%"FMT"] = {{\n",     \
+        printf(prefix" VLC "#name"[%zu] = {{\n",        \
                array_size);                             \
         for (i = 0; i < array_size; i++) {              \
             write_vlc_type(name + i,                    \

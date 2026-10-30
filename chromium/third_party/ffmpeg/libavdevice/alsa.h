@@ -52,9 +52,6 @@ typedef struct AlsaData {
     int frame_size;  ///< bytes per sample * channels
     int period_size; ///< preferred size for reads and writes, in frames
     int sample_rate; ///< sample rate set by user
-#if FF_API_ALSA_CHANNELS
-    int channels;    ///< number of channels set by user
-#endif
     AVChannelLayout ch_layout; ///< Channel layout set by user
     int last_period;
     TimeFilter *timefilter;
@@ -72,7 +69,8 @@ typedef struct AlsaData {
  * @param mode either SND_PCM_STREAM_CAPTURE or SND_PCM_STREAM_PLAYBACK
  * @param sample_rate in: requested sample rate;
  *                    out: actually selected sample rate
- * @param layout channel layout
+ * @param layout in: requested channel layout, or nb_channels=0 for auto-detect;
+ *               out: actually selected channel layout
  * @param codec_id in: requested AVCodecID or AV_CODEC_ID_NONE;
  *                 out: actually selected AVCodecID, changed only if
  *                 AV_CODEC_ID_NONE was requested
@@ -82,7 +80,7 @@ typedef struct AlsaData {
 av_warn_unused_result
 int ff_alsa_open(AVFormatContext *s, snd_pcm_stream_t mode,
                  unsigned int *sample_rate,
-                 const AVChannelLayout *layout, enum AVCodecID *codec_id);
+                 AVChannelLayout *layout, enum AVCodecID *codec_id);
 
 /**
  * Close the ALSA PCM.

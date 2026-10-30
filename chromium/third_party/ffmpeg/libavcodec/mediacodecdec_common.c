@@ -385,6 +385,12 @@ static int mediacodec_wrap_sw_audio_buffer(AVCodecContext *avctx,
         goto done;
     }
 
+    if (info->size % (sample_size * avctx->ch_layout.nb_channels)) {
+        av_log(avctx, AV_LOG_ERROR, "input is not a multiple of channels * sample_size\n");
+        ret = AVERROR(EINVAL);
+        goto done;
+    }
+
     frame->format = avctx->sample_fmt;
     frame->sample_rate = avctx->sample_rate;
     frame->nb_samples = info->size / (sample_size * avctx->ch_layout.nb_channels);
@@ -577,6 +583,8 @@ static int mediacodec_dec_parse_video_format(AVCodecContext *avctx, MediaCodecDe
     } else if (strstr(s->codec_name, "OMX.SEC.avc.dec")) {
         s->slice_height = avctx->height;
         s->stride = avctx->width;
+    } else if (strstr(s->codec_name, "OMX.MTK.VIDEO.DECODER.MPEG2")) {
+        s->slice_height = s->height;
     } else if (s->slice_height == 0) {
         s->slice_height = s->height;
     }
@@ -770,13 +778,17 @@ static int mediacodec_dec_get_video_codec(AVCodecContext *avctx, MediaCodecDecCo
     }
 
     s->codec_name = ff_AMediaCodecList_getCodecNameByType(mime, profile, 0, avctx);
+    if (!s->codec_name && (avctx->hwaccel_flags & AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH)) {
+        profile = -1;
+        s->codec_name = ff_AMediaCodecList_getCodecNameByType(mime, profile, 0, avctx);
+    }
     if (!s->codec_name) {
+        av_log(avctx, AV_LOG_INFO, "Failed to getCodecNameByType(%s, %d)\n", mime, profile);
         // getCodecNameByType() can fail due to missing JVM, while NDK
         // mediacodec can be used without JVM.
         if (!s->use_ndk_codec) {
             return AVERROR_EXTERNAL;
         }
-        av_log(avctx, AV_LOG_INFO, "Failed to getCodecNameByType\n");
     } else {
         av_log(avctx, AV_LOG_DEBUG, "Found decoder %s\n", s->codec_name);
     }

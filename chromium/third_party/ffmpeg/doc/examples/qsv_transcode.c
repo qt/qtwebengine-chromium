@@ -101,7 +101,7 @@ static int dynamic_set_parameter(AVCodecContext *avctx)
         /* Set codec specific option */
         if ((ret = av_opt_set_dict(avctx->priv_data, &opts)) < 0)
             goto fail;
-        /* There is no "framerate" option in commom option list. Use "-r" to set
+        /* There is no "framerate" option in common option list. Use "-r" to set
          * framerate, which is compatible with ffmpeg commandline. The video is
          * assumed to be average frame rate, so set time_base to 1/framerate. */
         e = av_dict_get(opts, "r", NULL, 0);
@@ -180,7 +180,7 @@ static int open_input_file(char *filename)
         decoder = avcodec_find_decoder_by_name("mjpeg_qsv");
         break;
     default:
-        fprintf(stderr, "Codec is not supportted by qsv\n");
+        fprintf(stderr, "Codec is not supported by qsv\n");
         return AVERROR(EINVAL);
     }
 
@@ -289,7 +289,7 @@ static int dec_enc(AVPacket *pkt, const AVCodec *enc_codec, char *optstr)
                 fprintf(stderr, "Failed to set encoding parameter.\n");
                 goto fail;
             }
-            /* There is no "framerate" option in commom option list. Use "-r" to
+            /* There is no "framerate" option in common option list. Use "-r" to
             * set framerate, which is compatible with ffmpeg commandline. The
             * video is assumed to be average frame rate, so set time_base to
             * 1/framerate. */
@@ -351,6 +351,10 @@ int main(int argc, char **argv)
     }
     setting_number = (argc - 5) / 2;
     dynamic_setting = av_malloc(setting_number * sizeof(*dynamic_setting));
+    if (!dynamic_setting) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
     current_setting_number = 0;
     for (int i = 0; i < setting_number; i++) {
         dynamic_setting[i].frame_number = atoi(argv[i*2 + 5]);
@@ -426,7 +430,9 @@ int main(int argc, char **argv)
 
 end:
     avformat_close_input(&ifmt_ctx);
-    avformat_close_input(&ofmt_ctx);
+    if (ofmt_ctx && !(ofmt_ctx->oformat->flags & AVFMT_NOFILE))
+        avio_closep(&ofmt_ctx->pb);
+    avformat_free_context(ofmt_ctx);
     avcodec_free_context(&decoder_ctx);
     avcodec_free_context(&encoder_ctx);
     av_buffer_unref(&hw_device_ctx);

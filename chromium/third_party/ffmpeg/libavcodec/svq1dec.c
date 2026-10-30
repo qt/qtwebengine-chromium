@@ -32,6 +32,7 @@
  *   http://www.pcisys.net/~melanson/codecs/
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/crc.h"
 #include "libavutil/mem.h"
 #include "libavutil/thread.h"
@@ -557,6 +558,7 @@ static int svq1_decode_frame_header(AVCodecContext *avctx, AVFrame *frame, int *
         break;
     case 2:
         s->nonref = 1;
+        av_fallthrough;
     case 1:
         frame->pict_type = AV_PICTURE_TYPE_P;
         break;
@@ -694,6 +696,11 @@ static int svq1_decode_frame(AVCodecContext *avctx, AVFrame *cur,
          cur->pict_type != AV_PICTURE_TYPE_I) ||
         avctx->skip_frame >= AVDISCARD_ALL)
         return buf_size;
+
+    // Reject obviously too-small packets early: require at least one remaining bit per aligned luma macroblock.
+    // FFALIGN(s->width,  16) * FFALIGN(s->height, 16) / 256 represent the number of Macroblocks
+    if (get_bits_left(&s->gb) < FFALIGN(s->width,  16) * FFALIGN(s->height, 16) / 256)
+        return AVERROR_INVALIDDATA;
 
     result = ff_get_buffer(avctx, cur, s->nonref ? 0 : AV_GET_BUFFER_FLAG_REF);
     if (result < 0)
@@ -846,7 +853,7 @@ static av_cold int svq1_decode_end(AVCodecContext *avctx)
     return 0;
 }
 
-static void svq1_flush(AVCodecContext *avctx)
+static av_cold void svq1_flush(AVCodecContext *avctx)
 {
     SVQ1Context *s = avctx->priv_data;
 

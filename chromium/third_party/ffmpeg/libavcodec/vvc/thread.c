@@ -646,11 +646,7 @@ static void task_run_stage(VVCTask *t, VVCContext *s, VVCLocalContext *lc)
 
     if (!atomic_load(&ft->ret)) {
         if ((ret = run[stage](s, lc, t)) < 0) {
-#ifdef COMPAT_ATOMICS_WIN32_STDATOMIC_H
-            intptr_t zero = 0;
-#else
             int zero = 0;
-#endif
             atomic_compare_exchange_strong(&ft->ret, &zero, ret);
             av_log(s->avctx, AV_LOG_ERROR,
                 "frame %5d, %s(%3d, %3d) failed with %d\r\n",
@@ -684,7 +680,7 @@ static int task_run(FFTask *_t, void *local_context, void *user_data)
     return 0;
 }
 
-FFExecutor* ff_vvc_executor_alloc(VVCContext *s, const int thread_count)
+av_cold FFExecutor* ff_vvc_executor_alloc(VVCContext *s, const int thread_count)
 {
     FFTaskCallbacks callbacks = {
         s,
@@ -695,7 +691,7 @@ FFExecutor* ff_vvc_executor_alloc(VVCContext *s, const int thread_count)
     return ff_executor_alloc(&callbacks, thread_count);
 }
 
-void ff_vvc_executor_free(FFExecutor **e)
+av_cold void ff_vvc_executor_free(FFExecutor **e)
 {
     ff_executor_free(e);
 }
@@ -711,7 +707,7 @@ void ff_vvc_frame_thread_free(VVCFrameContext *fc)
     ff_cond_destroy(&ft->cond);
     av_freep(&ft->rows);
     av_freep(&ft->tasks);
-    av_freep(&ft);
+    av_freep(&fc->ft);
 }
 
 static void frame_thread_init_score(VVCFrameContext *fc)

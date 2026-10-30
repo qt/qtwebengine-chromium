@@ -18,10 +18,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "bsf.h"
-#include "bsf_internal.h"
-#include "bytestream.h"
-#include "dca_syncwords.h"
+#include "libavcodec/bsf.h"
+#include "libavcodec/bsf_internal.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/dca_syncwords.h"
+
+static int dca_core_init(AVBSFContext *ctx)
+{
+    ctx->par_out->profile = AV_PROFILE_UNKNOWN;
+
+    return 0;
+}
 
 static int dca_core_filter(AVBSFContext *ctx, AVPacket *pkt)
 {
@@ -57,5 +64,6 @@ static const enum AVCodecID codec_ids[] = {
 const FFBitStreamFilter ff_dca_core_bsf = {
     .p.name      = "dca_core",
     .p.codec_ids = codec_ids,
+    .init        = dca_core_init,
     .filter      = dca_core_filter,
 };

@@ -281,6 +281,8 @@ static av_cold int nppscale_init(AVFilterContext* ctx)
     NPPScaleContext* scale = ctx->priv;
     int i, ret;
 
+    av_log(ctx, AV_LOG_WARNING, "The libnpp based filters are deprecated.\n");
+
     if (!strcmp(scale->format_str, "same")) {
         scale->format = AV_PIX_FMT_NONE;
     } else {
@@ -638,9 +640,11 @@ static int config_props(AVFilterLink *outlink)
         w_adj = IS_SCALE2REF(ctx) ? s->var_values[VAR_S2R_MAIN_SAR] :
                                     s->var_values[VAR_SAR];
 
-    ff_scale_adjust_dimensions(inlink, &s->w, &s->h,
-                               s->force_original_aspect_ratio,
-                               s->force_divisible_by, w_adj);
+    ret = ff_scale_adjust_dimensions(inlink, &s->w, &s->h,
+                                     s->force_original_aspect_ratio,
+                                     s->force_divisible_by, w_adj);
+    if (ret < 0)
+        goto fail;
 
     if (s->w > INT_MAX || s->h > INT_MAX ||
         (s->h * inlink->w) > INT_MAX ||
@@ -976,10 +980,10 @@ static const AVOption options[] = {
         { "cubic2p_b05c03",     "2-parameter cubic (B=1/2, C=3/10)", 0, AV_OPT_TYPE_CONST, { .i64 = NPPI_INTER_CUBIC2P_B05C03     }, 0, 0, FLAGS, .unit = "interp_algo" },
         { "super",              "supersampling",                     0, AV_OPT_TYPE_CONST, { .i64 = NPPI_INTER_SUPER              }, 0, 0, FLAGS, .unit = "interp_algo" },
         { "lanczos",            "Lanczos",                           0, AV_OPT_TYPE_CONST, { .i64 = NPPI_INTER_LANCZOS            }, 0, 0, FLAGS, .unit = "interp_algo" },
-    { "force_original_aspect_ratio", "decrease or increase w/h if necessary to keep the original AR", OFFSET(force_original_aspect_ratio), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 2, FLAGS, .unit = "force_oar" },
-    { "disable",  NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 0 }, 0, 0, FLAGS, .unit = "force_oar" },
-    { "decrease", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 1 }, 0, 0, FLAGS, .unit = "force_oar" },
-    { "increase", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = 2 }, 0, 0, FLAGS, .unit = "force_oar" },
+    { "force_original_aspect_ratio", "decrease or increase w/h if necessary to keep the original AR", OFFSET(force_original_aspect_ratio), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, SCALE_FORCE_OAR_NB-1, FLAGS, .unit = "force_oar" },
+    { "disable",  NULL, 0, AV_OPT_TYPE_CONST, {.i64 = SCALE_FORCE_OAR_DISABLE  }, 0, 0, FLAGS, .unit = "force_oar" },
+    { "decrease", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = SCALE_FORCE_OAR_DECREASE }, 0, 0, FLAGS, .unit = "force_oar" },
+    { "increase", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = SCALE_FORCE_OAR_INCREASE }, 0, 0, FLAGS, .unit = "force_oar" },
     { "force_divisible_by", "enforce that the output resolution is divisible by a defined integer when force_original_aspect_ratio is used", OFFSET(force_divisible_by), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, 256, FLAGS },
     { "reset_sar", "reset SAR to 1 and scale to square pixels if scaling proportionally", OFFSET(reset_sar), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS },
     { "eval", "specify when to evaluate expressions", OFFSET(eval_mode), AV_OPT_TYPE_INT, { .i64 = EVAL_MODE_INIT }, 0, EVAL_MODE_NB-1, FLAGS, .unit = "eval" },

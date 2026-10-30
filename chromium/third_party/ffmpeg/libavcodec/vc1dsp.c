@@ -166,17 +166,11 @@ static av_always_inline int vc1_filter_line(uint8_t *src, ptrdiff_t stride, int 
             clip = ((clip ^ clip_sign) - clip_sign) >> 1;
             if (clip) {
                 int a3     = FFMIN(a1, a2);
-                int d      = 5 * (a3 - a0);
-                int d_sign = (d >> 31);
+                int d      = (5 * (a0 - a3)) >> 3;
 
-                d       = ((d ^ d_sign) - d_sign) >> 3;
-                d_sign ^= a0_sign;
-
-                if (d_sign ^ clip_sign)
-                    d = 0;
-                else {
+                if (a0_sign ^ clip_sign) {
                     d = FFMIN(d, clip);
-                    d = (d ^ d_sign) - d_sign; /* Restore sign */
+                    d = (d ^ clip_sign) - clip_sign; /* Restore sign */
                     src[-1 * stride] = av_clip_uint8(src[-1 * stride] - d);
                     src[ 0 * stride] = av_clip_uint8(src[ 0 * stride] + d);
                 }
@@ -196,8 +190,8 @@ static av_always_inline int vc1_filter_line(uint8_t *src, ptrdiff_t stride, int 
  * @param pq block quantizer
  * @see 8.6
  */
-static inline void vc1_loop_filter(uint8_t *src, int step, ptrdiff_t stride,
-                                   int len, int pq)
+static av_always_inline void vc1_loop_filter(uint8_t *src, ptrdiff_t step,
+                                             ptrdiff_t stride, int len, int pq)
 {
     int i;
     int filt3;
@@ -547,7 +541,7 @@ static void vc1_inv_trans_4x4_c(uint8_t *dest, ptrdiff_t stride, int16_t *block)
 /* Filter in case of 2 filters */
 #define VC1_MSPEL_FILTER_16B(DIR, TYPE)                                       \
 static av_always_inline int vc1_mspel_ ## DIR ## _filter_16bits(const TYPE *src, \
-                                                                int stride,   \
+                                                                ptrdiff_t stride, \
                                                                 int mode)     \
 {                                                                             \
     switch(mode) {                                                            \
@@ -570,7 +564,7 @@ VC1_MSPEL_FILTER_16B(ver, uint8_t)
 VC1_MSPEL_FILTER_16B(hor, int16_t)
 
 /* Filter used to interpolate fractional pel values */
-static av_always_inline int vc1_mspel_filter(const uint8_t *src, int stride,
+static av_always_inline int vc1_mspel_filter(const uint8_t *src, ptrdiff_t stride,
                                              int mode, int r)
 {
     switch (mode) {
@@ -1041,7 +1035,7 @@ av_cold void ff_vc1dsp_init(VC1DSPContext *dsp)
     ff_vc1dsp_init_ppc(dsp);
 #elif ARCH_RISCV
     ff_vc1dsp_init_riscv(dsp);
-#elif ARCH_X86
+#elif ARCH_X86 && HAVE_X86ASM
     ff_vc1dsp_init_x86(dsp);
 #elif ARCH_MIPS
     ff_vc1dsp_init_mips(dsp);

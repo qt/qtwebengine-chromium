@@ -314,7 +314,10 @@ static void filter(AVFilterContext *ctx, uint8_t *dst[3], uint8_t *src[3],
         p->quality = p->qp * FF_QP2LAMBDA;
     else {
         int qpsum=0;
-        int qpcount = (height>>4) * (height>>4);
+        int qpcount = (width>>4) * (height>>4);
+
+        qpsum   += !qpcount;
+        qpcount += !qpcount;
 
         for (y = 0; y < (height>>4); y++) {
             for (x = 0; x < (width>>4); x++)
@@ -410,7 +413,7 @@ static int config_input(AVFilterLink *inlink)
         }
         avctx_enc->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
         avctx_enc->global_quality = 123;
-        avctx_enc->thread_count = 1; // We do threading in the filter with muiltiple codecs
+        avctx_enc->thread_count = 1; // We do threading in the filter with multiple codecs
         ret = avcodec_open2(avctx_enc, enc, &opts);
         av_dict_free(&opts);
         if (ret < 0)

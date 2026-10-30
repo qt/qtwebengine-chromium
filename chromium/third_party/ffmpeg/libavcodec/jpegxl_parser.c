@@ -32,6 +32,7 @@
 
 #include "bytestream.h"
 #include "codec_id.h"
+#include "parser_internal.h"
 #define UNCHECKED_BITSTREAM_READER 0
 #define BITSTREAM_READER_LE
 #include "get_bits.h"
@@ -1074,6 +1075,11 @@ static void populate_fields(AVCodecParserContext *s, AVCodecContext *avctx, cons
         else
             s->format = meta->have_alpha ? AV_PIX_FMT_RGBAF32 : AV_PIX_FMT_RGBF32;
     }
+
+    if (meta->have_alpha) {
+        avctx->alpha_mode = meta->alpha_associated ? AVALPHA_MODE_PREMULTIPLIED
+                                                   : AVALPHA_MODE_STRAIGHT;
+    }
 }
 
 static int skip_icc_profile(void *avctx, JXLParseContext *ctx, GetBitContext *gb)
@@ -1315,6 +1321,13 @@ static int parse_frame_header(void *avctx, JXLParseContext *ctx, GetBitContext *
     if (get_bits1(gb)) {
         JXLEntropyDecoder dec;
         int64_t end, lehmer = 0;
+        /* parser sanity check to prevent TOC perm from spinning cpu */
+        if (width > meta->coded_width * 8 || height > meta->coded_height * 8) {
+            av_log(avctx, AV_LOG_WARNING, "frame of size %" PRIu32 "x%" PRIu32
+                " exceeds max size of %" PRIu32 "x%" PRIu32 ", aborting parser\n",
+                width, height, meta->coded_width * 8, meta->coded_height * 8);
+            return AVERROR_INVALIDDATA;
+        }
         ret = entropy_decoder_init(avctx, gb, &dec, 8);
         if (ret < 0)
             return ret;
@@ -1331,7 +1344,7 @@ static int parse_frame_header(void *avctx, JXLParseContext *ctx, GetBitContext *
             lehmer = entropy_decoder_read_symbol(gb, &dec, toc_context(lehmer));
             if (lehmer < 0 || get_bits_left(gb) < 0) {
                 entropy_decoder_close(&dec);
-                return AVERROR_BUFFER_TOO_SMALL;
+                return lehmer < 0 ? lehmer : AVERROR_BUFFER_TOO_SMALL;
             }
         }
         entropy_decoder_close(&dec);
@@ -1533,9 +1546,9 @@ flush:
     return next;
 }
 
-const AVCodecParser ff_jpegxl_parser = {
-    .codec_ids      = { AV_CODEC_ID_JPEGXL, AV_CODEC_ID_JPEGXL_ANIM },
+const FFCodecParser ff_jpegxl_parser = {
+    PARSER_CODEC_LIST(AV_CODEC_ID_JPEGXL, AV_CODEC_ID_JPEGXL_ANIM),
     .priv_data_size = sizeof(JXLParseContext),
-    .parser_parse   = jpegxl_parse,
-    .parser_close   = ff_parse_close,
+    .parse          = jpegxl_parse,
+    .close          = ff_parse_close,
 };

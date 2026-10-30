@@ -42,6 +42,8 @@
 #include "thread.h"
 #include "compat/w32dlfcn.h"
 
+#define MAX_ARRAY_SIZE 64 // Driver specification limits ArraySize to 64 for decoder-bound resources
+
 typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY)(REFIID riid, void **ppFactory);
 
 static AVOnce functions_loaded = AV_ONCE_INIT;
@@ -101,11 +103,12 @@ static const struct {
     { DXGI_FORMAT_YUY2,         AV_PIX_FMT_YUYV422 },
     { DXGI_FORMAT_Y210,         AV_PIX_FMT_Y210 },
     { DXGI_FORMAT_Y410,         AV_PIX_FMT_XV30 },
-    { DXGI_FORMAT_P016,         AV_PIX_FMT_P012 },
+    { DXGI_FORMAT_P016,         AV_PIX_FMT_P016 },
     { DXGI_FORMAT_Y216,         AV_PIX_FMT_Y216 },
     { DXGI_FORMAT_Y416,         AV_PIX_FMT_XV48 },
     // There is no 12bit pixel format defined in DXGI_FORMAT*, use 16bit to compatible
     // with 12 bit AV_PIX_FMT* formats.
+    { DXGI_FORMAT_P016,         AV_PIX_FMT_P012 },
     { DXGI_FORMAT_Y216,         AV_PIX_FMT_Y212 },
     { DXGI_FORMAT_Y416,         AV_PIX_FMT_XV36 },
     // Special opaque formats. The pix_fmt is merely a place holder, as the
@@ -288,6 +291,14 @@ static int d3d11va_frames_init(AVHWFramesContext *ctx)
         return AVERROR(EINVAL);
     }
 
+    hwctx->BindFlags |= device_hwctx->BindFlags;
+    hwctx->MiscFlags |= device_hwctx->MiscFlags;
+
+    if (s->format == DXGI_FORMAT_420_OPAQUE)
+        hwctx->BindFlags &= ~D3D11_BIND_SHADER_RESOURCE;
+
+    ctx->initial_pool_size = FFMIN(ctx->initial_pool_size, MAX_ARRAY_SIZE);
+
     texDesc = (D3D11_TEXTURE2D_DESC){
         .Width      = ctx->width,
         .Height     = ctx->height,
@@ -314,7 +325,7 @@ static int d3d11va_frames_init(AVHWFramesContext *ctx)
         ctx->initial_pool_size = texDesc2.ArraySize;
         hwctx->BindFlags = texDesc2.BindFlags;
         hwctx->MiscFlags = texDesc2.MiscFlags;
-    } else if (!(texDesc.BindFlags & D3D11_BIND_RENDER_TARGET) && texDesc.ArraySize > 0) {
+    } else if (texDesc.ArraySize > 0) {
         hr = ID3D11Device_CreateTexture2D(device_hwctx->device, &texDesc, NULL, &hwctx->texture);
         if (FAILED(hr)) {
             av_log(ctx, AV_LOG_ERROR, "Could not create the texture (%lx)\n", (long)hr);
@@ -705,6 +716,18 @@ static int d3d11va_device_create(AVHWDeviceContext *ctx, const char *device,
         }
     }
 #endif
+
+    if (av_dict_get(opts, "SHADER", NULL, 0))
+        device_hwctx->BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+
+    if (av_dict_get(opts, "UAV", NULL, 0))
+        device_hwctx->BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+
+    if (av_dict_get(opts, "RTV", NULL, 0))
+        device_hwctx->BindFlags |= D3D11_BIND_RENDER_TARGET;
+
+    if (av_dict_get(opts, "SHARED", NULL, 0))
+        device_hwctx->MiscFlags |= D3D11_RESOURCE_MISC_SHARED;
 
     return 0;
 }

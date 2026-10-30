@@ -21,14 +21,24 @@
  */
 
 #include <time.h>
+#ifdef _WIN32
+#include <sys/utime.h>
+#else
+#include <sys/time.h>
+#endif
 
 #include "config_components.h"
 
+#include "libavutil/avutil.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/avstring.h"
+#include "libavutil/bprint.h"
 #include "libavutil/dict.h"
 #include "libavutil/log.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
+#include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/time_internal.h"
 #include "avformat.h"
@@ -42,15 +52,41 @@ typedef struct VideoMuxData {
     int start_img_number;
     int img_number;
     int split_planes;       /**< use independent file for each Y, U, V plane */
-    char tmp[4][1024];
-    char target[4][1024];
     int update;
     int use_strftime;
     int frame_pts;
     const char *muxer;
     int use_rename;
     AVDictionary *protocol_opts;
+    int update_filemtime;
+    int64_t creation_ts;    /**< creation_time in microseconds since epoch */
 } VideoMuxData;
+
+static void set_file_mtime(AVFormatContext *s, const char *path, int64_t ts_us)
+{
+    int64_t sec  = ts_us / 1000000;
+    int64_t usec = ts_us % 1000000;
+
+    if (usec < 0) {
+        sec--;
+        usec += 1000000;
+    }
+
+#ifdef _WIN32
+    struct _utimbuf ut;
+    ut.actime  = sec;
+    ut.modtime = sec;
+    if (_utime(path, &ut) < 0)
+#else
+    struct timeval times[2] = {
+        { .tv_sec = sec, .tv_usec = usec },
+        { .tv_sec = sec, .tv_usec = usec },
+    };
+    if (utimes(path, times) < 0)
+#endif
+        av_log(s, AV_LOG_WARNING,
+               "Failed to set file modification time for %s\n", path);
+}
 
 static int write_header(AVFormatContext *s)
 {
@@ -74,6 +110,29 @@ static int write_header(AVFormatContext *s)
                              && desc->nb_components >= 3;
     }
     img->img_number = img->start_img_number;
+
+    if (img->update_filemtime) {
+        const char *proto = avio_find_protocol_name(s->url);
+        AVDictionaryEntry *entry;
+        int64_t parsed_ts;
+
+        if (!proto || strcmp(proto, "file")) {
+            av_log(s, AV_LOG_WARNING,
+                   "update_filemtime is only supported for local files, "
+                   "it will be ignored\n");
+            img->update_filemtime = 0;
+        } else {
+            entry = av_dict_get(s->metadata, "creation_time", NULL, 0);
+            if (!entry || av_parse_time(&parsed_ts, entry->value, 0) < 0) {
+                av_log(s, AV_LOG_WARNING,
+                       "No valid creation_time metadata found, "
+                       "update_filemtime will be ignored\n");
+                img->update_filemtime = 0;
+            } else {
+                img->creation_ts = parsed_ts;
+            }
+        }
+    }
 
     return 0;
 }
@@ -141,30 +200,31 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     VideoMuxData *img = s->priv_data;
     AVIOContext *pb[4] = {0};
-    char filename[1024];
+    char* target[4]    = {0};
+    char* tmp[4]       = {0};
+    char* filepaths[4] = {0};
     AVCodecParameters *par = s->streams[pkt->stream_index]->codecpar;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(par->format);
     int ret, i;
-    int nb_renames = 0;
     AVDictionary *options = NULL;
+    AVBPrint filename;
+    av_bprint_init(&filename, 0, AV_BPRINT_SIZE_UNLIMITED);
 
     if (img->update) {
-        av_strlcpy(filename, s->url, sizeof(filename));
+        av_bprintf(&filename, "%s", s->url);
     } else if (img->use_strftime) {
         time_t now0;
         struct tm *tm, tmpbuf;
         time(&now0);
         tm = localtime_r(&now0, &tmpbuf);
-        if (!strftime(filename, sizeof(filename), s->url, tm)) {
-            av_log(s, AV_LOG_ERROR, "Could not get frame filename with strftime\n");
-            return AVERROR(EINVAL);
-        }
+        av_bprint_strftime(&filename, s->url, tm);
     } else if (img->frame_pts) {
-        if (ff_get_frame_filename(filename, sizeof(filename), s->url, pkt->pts, AV_FRAME_FILENAME_FLAGS_MULTIPLE) < 0) {
+        if (ff_bprint_get_frame_filename(&filename, s->url, pkt->pts, AV_FRAME_FILENAME_FLAGS_MULTIPLE) < 0) {
             av_log(s, AV_LOG_ERROR, "Cannot write filename by pts of the frames.");
-            return AVERROR(EINVAL);
+            ret = AVERROR(EINVAL);
+            goto fail;
         }
-    } else if (ff_get_frame_filename(filename, sizeof(filename), s->url,
+    } else if (ff_bprint_get_frame_filename(&filename, s->url,
                                      img->img_number,
                                      AV_FRAME_FILENAME_FLAGS_MULTIPLE) < 0) {
         if (img->img_number == img->start_img_number) {
@@ -172,19 +232,30 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
             av_log(s, AV_LOG_WARNING,
                    "Use a pattern such as %%03d for an image sequence or "
                    "use the -update option (with -frames:v 1 if needed) to write a single image.\n");
-            av_strlcpy(filename, s->url, sizeof(filename));
+            av_bprint_clear(&filename);
+            av_bprintf(&filename, "%s", s->url);
         } else {
             av_log(s, AV_LOG_ERROR, "Cannot write more than one file with the same name. Are you missing the -update option or a sequence pattern?\n");
-            return AVERROR(EINVAL);
+            ret = AVERROR(EINVAL);
+            goto fail;
         }
+    }
+    if (!av_bprint_is_complete(&filename)) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
     }
     for (i = 0; i < 4; i++) {
         av_dict_copy(&options, img->protocol_opts, 0);
-        snprintf(img->tmp[i], sizeof(img->tmp[i]), "%s.tmp", filename);
-        av_strlcpy(img->target[i], filename, sizeof(img->target[i]));
-        if (s->io_open(s, &pb[i], img->use_rename ? img->tmp[i] : filename, AVIO_FLAG_WRITE, &options) < 0) {
-            av_log(s, AV_LOG_ERROR, "Could not open file : %s\n", img->use_rename ? img->tmp[i] : filename);
-            ret = AVERROR(EIO);
+        if (img->use_rename) {
+            tmp[i] = av_asprintf("%s.tmp", filename.str);
+            target[i] = av_strdup(filename.str);
+            if (!tmp[i] || !target[i]) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+        }
+        if ((ret = s->io_open(s, &pb[i], tmp[i] ? tmp[i] : filename.str, AVIO_FLAG_WRITE, &options)) < 0) {
+            av_log(s, AV_LOG_ERROR, "Could not open file : %s\n", tmp[i] ? tmp[i] : filename.str);
             goto fail;
         }
         if (options) {
@@ -193,12 +264,19 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
             goto fail;
         }
 
+        if (img->update_filemtime) {
+            filepaths[i] = av_strdup(filename.str);
+            if (!filepaths[i]) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+        }
+
         if (!img->split_planes || i+1 >= desc->nb_components)
             break;
-        filename[strlen(filename) - 1] = "UVAx"[i];
+        filename.str[filename.len - 1] = "UVAx"[i];
     }
-    if (img->use_rename)
-        nb_renames = i + 1;
+    av_bprint_finalize(&filename, NULL);
 
     if (img->split_planes) {
         int ysize = par->width * par->height;
@@ -207,6 +285,11 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
             ysize *= 2;
             usize *= 2;
         }
+        if (ysize + 2*usize + (desc->nb_components > 3) * ysize > pkt->size) {
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+
         if ((ret = write_and_close(s, &pb[0], pkt->data                , ysize)) < 0 ||
             (ret = write_and_close(s, &pb[1], pkt->data + ysize        , usize)) < 0 ||
             (ret = write_and_close(s, &pb[2], pkt->data + ysize + usize, usize)) < 0)
@@ -223,20 +306,55 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
     if (ret < 0)
         goto fail;
 
-    for (i = 0; i < nb_renames; i++) {
-        int ret = ff_rename(img->tmp[i], img->target[i], s);
+    for (i = 0; i < 4 && tmp[i]; i++) {
+        int ret = ff_rename(tmp[i], target[i], s);
         if (ret < 0)
-            return ret;
+            goto fail;
+        av_freep(&tmp[i]);
+        av_freep(&target[i]);
     }
+
+    if (img->update_filemtime) {
+        AVStream *st = s->streams[pkt->stream_index];
+        int64_t frame_ts = img->creation_ts;
+        int skip = 0;
+
+        if (pkt->pts != AV_NOPTS_VALUE) {
+            int64_t offset = av_rescale_q(pkt->pts, st->time_base,
+                                          AV_TIME_BASE_Q);
+            if (offset == INT64_MIN ||
+                (offset > 0 && img->creation_ts > INT64_MAX - offset) ||
+                (offset < 0 && img->creation_ts < INT64_MIN - offset)) {
+                av_log(s, AV_LOG_WARNING,
+                       "Integer overflow computing file mtime, skipping\n");
+                skip = 1;
+            } else {
+                frame_ts += offset;
+            }
+        }
+
+        if (!skip) {
+            for (i = 0; i < 4 && filepaths[i]; i++)
+                set_file_mtime(s, filepaths[i], frame_ts);
+        }
+    }
+
+    for (i = 0; i < FF_ARRAY_ELEMS(filepaths); i++)
+        av_freep(&filepaths[i]);
 
     img->img_number++;
     return 0;
 
 fail:
+    av_bprint_finalize(&filename, NULL);
     av_dict_free(&options);
-    for (i = 0; i < FF_ARRAY_ELEMS(pb); i++)
+    for (i = 0; i < FF_ARRAY_ELEMS(pb); i++) {
+        av_freep(&tmp[i]);
+        av_freep(&target[i]);
+        av_freep(&filepaths[i]);
         if (pb[i])
             ff_format_io_close(s, &pb[i]);
+    }
     return ret;
 }
 
@@ -260,6 +378,7 @@ static const AVOption muxoptions[] = {
     { "frame_pts",    "use current frame pts for filename", OFFSET(frame_pts),  AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, ENC },
     { "atomic_writing", "write files atomically (using temporary files and renames)", OFFSET(use_rename), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, ENC },
     { "protocol_opts", "specify protocol options for the opened files", OFFSET(protocol_opts), AV_OPT_TYPE_DICT, {0}, 0, 0, ENC },
+    { "update_filemtime", "set output file mtime from creation_time metadata plus frame offset", OFFSET(update_filemtime), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, ENC },
     { NULL },
 };
 
@@ -274,7 +393,7 @@ static const AVClass img2mux_class = {
 const FFOutputFormat ff_image2_muxer = {
     .p.name         = "image2",
     .p.long_name    = NULL_IF_CONFIG_SMALL("image2 sequence"),
-    .p.extensions   = "bmp,dpx,exr,jls,jpeg,jpg,jxl,ljpg,pam,pbm,pcx,pfm,pgm,pgmyuv,phm,"
+    .p.extensions   = "bmp,dpx,exr,jls,jpeg,jpg,jxs,jxl,ljpg,pam,pbm,pcx,pfm,pgm,pgmyuv,phm,"
                       "png,ppm,sgi,tga,tif,tiff,jp2,j2c,j2k,xwd,sun,ras,rs,im1,im8,"
                       "im24,sunras,vbn,xbm,xface,pix,y,avif,qoi,hdr,wbmp",
     .priv_data_size = sizeof(VideoMuxData),

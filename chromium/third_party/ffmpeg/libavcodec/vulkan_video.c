@@ -16,7 +16,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
 #include "libavutil/mem.h"
+#include "encode.h"
 #include "vulkan_video.h"
 
 #define ASPECT_2PLANE (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT)
@@ -118,7 +120,7 @@ VkVideoChromaSubsamplingFlagBitsKHR ff_vk_subsampling_from_av_desc(const AVPixFm
         return VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
     else if (!desc->log2_chroma_w && !desc->log2_chroma_h)
         return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
-    else if (!desc->log2_chroma_w && desc->log2_chroma_h == 1)
+    else if (desc->log2_chroma_w == 1 && !desc->log2_chroma_h)
         return VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
     else if (desc->log2_chroma_w == 1 && desc->log2_chroma_h == 1)
         return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
@@ -226,9 +228,41 @@ StdVideoH265LevelIdc ff_vk_h265_level_to_vk(int level_idc)
     }
 }
 
+StdVideoAV1Level ff_vk_av1_level_to_vk(int level)
+{
+    switch (level) {
+    case 20: return STD_VIDEO_AV1_LEVEL_2_0;
+    case 21: return STD_VIDEO_AV1_LEVEL_2_1;
+    case 22: return STD_VIDEO_AV1_LEVEL_2_2;
+    case 23: return STD_VIDEO_AV1_LEVEL_2_3;
+    case 30: return STD_VIDEO_AV1_LEVEL_3_0;
+    case 31: return STD_VIDEO_AV1_LEVEL_3_1;
+    case 32: return STD_VIDEO_AV1_LEVEL_3_2;
+    case 33: return STD_VIDEO_AV1_LEVEL_3_3;
+    case 40: return STD_VIDEO_AV1_LEVEL_4_0;
+    case 41: return STD_VIDEO_AV1_LEVEL_4_1;
+    case 42: return STD_VIDEO_AV1_LEVEL_4_2;
+    case 43: return STD_VIDEO_AV1_LEVEL_4_3;
+    case 50: return STD_VIDEO_AV1_LEVEL_5_0;
+    case 51: return STD_VIDEO_AV1_LEVEL_5_1;
+    case 52: return STD_VIDEO_AV1_LEVEL_5_2;
+    case 53: return STD_VIDEO_AV1_LEVEL_5_3;
+    case 60: return STD_VIDEO_AV1_LEVEL_6_0;
+    case 61: return STD_VIDEO_AV1_LEVEL_6_1;
+    case 62: return STD_VIDEO_AV1_LEVEL_6_2;
+    case 63: return STD_VIDEO_AV1_LEVEL_6_3;
+    case 70: return STD_VIDEO_AV1_LEVEL_7_0;
+    case 71: return STD_VIDEO_AV1_LEVEL_7_1;
+    case 72: return STD_VIDEO_AV1_LEVEL_7_2;
+    default:
+    case 73: return STD_VIDEO_AV1_LEVEL_7_3;
+    }
+}
+
 StdVideoH264ProfileIdc ff_vk_h264_profile_to_vk(int profile)
 {
     switch (profile) {
+    case AV_PROFILE_H264_BASELINE:
     case AV_PROFILE_H264_CONSTRAINED_BASELINE: return STD_VIDEO_H264_PROFILE_IDC_BASELINE;
     case AV_PROFILE_H264_MAIN: return STD_VIDEO_H264_PROFILE_IDC_MAIN;
     case AV_PROFILE_H264_HIGH: return STD_VIDEO_H264_PROFILE_IDC_HIGH;
@@ -247,25 +281,35 @@ StdVideoH265ProfileIdc ff_vk_h265_profile_to_vk(int profile)
     }
 }
 
-int ff_vk_create_view(FFVulkanContext *s, FFVkVideoCommon *common,
-                      VkImageView *view, VkImageAspectFlags *aspect,
-                      AVVkFrame *src, VkFormat vkf, int is_dpb)
+StdVideoAV1Profile ff_vk_av1_profile_to_vk(int profile)
+{
+    switch (profile) {
+    case AV_PROFILE_AV1_MAIN: return STD_VIDEO_AV1_PROFILE_MAIN;
+    case AV_PROFILE_AV1_HIGH: return STD_VIDEO_AV1_PROFILE_HIGH;
+    case AV_PROFILE_AV1_PROFESSIONAL: return STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
+    default: return STD_VIDEO_AV1_PROFILE_INVALID;
+    }
+}
+
+int ff_vk_create_view(FFVulkanContext *s, VkImageView *view,
+                      VkImageAspectFlags *aspect, VkImage img,
+                      VkFormat vkf, VkImageUsageFlags usage, int layered)
 {
     VkResult ret;
     FFVulkanFunctions *vk = &s->vkfn;
     VkImageAspectFlags aspect_mask = ff_vk_aspect_bits_from_vkfmt(vkf);
 
-    VkSamplerYcbcrConversionInfo yuv_sampler_info = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO,
-        .conversion = common->yuv_sampler,
+    VkImageViewUsageCreateInfo usage_create_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
+        .usage = usage,
     };
     VkImageViewCreateInfo img_view_create_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext = &yuv_sampler_info,
-        .viewType = common->layered_dpb && is_dpb ?
-                    VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D,
+        .pNext = &usage_create_info,
+        .viewType = layered ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                              VK_IMAGE_VIEW_TYPE_2D,
         .format = vkf,
-        .image = src->img[0],
+        .image = img,
         .components = (VkComponentMapping) {
             .r = VK_COMPONENT_SWIZZLE_IDENTITY,
             .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -275,8 +319,7 @@ int ff_vk_create_view(FFVulkanContext *s, FFVkVideoCommon *common,
         .subresourceRange = (VkImageSubresourceRange) {
             .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseArrayLayer = 0,
-            .layerCount     = common->layered_dpb && is_dpb ?
-                              VK_REMAINING_ARRAY_LAYERS : 1,
+            .layerCount     = layered ? VK_REMAINING_ARRAY_LAYERS : 1,
             .levelCount     = 1,
         },
     };
@@ -290,6 +333,88 @@ int ff_vk_create_view(FFVulkanContext *s, FFVkVideoCommon *common,
 
     return 0;
 }
+
+static void dpb_image_free(AVRefStructOpaque opaque, void *obj)
+{
+    FFVkVideoDPB *dpb = opaque.nc;
+    FFVkVideoDPBImage *di = obj;
+
+    if (di->view)
+        dpb->destroy_image_view(dpb->dev, di->view, dpb->alloc);
+    if (di->img)
+        dpb->destroy_image(dpb->dev, di->img, dpb->alloc);
+    if (di->mem)
+        dpb->free_memory(dpb->dev, di->mem, dpb->alloc);
+}
+
+static int dpb_image_init(AVRefStructOpaque opaque, void *obj)
+{
+    int err;
+    FFVkVideoDPB *dpb = opaque.nc;
+    FFVkVideoDPBImage *di = obj;
+
+    err = ff_vk_image_create(dpb->s, &di->img, &di->mem,
+                             dpb->width, dpb->height, dpb->format,
+                             dpb->nb_layers, dpb->tiling, dpb->usage,
+                             0x0, dpb->create_pnext);
+    if (err < 0)
+        return err;
+
+    err = ff_vk_create_view(dpb->s, &di->view, &di->aspect, di->img,
+                            dpb->format, dpb->usage, dpb->nb_layers > 1);
+    if (err < 0) {
+        ff_vk_image_free(dpb->s, &di->img, &di->mem);
+        return err;
+    }
+
+    di->layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    return 0;
+}
+
+static void dpb_pool_free(AVRefStructOpaque opaque)
+{
+    av_free(opaque.nc);
+}
+
+av_cold int ff_vk_video_dpb_init(FFVulkanContext *s, FFVkVideoCommon *common,
+                                 VkFormat format, VkImageUsageFlags usage,
+                                 VkImageTiling tiling, void *create_pnext,
+                                 int width, int height, int nb_layers)
+{
+    FFVulkanFunctions *vk = &s->vkfn;
+    FFVkVideoDPB *dpb = av_mallocz(sizeof(*dpb));
+    if (!dpb)
+        return AVERROR(ENOMEM);
+
+    dpb->s            = s;
+    dpb->format       = format;
+    dpb->usage        = usage;
+    dpb->tiling       = tiling;
+    dpb->create_pnext = create_pnext;
+    dpb->width        = width;
+    dpb->height       = height;
+    dpb->nb_layers    = nb_layers;
+
+    dpb->dev                = s->hwctx->act_dev;
+    dpb->alloc              = s->hwctx->alloc;
+    dpb->destroy_image_view = vk->DestroyImageView;
+    dpb->destroy_image      = vk->DestroyImage;
+    dpb->free_memory        = vk->FreeMemory;
+
+    dpb->img_pool = av_refstruct_pool_alloc_ext(sizeof(FFVkVideoDPBImage), 0,
+                                                dpb, dpb_image_init, NULL,
+                                                dpb_image_free, dpb_pool_free);
+    if (!dpb->img_pool) {
+        av_free(dpb);
+        return AVERROR(ENOMEM);
+    }
+
+    common->dpb = dpb;
+
+    return 0;
+}
+
 
 av_cold void ff_vk_video_common_uninit(FFVulkanContext *s,
                                        FFVkVideoCommon *common)
@@ -308,17 +433,15 @@ av_cold void ff_vk_video_common_uninit(FFVulkanContext *s,
 
     av_freep(&common->mem);
 
-    if (common->layered_view)
-        vk->DestroyImageView(s->hwctx->act_dev, common->layered_view,
-                             s->hwctx->alloc);
+    /* The layered view is owned by the pool entry */
+    common->layered_view = VK_NULL_HANDLE;
+    av_refstruct_unref(&common->layered_img);
 
-    av_frame_free(&common->layered_frame);
-
-    av_buffer_unref(&common->dpb_hwfc_ref);
-
-    if (common->yuv_sampler)
-        vk->DestroySamplerYcbcrConversion(s->hwctx->act_dev, common->yuv_sampler,
-                                          s->hwctx->alloc);
+    if (common->dpb) {
+        /* The pool frees the FFVkVideoDPB once its last entry returns */
+        av_refstruct_pool_uninit(&common->dpb->img_pool);
+        common->dpb = NULL;
+    }
 }
 
 av_cold int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
@@ -331,30 +454,13 @@ av_cold int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
     VkVideoSessionMemoryRequirementsKHR *mem = NULL;
     VkBindVideoSessionMemoryInfoKHR *bind_mem = NULL;
 
-    int cxpos = 0, cypos = 0;
-    VkSamplerYcbcrConversionCreateInfo yuv_sampler_info = {
-        .sType      = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
-        .components = ff_comp_identity_map,
-        .ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY,
-        .ycbcrRange = avctx->color_range == AVCOL_RANGE_MPEG, /* Ignored */
-        .format     = session_create->pictureFormat,
-    };
-
-    /* Create identity YUV sampler
-     * (VkImageViews of YUV image formats require it, even if it does nothing) */
-    av_chroma_location_enum_to_pos(&cxpos, &cypos, avctx->chroma_sample_location);
-    yuv_sampler_info.xChromaOffset = cxpos >> 7;
-    yuv_sampler_info.yChromaOffset = cypos >> 7;
-    ret = vk->CreateSamplerYcbcrConversion(s->hwctx->act_dev, &yuv_sampler_info,
-                                           s->hwctx->alloc, &common->yuv_sampler);
-    if (ret != VK_SUCCESS)
-        return AVERROR_EXTERNAL;
-
     /* Create session */
     ret = vk->CreateVideoSessionKHR(s->hwctx->act_dev, session_create,
                                     s->hwctx->alloc, &common->session);
-    if (ret != VK_SUCCESS)
-        return AVERROR_EXTERNAL;
+    if (ret != VK_SUCCESS) {
+        err = AVERROR_EXTERNAL;
+        goto fail;
+    }
 
     /* Get memory requirements */
     ret = vk->GetVideoSessionMemoryRequirementsKHR(s->hwctx->act_dev,
@@ -438,4 +544,210 @@ fail:
 
     ff_vk_video_common_uninit(s, common);
     return err;
+}
+
+#if CONFIG_VULKAN_SEG_GATHER
+typedef struct SegGatherPushData {
+    VkDeviceAddress sparse;
+    VkDeviceAddress compacted;
+    VkDeviceAddress offset_addr;
+    uint32_t        slot_size;
+} SegGatherPushData;
+
+extern const unsigned char ff_seg_gather_comp_spv_data[];
+extern const unsigned int ff_seg_gather_comp_spv_len;
+
+int ff_vk_seg_gather_init(FFVulkanContext *s, FFVkExecPool *pool,
+                          FFVulkanShader *shd)
+{
+    int err;
+    FFVulkanDescriptorSetBinding desc_set[] = {
+        {
+            .name   = "sizes_buf",
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+        },
+    };
+
+    ff_vk_shader_load(shd, VK_SHADER_STAGE_COMPUTE_BIT, NULL,
+                      (uint32_t []) { 256, 1, 1 }, 0);
+    ff_vk_shader_add_push_const(shd, 0, sizeof(SegGatherPushData),
+                                VK_SHADER_STAGE_COMPUTE_BIT);
+    ff_vk_shader_add_descriptor_set(s, shd, desc_set, 1, 0);
+
+    RET(ff_vk_shader_link(s, shd, ff_seg_gather_comp_spv_data,
+                          ff_seg_gather_comp_spv_len, "main"));
+    RET(ff_vk_shader_register_exec(s, pool, shd));
+
+fail:
+    return err;
+}
+
+int ff_vk_seg_gather(FFVulkanContext *s, FFVkExecContext *exec, FFVulkanShader *shd,
+                     FFVkBuffer *sizes, size_t sizes_offset, uint32_t nb_segs,
+                     FFVkBuffer *sparse, uint32_t slot_size,
+                     FFVkBuffer *compacted, size_t compacted_offset,
+                     VkDeviceAddress offset_addr)
+{
+    int err;
+    FFVulkanFunctions *vk = &s->vkfn;
+    SegGatherPushData pd = {
+        .sparse      = sparse->address,
+        .compacted   = compacted->address + compacted_offset,
+        .offset_addr = offset_addr,
+        .slot_size   = slot_size,
+    };
+
+    vk->CmdPipelineBarrier2(exec->buf, &(VkDependencyInfo) {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pMemoryBarriers = &(VkMemoryBarrier2) {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT |
+                             VK_ACCESS_2_SHADER_WRITE_BIT,
+        },
+        .memoryBarrierCount = 1,
+    });
+
+    RET(ff_vk_shader_update_desc_buffer(s, exec, shd, 0, 0, 0,
+                                        sizes, sizes_offset, (nb_segs + 1)*sizeof(uint32_t),
+                                        VK_FORMAT_UNDEFINED));
+    ff_vk_exec_bind_shader(s, exec, shd);
+    ff_vk_shader_update_push_const(s, exec, shd, VK_SHADER_STAGE_COMPUTE_BIT,
+                                   0, sizeof(pd), &pd);
+    vk->CmdDispatch(exec->buf, nb_segs, 1, 1);
+
+    /* For the host to read the output and the packed size */
+    vk->CmdPipelineBarrier2(exec->buf, &(VkDependencyInfo) {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pMemoryBarriers = &(VkMemoryBarrier2) {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            .srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+            .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+        },
+        .memoryBarrierCount = 1,
+    });
+
+fail:
+    return err;
+}
+#endif /* CONFIG_VULKAN_SEG_GATHER */
+
+int ff_vk_encode_loop_init(FFVulkanContext *s, FFVkExecPool *pool, FFVkEncodeLoop *l,
+                           int (*submit_frame)(AVCodecContext *avctx, FFVkExecContext *exec, AVFrame *frame),
+                           int (*get_packet)(AVCodecContext *avctx, FFVkExecContext *exec, AVPacket *pkt))
+{
+    l->s            = s;
+    l->pool         = pool;
+    l->submit_frame = submit_frame;
+    l->get_packet   = get_packet;
+    l->head         = 0;
+    l->in_flight    = 0;
+
+    l->frames = av_calloc(pool->pool_size, sizeof(*l->frames));
+    l->frame  = av_frame_alloc();
+    l->pkt    = av_packet_alloc();
+    if (!l->frames || !l->frame || !l->pkt)
+        return AVERROR(ENOMEM);
+
+    return 0;
+}
+
+static int loop_get_packet(AVCodecContext *avctx, FFVkEncodeLoop *l, AVPacket *pkt)
+{
+    int err;
+    int idx = (l->head + l->pool->pool_size - l->in_flight) % l->pool->pool_size;
+
+    l->in_flight--;
+
+    err = l->get_packet(avctx, &l->pool->contexts[idx], pkt);
+    if (err < 0) {
+        av_buffer_unref(&l->frames[idx].opaque_ref);
+        return err;
+    }
+
+    pkt->pts      = l->frames[idx].pts;
+    pkt->dts      = l->frames[idx].pts;
+    pkt->duration = l->frames[idx].duration;
+    if (avctx->flags & AV_CODEC_FLAG_COPY_OPAQUE) {
+        pkt->opaque     = l->frames[idx].opaque;
+        pkt->opaque_ref = l->frames[idx].opaque_ref;
+        l->frames[idx].opaque_ref = NULL;
+    }
+
+    return 0;
+}
+
+static int loop_oldest_done(FFVkEncodeLoop *l)
+{
+    FFVulkanFunctions *vk = &l->s->vkfn;
+    int idx = (l->head + l->pool->pool_size - l->in_flight) % l->pool->pool_size;
+    FFVkExecContext *e = &l->pool->contexts[idx];
+    uint64_t val;
+
+    return vk->GetSemaphoreCounterValue(l->s->hwctx->act_dev, e->sem, &val) == VK_SUCCESS &&
+           val >= e->sem_value;
+}
+
+int ff_vk_encode_loop_receive_packet(AVCodecContext *avctx, FFVkEncodeLoop *l,
+                                     AVPacket *pkt)
+{
+    int err, eof = 0;
+    FFVkExecPool *pool = l->pool;
+
+    err = ff_encode_get_frame(avctx, l->frame);
+    if (err == AVERROR_EOF) {
+        eof = 1;
+    } else if (err >= 0) {
+        l->frames[l->head].pts      = l->frame->pts;
+        l->frames[l->head].duration = l->frame->duration;
+        if (avctx->flags & AV_CODEC_FLAG_COPY_OPAQUE) {
+            l->frames[l->head].opaque     = l->frame->opaque;
+            l->frames[l->head].opaque_ref = l->frame->opaque_ref;
+            l->frame->opaque_ref = NULL;
+        }
+
+        err = l->submit_frame(avctx, &pool->contexts[l->head], l->frame);
+        av_frame_unref(l->frame);
+        if (err < 0) {
+            av_buffer_unref(&l->frames[l->head].opaque_ref);
+            return err;
+        }
+
+        l->head = (l->head + 1) % pool->pool_size;
+        l->in_flight++;
+    } else if (err != AVERROR(EAGAIN)) {
+        return err;
+    }
+
+    if (!l->in_flight)
+        return eof ? AVERROR_EOF : AVERROR(EAGAIN);
+    if (l->in_flight < pool->pool_size && !eof && !loop_oldest_done(l))
+        return AVERROR(EAGAIN);
+
+    return loop_get_packet(avctx, l, pkt);
+}
+
+void ff_vk_encode_loop_flush(AVCodecContext *avctx, FFVkEncodeLoop *l)
+{
+    while (l->in_flight) {
+        if (loop_get_packet(avctx, l, l->pkt) >= 0)
+            av_packet_unref(l->pkt);
+    }
+    l->head = 0;
+}
+
+void ff_vk_encode_loop_uninit(FFVkEncodeLoop *l)
+{
+    if (l->frames) {
+        for (int i = 0; i < l->pool->pool_size; i++)
+            av_buffer_unref(&l->frames[i].opaque_ref);
+        av_freep(&l->frames);
+    }
+    av_frame_free(&l->frame);
+    av_packet_free(&l->pkt);
 }

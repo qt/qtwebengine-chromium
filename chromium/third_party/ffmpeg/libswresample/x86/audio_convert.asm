@@ -194,12 +194,7 @@ cglobal %2_to_%1_%3, 3, 3, 6, dst, src, len
     add lenq, 2*mmsize/(1<<%4)
 %endif
         jl .next
-%if mmsize == 8
-    emms
     RET
-%else
-    RET
-%endif
 %endmacro
 
 %macro PACK_6CH 8
@@ -247,7 +242,6 @@ pack_6ch_%2_to_%1_u_int %+ SUFFIX:
     mov%3     m3, [srcq+src3q]
     mov%3     m4, [srcq+src4q]
     mov%3     m5, [srcq+src5q]
-%if cpuflag(sse)
     SBUTTERFLYPS 0, 1, 6
     SBUTTERFLYPS 2, 3, 6
     SBUTTERFLYPS 4, 5, 6
@@ -281,28 +275,11 @@ pack_6ch_%2_to_%1_u_int %+ SUFFIX:
     mov %+ %3 %+ ps [dstq+48], m1
     mov %+ %3 %+ ps [dstq+64], m2
     mov %+ %3 %+ ps [dstq+80], m5
-%else ; mmx
-    SBUTTERFLY dq, 0, 1, 6
-    SBUTTERFLY dq, 2, 3, 6
-    SBUTTERFLY dq, 4, 5, 6
-
-    movq   [dstq   ], m0
-    movq   [dstq+ 8], m2
-    movq   [dstq+16], m4
-    movq   [dstq+24], m1
-    movq   [dstq+32], m3
-    movq   [dstq+40], m5
-%endif
     add      srcq, mmsize
     add      dstq, mmsize*6
     sub      lend, mmsize/4
     jg .loop
-%if mmsize == 8
-    emms
     RET
-%else
-    RET
-%endif
 %endmacro
 
 %macro UNPACK_6CH 8

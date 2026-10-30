@@ -235,7 +235,7 @@ static int convolution_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
                 goto fail;
 
             av_log(avctx, AV_LOG_DEBUG, "Run kernel on plane %d "
-                   "(%"SIZE_SPECIFIER"x%"SIZE_SPECIFIER").\n",
+                   "(%zux%zu).\n",
                    p, global_work[0], global_work[1]);
 
             cle = clEnqueueNDRangeKernel(ctx->command_queue, ctx->kernel, 2, NULL,
@@ -264,7 +264,7 @@ static int convolution_opencl_filter_frame(AVFilterLink *inlink, AVFrame *input)
                     goto fail;
 
                 av_log(avctx, AV_LOG_DEBUG, "Run kernel on plane %d "
-                       "(%"SIZE_SPECIFIER"x%"SIZE_SPECIFIER").\n",
+                       "(%zux%zu).\n",
                        p, global_work[0], global_work[1]);
 
                 cle = clEnqueueNDRangeKernel(ctx->command_queue, ctx->kernel, 2, NULL,
@@ -352,7 +352,7 @@ static const AVOption convolution_opencl_options[] = {
     { "1m", "set matrix for 2nd plane", OFFSET(matrix_str[1]), AV_OPT_TYPE_STRING, {.str="0 0 0 0 1 0 0 0 0"}, 0, 0, FLAGS },
     { "2m", "set matrix for 3rd plane", OFFSET(matrix_str[2]), AV_OPT_TYPE_STRING, {.str="0 0 0 0 1 0 0 0 0"}, 0, 0, FLAGS },
     { "3m", "set matrix for 4th plane", OFFSET(matrix_str[3]), AV_OPT_TYPE_STRING, {.str="0 0 0 0 1 0 0 0 0"}, 0, 0, FLAGS },
-    { "0rdiv", "set rdiv for 1nd plane", OFFSET(rdivs[0]), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, INT_MAX, FLAGS},
+    { "0rdiv", "set rdiv for 1st plane", OFFSET(rdivs[0]), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, INT_MAX, FLAGS},
     { "1rdiv", "set rdiv for 2nd plane", OFFSET(rdivs[1]), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, INT_MAX, FLAGS},
     { "2rdiv", "set rdiv for 3rd plane", OFFSET(rdivs[2]), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, INT_MAX, FLAGS},
     { "3rdiv", "set rdiv for 4th plane", OFFSET(rdivs[3]), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, INT_MAX, FLAGS},

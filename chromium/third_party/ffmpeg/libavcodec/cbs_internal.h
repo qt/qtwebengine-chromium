@@ -57,6 +57,9 @@
 #ifndef CBS_H266
 #define CBS_H266 CONFIG_CBS_H266
 #endif
+#ifndef CBS_LCEVC
+#define CBS_LCEVC CONFIG_CBS_LCEVC
+#endif
 #ifndef CBS_JPEG
 #define CBS_JPEG CONFIG_CBS_JPEG
 #endif
@@ -151,7 +154,7 @@ typedef struct CodedBitstreamType {
 
     // List of unit type descriptors for this codec.
     // Terminated by a descriptor with nb_unit_types equal to zero.
-    const CodedBitstreamUnitTypeDescriptor *unit_types;
+    CodedBitstreamUnitTypeDescriptor *unit_types;
 
     // Split frag->data into coded bitstream units, creating the
     // frag->units array.  Fill data but not content on each unit.
@@ -273,7 +276,7 @@ int CBS_FUNC(write_signed)(CodedBitstreamContext *ctx, PutBitContext *pbc,
     } while (0)
 
 // End of a syntax element which is made up of subelements which
-// are aleady traced, so we are only showing the value.
+// are already traced, so we are only showing the value.
 #define CBS_TRACE_READ_END_VALUE_ONLY() \
     do { \
         if (ctx->trace_enable) { \
@@ -310,7 +313,7 @@ int CBS_FUNC(write_signed)(CodedBitstreamContext *ctx, PutBitContext *pbc,
     } while (0)
 
 // End of a syntax element which is made up of subelements which are
-// aleady traced, so we are only showing the value.  This forges a
+// already traced, so we are only showing the value.  This forges a
 // PutBitContext to point to the position of the start of the syntax
 // element, but the other state doesn't matter because length is zero.
 #define CBS_TRACE_WRITE_END_VALUE_ONLY() \
@@ -391,6 +394,7 @@ extern const CodedBitstreamType CBS_FUNC(type_av1);
 extern const CodedBitstreamType CBS_FUNC(type_h264);
 extern const CodedBitstreamType CBS_FUNC(type_h265);
 extern const CodedBitstreamType CBS_FUNC(type_h266);
+extern const CodedBitstreamType CBS_FUNC(type_lcevc);
 extern const CodedBitstreamType CBS_FUNC(type_jpeg);
 extern const CodedBitstreamType CBS_FUNC(type_mpeg2);
 extern const CodedBitstreamType CBS_FUNC(type_vp8);

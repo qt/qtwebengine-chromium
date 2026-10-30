@@ -105,6 +105,41 @@ top-field-first is assumed
 
 @end table
 
+@section libastcenc
+
+ARM ASTC Encoder wrapper for decoding ASTC textures.
+
+This decoder requires the Arm ASTC Encoder (astc-encoder) library version
+5.4 or newer, installed as @code{astcenc/astcenc.h} next to a library that
+@code{-lastcenc} finds. Pass @code{--enable-version3} together with
+@code{--enable-libastcenc} to configure.
+
+The @file{.astc} header does not record the intended decoding profile.
+Individual blocks identify their endpoint encodings, but this does not
+establish the sRGB versus linear interpretation. The decoder therefore uses
+the container metadata or @option{dec_profile}: a KTX sRGB texture is decoded
+as @code{ldr-srgb}, while a KTX texture in the linear format is sampled with
+HDR precision (@code{hdr-ldr-a}, half-float output) because the linear GL
+internal format says nothing about LDR. A raw @code{.astc} file carries no
+profile at all, so it falls back to @code{ldr-srgb}; use @option{dec_profile}
+for a raw HDR image:
+
+@example
+ffmpeg -dec_profile hdr-ldr-a -i input.astc output.png
+@end example
+
+@subsection Options
+@table @option
+@item dec_profile @var{int}
+Color profile to decode with, overriding the container metadata. It must
+match the profile the texture was encoded with: @code{astcenc} substitutes
+a fixed magenta error color for blocks whose endpoints do not fit the
+selected profile. The values are @code{ldr}, @code{ldr-srgb},
+@code{hdr-ldr-a} and @code{hdr}. Without this option the profile published
+by the container is used; a raw @file{.astc} stream, which publishes none,
+falls back to @code{ldr-srgb}.
+@end table
+
 @section libdav1d
 
 dav1d AV1 decoder.
@@ -118,16 +153,6 @@ You need to explicitly configure the build with @code{--enable-libdav1d}.
 The following options are supported by the libdav1d wrapper.
 
 @table @option
-
-@item framethreads
-Set amount of frame threads to use during decoding. The default value is 0 (autodetect).
-This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
-option @code{max_frame_delay} and the global option @code{threads} instead.
-
-@item tilethreads
-Set amount of tile threads to use during decoding. The default value is 0 (autodetect).
-This option is deprecated for libdav1d >= 1.0 and will be removed in the future. Use the
-global option @code{threads} instead.
 
 @item max_frame_delay
 Set max amount of frames the decoder may buffer internally. The default value is 0
@@ -317,14 +342,6 @@ This decoder generates wave patterns according to predefined sequences. Its
 use is purely internal and the format of the data it accepts is not publicly
 documented.
 
-@section libcelt
-
-libcelt decoder wrapper.
-
-libcelt allows libavcodec to decode the Xiph CELT ultra-low delay audio codec.
-Requires the presence of the libcelt headers and library during configuration.
-You need to explicitly configure the build with @code{--enable-libcelt}.
-
 @section libgsm
 
 libgsm decoder wrapper.
@@ -355,6 +372,15 @@ Enable the enhancement of the decoded audio when set to 1. The default
 value is 0 (disabled).
 
 @end table
+
+@section libmpeghdec
+
+libmpeghdec decoder wrapper.
+
+libmpeghdec allows libmpeghdec to decode the MPEG-H 3D audio codec.
+Requires the presence of the libmpeghdec headers and library during
+configuration. You need to explicitly configure the build with
+@code{--enable-libmpeghdec --enable-nonfree}.
 
 @section libopencore-amrnb
 
@@ -392,10 +418,18 @@ configuration. You need to explicitly configure the build with
 An FFmpeg native decoder for Opus exists, so users can decode Opus
 without this library.
 
+@section pcm_dvda
+
+PCM DVD-Audio decoder.
+
+Decodes the LPCM variant stored in DVD-Audio AOB files. Unlike DVD-Video
+LPCM it supports sample rates up to 192 kHz and allows splitting the
+channels into two groups with different quantization.
+
 @c man end AUDIO DECODERS
 
 @chapter Subtitles Decoders
-@c man begin SUBTILES DECODERS
+@c man begin SUBTITLES DECODERS
 
 @section libaribb24
 
@@ -427,7 +461,7 @@ Enabled by default.
 Yet another ARIB STD-B24 caption decoder using external @dfn{libaribcaption}
 library.
 
-Implements profiles A and C of the Japanse ARIB STD-B24 standard,
+Implements profiles A and C of the Japanese ARIB STD-B24 standard,
 Brazilian ABNT NBR 15606-1, and Philippines version of ISDB-T.
 
 Requires the presence of the libaribcaption headers and library
@@ -477,7 +511,7 @@ Specify comma-separated list of font family names to be used for @dfn{bitmap}
 or @dfn{ass} type subtitle rendering.
 Only first font name is used for @dfn{ass} type subtitle.
 
-If not specified, use internaly defined default font family.
+If not specified, use internally defined default font family.
 
 @item -ass_single_rect @var{boolean}
 ARIB STD-B24 specifies that some captions may be displayed at different
@@ -495,7 +529,7 @@ default behavior at compilation.
 
 @item -force_outline_text @var{boolean}
 Specify whether always render outline text for all characters regardless of
-the indication by charactor style.
+the indication by character style.
 
 The default is @var{false}.
 
@@ -696,4 +730,4 @@ box and an end box, typically subtitles. Default value is 0 if
 
 @end table
 
-@c man end SUBTILES DECODERS
+@c man end SUBTITLES DECODERS

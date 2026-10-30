@@ -50,9 +50,6 @@ static const struct ogg_codec * const ogg_codecs[] = {
     &ff_vorbis_codec,
     &ff_theora_codec,
     &ff_flac_codec,
-#if 0  // These codecs are not supported by Chromium.
-    &ff_celt_codec,
-#endif
     &ff_opus_codec,
     &ff_vp8_codec,
 #if 0  // These codecs are not supported by Chromium.
@@ -117,8 +114,12 @@ static int ogg_save(AVFormatContext *s)
             memcpy(os->buf, ost->streams[i].buf, os->bufpos);
         else
             ret = AVERROR(ENOMEM);
-        os->new_metadata      = NULL;
-        os->new_metadata_size = 0;
+        os->new_metadata       = NULL;
+        os->new_metadata_size  = 0;
+        os->new_extradata      = NULL;
+        os->new_extradata_size = 0;
+        os->new_extradata      = NULL;
+        os->new_extradata_size = 0;
     }
 
     ogg->state = ost;
@@ -145,6 +146,7 @@ static int ogg_restore(AVFormatContext *s)
             struct ogg_stream *stream = &ogg->streams[i];
             av_freep(&stream->buf);
             av_freep(&stream->new_metadata);
+            av_freep(&stream->new_extradata);
 
             if (i >= ost->nstreams || !ost->streams[i].private) {
                 free_stream(s, i);
@@ -195,6 +197,8 @@ static int ogg_reset(AVFormatContext *s)
         os->end_trimming = 0;
         av_freep(&os->new_metadata);
         os->new_metadata_size = 0;
+        av_freep(&os->new_extradata);
+        os->new_extradata_size = 0;
     }
 
     ogg->page_pos = -1;
@@ -249,8 +253,14 @@ static int ogg_replace_stream(AVFormatContext *s, uint32_t serial, char *magic, 
     os->serial  = serial;
     os->lastpts = 0;
     os->lastdts = 0;
+    os->flags   = 0;
     os->start_trimming = 0;
     os->end_trimming = 0;
+    av_freep(&os->new_metadata);
+    os->new_metadata_size = 0;
+    av_freep(&os->new_extradata);
+    os->new_extradata_size = 0;
+    os->replace = 1;
 
     return i;
 }
@@ -316,7 +326,10 @@ static int buf_realloc(struct ogg_stream *os, int size)
 {
     /* Even if invalid guarantee there's enough memory to read the page */
     if (os->bufsize - os->bufpos < size) {
-        uint8_t *nb = av_realloc(os->buf, 2*os->bufsize + AV_INPUT_BUFFER_PADDING_SIZE);
+        uint8_t *nb;
+        if (os->bufsize > (UINT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) / 2)
+            return AVERROR(ENOMEM);
+        nb = av_realloc(os->buf, 2*os->bufsize + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!nb)
             return AVERROR(ENOMEM);
         os->buf = nb;
@@ -388,7 +401,7 @@ static int ogg_read_page(AVFormatContext *s, int *sid, int probing)
     flags   = avio_r8(bc);
     gp      = avio_rl64(bc);
     serial  = avio_rl32(bc);
-    avio_skip(bc, 4); /* seq */
+    avio_rl32(bc); /* seq */
 
     crc_tmp = ffio_get_checksum(bc);
     crc     = avio_rb32(bc);
@@ -583,6 +596,9 @@ static int ogg_packet(AVFormatContext *s, int *sid, int *dstart, int *dsize,
 
     ogg->curidx    = idx;
     os->incomplete = 0;
+
+    // the packet started at the first segment of the page it completes on
+    os->page_start = segp == 0;
 
     if (os->header) {
         if ((ret = os->codec->header(s, idx)) < 0) {
@@ -897,8 +913,13 @@ retry:
         os->end_trimming = 0;
     }
 
+    if (os->replace) {
+        os->replace = 0;
+        pkt->dts = pkt->pts = AV_NOPTS_VALUE;
+    }
+
     if (os->new_metadata) {
-        ret = av_packet_add_side_data(pkt, AV_PKT_DATA_METADATA_UPDATE,
+        ret = av_packet_add_side_data(pkt, AV_PKT_DATA_STRINGS_METADATA,
                                       os->new_metadata, os->new_metadata_size);
         if (ret < 0)
             return ret;

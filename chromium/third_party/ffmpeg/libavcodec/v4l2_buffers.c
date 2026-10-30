@@ -28,13 +28,17 @@
 #include <fcntl.h>
 #include <poll.h>
 #include "libavcodec/avcodec.h"
+#include "libavutil/attributes.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/refstruct.h"
 #include "v4l2_context.h"
 #include "v4l2_buffers.h"
 #include "v4l2_m2m.h"
 
+#ifndef USEC_PER_SEC
 #define USEC_PER_SEC 1000000
+#endif
+
 static AVRational v4l2_timebase = { 1, USEC_PER_SEC };
 
 static inline V4L2m2mContext *buf_to_m2mctx(V4L2Buffer *buf)
@@ -187,6 +191,9 @@ static enum AVColorTransferCharacteristic v4l2_get_color_trc(V4L2Buffer *buf)
     switch (xfer) {
     case V4L2_XFER_FUNC_709: return AVCOL_TRC_BT709;
     case V4L2_XFER_FUNC_SRGB: return AVCOL_TRC_IEC61966_2_1;
+    case V4L2_XFER_FUNC_SMPTE240M: return AVCOL_TRC_SMPTE240M;
+    case V4L2_XFER_FUNC_NONE: return AVCOL_TRC_LINEAR;
+    case V4L2_XFER_FUNC_SMPTE2084: return AVCOL_TRC_SMPTE2084;
     default:
         break;
     }
@@ -220,7 +227,7 @@ static void v4l2_get_interlacing(AVFrame *frame, V4L2Buffer *buf)
     case V4L2_FIELD_INTERLACED:
     case V4L2_FIELD_INTERLACED_TB:
         frame->flags |=  AV_FRAME_FLAG_TOP_FIELD_FIRST;
-        /* fallthrough */
+        av_fallthrough;
     case V4L2_FIELD_INTERLACED_BT:
         frame->flags |=  AV_FRAME_FLAG_INTERLACED;
         break;

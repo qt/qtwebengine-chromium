@@ -35,27 +35,16 @@ typedef struct FFVulkanDecodeDescriptor {
     VkExtensionProperties ext_props;
 } FFVulkanDecodeDescriptor;
 
-typedef struct FFVulkanDecodeProfileData {
-    VkVideoDecodeH264ProfileInfoKHR h264_profile;
-    VkVideoDecodeH265ProfileInfoKHR h265_profile;
-    VkVideoDecodeAV1ProfileInfoKHR av1_profile;
-    VkVideoDecodeUsageInfoKHR usage;
-    VkVideoProfileInfoKHR profile;
-    VkVideoProfileListInfoKHR profile_list;
-} FFVulkanDecodeProfileData;
-
 typedef struct FFVulkanDecodeShared {
     FFVulkanContext s;
     FFVkVideoCommon common;
     AVVulkanDeviceQueueFamily *qf;
     FFVkExecPool exec_pool;
 
-    AVBufferPool *buf_pool;
+    AVRefStructPool *buf_pool;
 
     VkVideoCapabilitiesKHR caps;
     VkVideoDecodeCapabilitiesKHR dec_caps;
-
-    VkVideoSessionParametersKHR empty_session_params;
 
     /* Software-defined decoder context */
     void *sd_ctx;
@@ -64,11 +53,10 @@ typedef struct FFVulkanDecodeShared {
 
 typedef struct FFVulkanDecodeContext {
     FFVulkanDecodeShared *shared_ctx;
-    AVBufferRef *session_params;
+    VkVideoSessionParametersKHR *session_params;
 
     int dedicated_dpb; /* Oddity  #1 - separate DPB images */
     int external_fg;   /* Oddity  #2 - hardware can't apply film grain */
-    uint32_t frame_id_alloc_mask; /* For AV1 only */
 
     /* Workaround for NVIDIA drivers tested with CTS version 1.3.8 for AV1.
      * The tests were incorrect as the OrderHints were offset by 1. */
@@ -83,14 +71,14 @@ typedef struct FFVulkanDecodeContext {
 } FFVulkanDecodeContext;
 
 typedef struct FFVulkanDecodePicture {
-    AVFrame                        *dpb_frame;      /* Only used for out-of-place decoding. */
+    AVFrame                        *dpb_frame;      /* Software-defined decoders only. */
+    FFVkVideoDPBImage              *dpb_img;        /* DISTINCT-mode reference image */
 
     struct {
-        VkImageView                     ref[AV_NUM_DATA_POINTERS];        /* Image representation view (reference) */
-        VkImageView                     out[AV_NUM_DATA_POINTERS];        /* Image representation view (output-only) */
-        VkImageView                     dst[AV_NUM_DATA_POINTERS];        /* Set to img_view_out if no layered refs are used */
-        VkImageAspectFlags              aspect[AV_NUM_DATA_POINTERS];     /* Image plane mask bits */
-        VkImageAspectFlags              aspect_ref[AV_NUM_DATA_POINTERS]; /* Only used for out-of-place decoding */
+        VkImageView                     ref;        /* Image representation view (reference) */
+        VkImageView                     out;        /* Image representation view (output-only) */
+        VkImageAspectFlags              aspect;     /* Image plane mask bits */
+        VkImageAspectFlags              aspect_ref; /* Only used for out-of-place decoding */
     } view;
 
     VkSemaphore                     sem;
@@ -107,13 +95,14 @@ typedef struct FFVulkanDecodePicture {
     /* Main decoding struct */
     VkVideoDecodeInfoKHR            decode_info;
 
+    /* Owner of the output image views aliased by view.out/ref */
+    FFVkImageViews                 *out_views;
+
     /* Slice data */
-    AVBufferRef                    *slices_buf;
+    FFVkBuffer                     *slices_buf;
     size_t                          slices_size;
 
     /* Vulkan functions needed for destruction, as no other context is guaranteed to exist */
-    PFN_vkWaitSemaphores            wait_semaphores;
-    PFN_vkDestroyImageView          destroy_image_view;
     PFN_vkInvalidateMappedMemoryRanges invalidate_memory_ranges;
 } FFVulkanDecodePicture;
 
@@ -149,13 +138,6 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
                                int alloc_dpb);
 
 /**
- * Software-defined decoder version of ff_vk_decode_prepare_frame.
- */
-int ff_vk_decode_prepare_frame_sdr(FFVulkanDecodeContext *dec, AVFrame *pic,
-                                   FFVulkanDecodePicture *vkpic, int is_current,
-                                   enum FFVkShaderRepFormat rep_fmt, int alloc_dpb);
-
-/**
  * Add slice data to frame.
  */
 int ff_vk_decode_add_slice(AVCodecContext *avctx, FFVulkanDecodePicture *vp,
@@ -175,21 +157,10 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
 void ff_vk_decode_free_frame(AVHWDeviceContext *dev_ctx, FFVulkanDecodePicture *vp);
 
 /**
- * Get an FFVkBuffer suitable for decoding from.
- */
-int ff_vk_get_decode_buffer(FFVulkanDecodeContext *ctx, AVBufferRef **buf,
-                            void *create_pNext, size_t size);
-
-/**
  * Create VkVideoSessionParametersKHR wrapped in an AVBufferRef.
  */
-int ff_vk_decode_create_params(AVBufferRef **par_ref, void *logctx, FFVulkanDecodeShared *ctx,
+int ff_vk_decode_create_params(VkVideoSessionParametersKHR **par_ref, void *logctx, FFVulkanDecodeShared *ctx,
                                const VkVideoSessionParametersCreateInfoKHR *session_params_create);
-
-/**
- * Flush decoder.
- */
-void ff_vk_decode_flush(AVCodecContext *avctx);
 
 /**
  * Free decoder.

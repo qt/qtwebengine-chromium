@@ -1,2 +1,2 @@
-// Automatically generated on Mon Jul 14 21:49:38 2025. See crbug.com/495833.
-#include "float_dsp_init.c"
+// Automatically generated on Tue Aug 25 19:08:17 2026. See crbug.com/495833.
+#include "../../third_party/ffmpeg/libavutil/riscv/float_dsp_init.c"

@@ -51,6 +51,7 @@ static void codec_parameters_reset(AVCodecParameters *par)
     par->framerate           = (AVRational){ 0, 1 };
     par->profile             = AV_PROFILE_UNKNOWN;
     par->level               = AV_LEVEL_UNKNOWN;
+    par->alpha_mode          = AVALPHA_MODE_UNSPECIFIED;
 }
 
 AVCodecParameters *avcodec_parameters_alloc(void)
@@ -153,7 +154,8 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
 
     switch (par->codec_type) {
     case AVMEDIA_TYPE_VIDEO:
-        par->format              = codec->pix_fmt;
+        par->format              = codec->sw_pix_fmt != AV_PIX_FMT_NONE ?
+                                   codec->sw_pix_fmt : codec->pix_fmt;
         par->width               = codec->width;
         par->height              = codec->height;
         par->field_order         = codec->field_order;
@@ -165,6 +167,7 @@ int avcodec_parameters_from_context(AVCodecParameters *par,
         par->sample_aspect_ratio = codec->sample_aspect_ratio;
         par->video_delay         = codec->has_b_frames;
         par->framerate           = codec->framerate;
+        par->alpha_mode          = codec->alpha_mode;
         break;
     case AVMEDIA_TYPE_AUDIO:
         par->format           = codec->sample_fmt;
@@ -229,6 +232,7 @@ int avcodec_parameters_to_context(AVCodecContext *codec,
         codec->sample_aspect_ratio    = par->sample_aspect_ratio;
         codec->has_b_frames           = par->video_delay;
         codec->framerate              = par->framerate;
+        codec->alpha_mode             = par->alpha_mode;
         break;
     case AVMEDIA_TYPE_AUDIO:
         codec->sample_fmt       = par->format;

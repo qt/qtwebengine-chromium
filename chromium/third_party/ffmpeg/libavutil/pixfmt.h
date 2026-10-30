@@ -497,6 +497,14 @@ enum AVPixelFormat {
     AV_PIX_FMT_GBRP12MSBBE,    ///< planar GBR 4:4:4 36bpp, lowest bits zero, big-endian
     AV_PIX_FMT_GBRP12MSBLE,    ///< planar GBR 4:4:4 36bpp, lowest bits zero, little-endian
 
+    AV_PIX_FMT_OHCODEC, /// hardware decoding through openharmony
+
+    /**
+     * CUDA block-linear (opaque). data[0] is a CUarray in block-linear layout,
+     * e.g. from NVDEC opaque decode. Use for zero-copy to NVENC (CUDA array input).
+     */
+    AV_PIX_FMT_CUARRAY,
+
     AV_PIX_FMT_NB         ///< number of pixel formats, DO NOT USE THIS if you want to link with shared libav* because the number of formats might differ between versions
 };
 
@@ -649,7 +657,12 @@ enum AVColorPrimaries {
     AVCOL_PRI_SMPTE432    = 12, ///< SMPTE ST 432-1 (2010) / P3 D65 / Display P3
     AVCOL_PRI_EBU3213     = 22, ///< EBU Tech. 3213-E (nothing there) / one of JEDEC P22 group phosphors
     AVCOL_PRI_JEDEC_P22   = AVCOL_PRI_EBU3213,
-    AVCOL_PRI_NB                ///< Not part of ABI
+    AVCOL_PRI_NB,               ///< Not part of ABI
+
+    /* The following entries are not part of H.273, but custom extensions */
+    AVCOL_PRI_EXT_BASE     = 256,
+    AVCOL_PRI_V_GAMUT      = AVCOL_PRI_EXT_BASE,
+    AVCOL_PRI_EXT_NB            ///< Not part of ABI
 };
 
 /**
@@ -678,7 +691,12 @@ enum AVColorTransferCharacteristic {
     AVCOL_TRC_SMPTE428     = 17, ///< SMPTE ST 428-1
     AVCOL_TRC_SMPTEST428_1 = AVCOL_TRC_SMPTE428,
     AVCOL_TRC_ARIB_STD_B67 = 18, ///< ARIB STD-B67, known as "Hybrid log-gamma"
-    AVCOL_TRC_NB                 ///< Not part of ABI
+    AVCOL_TRC_NB,                ///< Not part of ABI
+
+    /* The following entries are not part of H.273, but custom extensions */
+    AVCOL_TRC_EXT_BASE     = 256,
+    AVCOL_TRC_V_LOG        = AVCOL_TRC_EXT_BASE,
+    AVCOL_TRC_EXT_NB             ///< Not part of ABI
 };
 
 /**
@@ -790,6 +808,16 @@ enum AVChromaLocation {
     AVCHROMA_LOC_BOTTOMLEFT  = 5,
     AVCHROMA_LOC_BOTTOM      = 6,
     AVCHROMA_LOC_NB               ///< Not part of ABI
+};
+
+/**
+ * Correlation between the alpha channel and color values.
+ */
+enum AVAlphaMode {
+    AVALPHA_MODE_UNSPECIFIED   = 0, ///< Unknown alpha handling, or no alpha channel
+    AVALPHA_MODE_PREMULTIPLIED = 1, ///< Alpha channel is multiplied into color values
+    AVALPHA_MODE_STRAIGHT      = 2, ///< Alpha channel is independent of color values
+    AVALPHA_MODE_NB                 ///< Not part of ABI
 };
 
 #endif /* AVUTIL_PIXFMT_H */

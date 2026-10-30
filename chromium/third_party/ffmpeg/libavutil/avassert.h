@@ -34,6 +34,7 @@
 #include "attributes.h"
 #include "log.h"
 #include "macros.h"
+#include "version.h"
 
 /**
  * assert() equivalent, that is always enabled.
@@ -63,18 +64,25 @@
  */
 #if defined(ASSERT_LEVEL) && ASSERT_LEVEL > 1
 #define av_assert2(cond) av_assert0(cond)
-#define av_assert2_fpu() av_assert0_fpu()
 #else
 #define av_assert2(cond) ((void)0)
-#define av_assert2_fpu() ((void)0)
 #endif
 
+#if FF_API_ASSERT_FPU
+#if defined(ASSERT_LEVEL) && ASSERT_LEVEL > 1
+#define av_assert2_fpu() av_assert0_fpu()
+#else
+#define av_assert2_fpu() ((void)0)
+#endif
 /**
  * Assert that floating point operations can be executed.
  *
  * This will av_assert0() that the cpu is not in MMX state on X86
+ * @deprecated without replacement
  */
+attribute_deprecated
 void av_assert0_fpu(void);
+#endif
 
 /**
  * Asserts that are used as compiler optimization hints depending
@@ -101,7 +109,6 @@ do {                                                                    \
 #define av_unreachable(msg) __builtin_unreachable()
 #elif  defined(_MSC_VER)
 #define av_unreachable(msg) __assume(0)
-#define av_assume(cond)     __assume(cond)
 #elif __STDC_VERSION__ >= 202311L
 #include <stddef.h>
 #define av_unreachable(msg) unreachable()
@@ -109,12 +116,10 @@ do {                                                                    \
 #define av_unreachable(msg) ((void)0)
 #endif
 
-#ifndef av_assume
 #define av_assume(cond) do { \
     if (!(cond))             \
         av_unreachable();    \
 } while (0)
-#endif
 #endif
 
 #endif /* AVUTIL_AVASSERT_H */

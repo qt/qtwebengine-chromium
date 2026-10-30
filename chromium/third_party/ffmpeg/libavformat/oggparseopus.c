@@ -154,6 +154,11 @@ static int opus_packet(AVFormatContext *avf, int idx)
     }
 
     if (os->psize > 8 && !memcmp(packet, "OpusTags", 8)) {
+        ret = ff_vorbis_update_metadata(avf, st, os->buf + os->pstart + 8,
+                                        os->psize - 8);
+        if (ret < 0)
+            return ret;
+
         priv->need_comments = 0;
         return 1;
     }
@@ -176,7 +181,7 @@ static int opus_packet(AVFormatContext *avf, int idx)
         for (; seg < os->nsegs; seg++) {
             next_pkt += os->segments[seg];
             if (os->segments[seg] < 255 && next_pkt != last_pkt) {
-                int d = opus_duration(last_pkt, next_pkt - last_pkt);
+                d = opus_duration(last_pkt, next_pkt - last_pkt);
                 if (d > 0)
                     duration += d;
                 last_pkt = next_pkt;

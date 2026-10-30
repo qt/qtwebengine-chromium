@@ -27,6 +27,7 @@
  *   http://www.csse.monash.edu.au/~timf/
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
@@ -74,11 +75,11 @@ static int roq_read_header(AVFormatContext *s)
     RoqDemuxContext *roq = s->priv_data;
     AVIOContext *pb = s->pb;
     unsigned char preamble[RoQ_CHUNK_PREAMBLE_SIZE];
+    int ret;
 
     /* get the main header */
-    if (avio_read(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE) !=
-        RoQ_CHUNK_PREAMBLE_SIZE)
-        return AVERROR(EIO);
+    if ((ret = ffio_read_size(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE)) < 0)
+        return ret;
     roq->frame_rate = AV_RL16(&preamble[6]);
 
     /* init private context parameters */
@@ -111,9 +112,8 @@ static int roq_read_packet(AVFormatContext *s,
             return AVERROR_EOF;
 
         /* get the next chunk preamble */
-        if ((ret = avio_read(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE)) !=
-            RoQ_CHUNK_PREAMBLE_SIZE)
-            return AVERROR(EIO);
+        if ((ret = ffio_read_size(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE)) < 0)
+            return ret;
 
         chunk_type = AV_RL16(&preamble[0]);
         chunk_size = AV_RL32(&preamble[2]);
@@ -135,8 +135,8 @@ static int roq_read_packet(AVFormatContext *s,
                 st->codecpar->codec_id     = AV_CODEC_ID_ROQ;
                 st->codecpar->codec_tag    = 0;  /* no fourcc */
 
-                if (avio_read(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE) != RoQ_CHUNK_PREAMBLE_SIZE)
-                    return AVERROR(EIO);
+                if ((ret = ffio_read_size(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE)) < 0)
+                    return ret;
                 st->codecpar->width  = roq->width  = AV_RL16(preamble);
                 st->codecpar->height = roq->height = AV_RL16(preamble + 2);
                 break;
@@ -152,9 +152,8 @@ static int roq_read_packet(AVFormatContext *s,
             codebook_offset = avio_tell(pb) - RoQ_CHUNK_PREAMBLE_SIZE;
             codebook_size = chunk_size;
             avio_skip(pb, codebook_size);
-            if (avio_read(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE) !=
-                RoQ_CHUNK_PREAMBLE_SIZE)
-                return AVERROR(EIO);
+            if ((ret = ffio_read_size(pb, preamble, RoQ_CHUNK_PREAMBLE_SIZE)) < 0)
+                return ret;
             chunk_size = AV_RL32(&preamble[2]) + RoQ_CHUNK_PREAMBLE_SIZE * 2 +
                 codebook_size;
 
@@ -167,7 +166,7 @@ static int roq_read_packet(AVFormatContext *s,
             /* load up the packet */
             ret= av_get_packet(pb, pkt, chunk_size);
             if (ret != chunk_size)
-                return AVERROR(EIO);
+                return AVERROR_INVALIDDATA;
             pkt->stream_index = roq->video_stream_index;
             pkt->pts = roq->video_pts++;
 
@@ -197,6 +196,7 @@ static int roq_read_packet(AVFormatContext *s,
                     st->codecpar->bits_per_coded_sample;
                 st->codecpar->block_align = roq->audio_channels * st->codecpar->bits_per_coded_sample;
             }
+            av_fallthrough;
         case RoQ_QUAD_VQ:
             if (chunk_type == RoQ_QUAD_VQ) {
                 if (roq->video_stream_index < 0)
@@ -220,11 +220,10 @@ static int roq_read_packet(AVFormatContext *s,
             }
 
             pkt->pos= avio_tell(pb);
-            ret = avio_read(pb, pkt->data + RoQ_CHUNK_PREAMBLE_SIZE,
+            ret = ffio_read_size(pb, pkt->data + RoQ_CHUNK_PREAMBLE_SIZE,
                 chunk_size);
-            if (ret != chunk_size) {
-                return AVERROR(EIO);
-            }
+            if (ret < 0)
+                return ret;
 
             packet_read = 1;
             break;

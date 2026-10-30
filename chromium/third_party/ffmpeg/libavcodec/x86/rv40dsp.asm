@@ -1,5 +1,5 @@
 ;******************************************************************************
-;* MMX/SSE2-optimized functions for the RV40 decoder
+;* ASM-optimized functions for the RV40 decoder
 ;* Copyright (c) 2010 Ronald S. Bultje <rsbultje@gmail.com>
 ;* Copyright (c) 2010 Fiona Glaser <fiona@x264.com>
 ;* Copyright (C) 2012 Christophe Gisquet <christophe.gisquet@gmail.com>
@@ -97,7 +97,7 @@ SECTION .text
 %endif
     packuswb  %1, %1
 %ifidn %3, avg
-    PAVGB     %1, %2
+    pavgb     %1, %2
 %endif
     movh  [dstq], %1
 %endmacro
