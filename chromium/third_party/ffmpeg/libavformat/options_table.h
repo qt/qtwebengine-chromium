@@ -52,13 +52,17 @@ static const AVOption avformat_options[] = {
 {"nobuffer", "reduce the latency introduced by optional buffering", 0, AV_OPT_TYPE_CONST, {.i64 = AVFMT_FLAG_NOBUFFER }, 0, INT_MAX, D, .unit = "fflags"},
 {"bitexact", "do not write random/volatile data", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_BITEXACT }, 0, 0, E, .unit = "fflags" },
 {"autobsf", "add needed bsfs automatically", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_AUTO_BSF }, 0, 0, E, .unit = "fflags" },
+#if FF_API_OLD_ID3V2_COMMENT
+{"legacy_id3v2_comm_keys", "also export id3v2 COMM descriptors as bare metadata keys", 0, AV_OPT_TYPE_CONST, { .i64 = AVFMT_FLAG_LEGACY_ID3V2_COMM_KEYS }, 0, 0, D|AV_OPT_FLAG_DEPRECATED, .unit = "fflags" },
+#endif
 {"seek2any", "allow seeking to non-keyframes on demuxer level when supported", OFFSET(seek2any), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, D},
 {"analyzeduration", "specify how many microseconds are analyzed to probe the input", OFFSET(max_analyze_duration), AV_OPT_TYPE_INT64, {.i64 = 0 }, 0, (double)INT64_MAX, D},
 {"cryptokey", "decryption key", OFFSET(key), AV_OPT_TYPE_BINARY, {.dbl = 0}, 0, 0, D},
 {"indexmem", "max memory used for timestamp index (per stream)", OFFSET(max_index_size), AV_OPT_TYPE_INT, {.i64 = 1<<20 }, 0, INT_MAX, D},
 {"rtbufsize", "max memory used for buffering real-time frames", OFFSET(max_picture_buffer), AV_OPT_TYPE_INT, {.i64 = 3041280 }, 0, INT_MAX, D}, /* defaults to 1s of 15fps 352x288 YUYV422 video */
 {"fdebug", "print specific debug info", OFFSET(debug), AV_OPT_TYPE_FLAGS, {.i64 = DEFAULT }, 0, INT_MAX, E|D, .unit = "fdebug"},
-{"ts", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = FF_FDEBUG_TS }, INT_MIN, INT_MAX, E|D, .unit = "fdebug"},
+{"ts", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = AV_FDEBUG_TS }, INT_MIN, INT_MAX, E|D, .unit = "fdebug"},
+{"id3v2", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = AV_FDEBUG_ID3V2 }, INT_MIN, INT_MAX, E|D, .unit = "fdebug"},
 {"max_delay", "maximum muxing or demuxing delay in microseconds", OFFSET(max_delay), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, INT_MAX, E|D},
 {"start_time_realtime", "wall-clock time when stream begins (PTS==0)", OFFSET(start_time_realtime), AV_OPT_TYPE_INT64, {.i64 = AV_NOPTS_VALUE}, INT64_MIN, (double)INT64_MAX, E},
 {"fpsprobesize", "number of frames used to probe fps", OFFSET(fps_probe_size), AV_OPT_TYPE_INT, {.i64 = -1}, -1, INT_MAX-1, D},
@@ -106,6 +110,7 @@ static const AVOption avformat_options[] = {
 {"skip_estimate_duration_from_pts", "skip duration calculation in estimate_timings_from_pts", OFFSET(skip_estimate_duration_from_pts), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, D},
 {"max_probe_packets", "Maximum number of packets to probe a codec", OFFSET(max_probe_packets), AV_OPT_TYPE_INT, { .i64 = 2500 }, 0, INT_MAX, D },
 {"duration_probesize", "Maximum number of bytes to probe the durations of the streams in estimate_timings_from_pts", OFFSET(duration_probesize), AV_OPT_TYPE_INT64, {.i64 = 0 }, 0, (double)INT64_MAX, D},
+{"recursion_limit", "Maximum number of times a demuxer can recursively be opened", OFFSET(recursion_limit), AV_OPT_TYPE_INT, {.i64 = 10 }, 0, INT_MAX, D},
 {NULL},
 };
 

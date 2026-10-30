@@ -155,12 +155,17 @@ static int d3d12va_hevc_end_frame(AVCodecContext *avctx)
     HEVCDecodePictureContext *ctx_pic = h->cur_frame->hwaccel_picture_private;
 
     int scale = ctx_pic->pp.dwCodingParamToolFlags & 1;
+    uint64_t bitstream_size;
 
     if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
         return -1;
 
+    bitstream_size = ctx_pic->bitstream_size +
+                     (uint64_t)ctx_pic->slice_count * START_CODE_SIZE;
+
     return ff_d3d12va_common_end_frame(avctx, h->cur_frame->f, &ctx_pic->pp, sizeof(ctx_pic->pp),
-               scale ? &ctx_pic->qm : NULL, scale ? sizeof(ctx_pic->qm) : 0, update_input_arguments);
+               scale ? &ctx_pic->qm : NULL, scale ? sizeof(ctx_pic->qm) : 0,
+               bitstream_size, update_input_arguments);
 }
 
 static av_cold int d3d12va_hevc_decode_init(AVCodecContext *avctx)

@@ -28,7 +28,6 @@
  */
 
 #include "rational.h"
-#include "avutil.h"
 #include "channel_layout.h"
 #include "dict.h"
 #include "log.h"
@@ -605,10 +604,10 @@ const AVClass *av_opt_child_class_iterate(const AVClass *parent, void **iter);
 #define AV_OPT_SEARCH_CHILDREN   (1 << 0) /**< Search in possible children of the
                                                given object first. */
 /**
- *  The obj passed to av_opt_find() is fake -- only a double pointer to AVClass
- *  instead of a required pointer to a struct containing AVClass. This is
- *  useful for searching for options without needing to allocate the corresponding
- *  object.
+ *  The obj passed to av_opt_find() or av_opt_set() is fake -- only a double pointer
+ *  to AVClass instead of a required pointer to a struct containing AVClass. This is
+ *  useful for searching for options or verifying they can be applied without needing
+ *  to allocate the corresponding object.
  */
 #define AV_OPT_SEARCH_FAKE_OBJ   (1 << 1)
 
@@ -842,7 +841,8 @@ int av_opt_copy(void *dest, const void *src);
  * @{
  * Those functions set the field of obj with the given name to value.
  *
- * @param[in] obj A struct whose first element is a pointer to an AVClass.
+ * @param[in] obj A struct whose first element is a pointer to an AVClass. Alternatively
+ * a double pointer to an AVClass, if AV_OPT_SEARCH_FAKE_OBJ search flag is set.
  * @param[in] name the name of the field to set
  * @param[in] val The value to set. In case of av_opt_set() if the field is not
  * of a string type, then the given string is parsed.
@@ -885,24 +885,6 @@ int av_opt_set_chlayout(void *obj, const char *name, const AVChannelLayout *layo
  * caller still owns val is and responsible for freeing it.
  */
 int av_opt_set_dict_val(void *obj, const char *name, const AVDictionary *val, int search_flags);
-
-#if FF_API_OPT_INT_LIST
-/**
- * Set a binary option to an integer list.
- *
- * @param obj    AVClass object to set options on
- * @param name   name of the binary option
- * @param val    pointer to an integer list (must have the correct type with
- *               regard to the contents of the list)
- * @param term   list terminator (usually 0 or -1)
- * @param flags  search flags
- */
-#define av_opt_set_int_list(obj, name, val, term, flags) \
-    (av_int_list_length(val, term) > INT_MAX / sizeof(*(val)) ? \
-     AVERROR(EINVAL) : \
-     av_opt_set_bin(obj, name, (const uint8_t *)(val), \
-                    av_int_list_length(val, term) * sizeof(*(val)), flags))
-#endif
 
 /**
  * Add, replace, or remove elements for an array option. Which of these
@@ -1070,21 +1052,6 @@ int av_opt_eval_q     (void *obj, const AVOption *o, const char *val, AVRational
 /**
  * @}
  */
-
-#if FF_API_OPT_PTR
-/**
- * Gets a pointer to the requested field in a struct.
- * This function allows accessing a struct even when its fields are moved or
- * renamed since the application making the access has been compiled,
- *
- * @returns a pointer to the field, it can be cast to the correct type and read
- *          or written to.
- *
- * @deprecated direct access to AVOption-exported fields is not supported
- */
-attribute_deprecated
-void *av_opt_ptr(const AVClass *avclass, void *obj, const char *name);
-#endif
 
 /**
  * Check if given option is set to its default value.

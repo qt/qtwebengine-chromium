@@ -20,6 +20,7 @@
  */
 
 #include "avformat.h"
+#include "libavutil/attributes.h"
 #include "mpegts.h"
 #include "internal.h"
 #include "mux.h"
@@ -33,7 +34,7 @@
 static const AVOption options[] = {
     FF_RTP_FLAG_OPTS(RTPMuxContext, flags),
     { "payload_type", "Specify RTP payload type", offsetof(RTPMuxContext, payload_type), AV_OPT_TYPE_INT, {.i64 = -1 }, -1, 127, AV_OPT_FLAG_ENCODING_PARAM },
-    { "ssrc", "Stream identifier", offsetof(RTPMuxContext, ssrc), AV_OPT_TYPE_INT, { .i64 = 0 }, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM },
+    { "ssrc", "Stream identifier", offsetof(RTPMuxContext, ssrc), AV_OPT_TYPE_UINT, { .i64 = 0 }, 0, UINT32_MAX, AV_OPT_FLAG_ENCODING_PARAM },
     { "cname", "CNAME to include in RTCP SR packets", offsetof(RTPMuxContext, cname), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
     { "seq", "Starting sequence number", offsetof(RTPMuxContext, seq), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 65535, AV_OPT_FLAG_ENCODING_PARAM },
     { NULL },
@@ -178,9 +179,16 @@ static int rtp_write_header(AVFormatContext *s1)
     case AV_CODEC_ID_MPEG2VIDEO:
         break;
     case AV_CODEC_ID_MPEG2TS:
+        if (s->max_payload_size < TS_PACKET_SIZE) {
+            av_log(s1, AV_LOG_ERROR,
+                   "RTP payload size %u too small for MPEG-TS "
+                   "(minimum %d bytes required)\n",
+                   s->max_payload_size, TS_PACKET_SIZE);
+            ret = AVERROR(EINVAL);
+            goto fail;
+        }
+
         n = s->max_payload_size / TS_PACKET_SIZE;
-        if (n < 1)
-            n = 1;
         s->max_payload_size = n * TS_PACKET_SIZE;
         break;
     case AV_CODEC_ID_DIRAC:
@@ -589,12 +597,24 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     case AV_CODEC_ID_MPEG2VIDEO:
         ff_rtp_send_mpegvideo(s1, pkt->data, size);
         break;
-    case AV_CODEC_ID_AAC:
+    case AV_CODEC_ID_AAC: {
+        const uint8_t *aac_frame = pkt->data;
+
+        /* skip ADTS header, if present */
+        if (!st->codecpar->extradata_size) {
+            if (size < 7) {
+                av_log(s1, AV_LOG_ERROR, "AAC packet too small for ADTS header\n");
+                break;
+            }
+            aac_frame += 7;
+            size      -= 7;
+        }
         if (s->flags & FF_RTP_FLAG_MP4A_LATM)
-            ff_rtp_send_latm(s1, pkt->data, size);
+            ff_rtp_send_latm(s1, aac_frame, size);
         else
-            ff_rtp_send_aac(s1, pkt->data, size);
+            ff_rtp_send_aac(s1, aac_frame, size);
         break;
+    }
     case AV_CODEC_ID_AMR_NB:
     case AV_CODEC_ID_AMR_WB:
         ff_rtp_send_amr(s1, pkt->data, size);
@@ -623,7 +643,7 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
             ff_rtp_send_h263_rfc2190(s1, pkt->data, size, mb_info, mb_info_size);
             break;
         }
-        /* Fallthrough */
+        av_fallthrough;
     case AV_CODEC_ID_H263P:
         ff_rtp_send_h263(s1, pkt->data, size);
         break;
@@ -662,7 +682,7 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
                    size, s->max_payload_size);
             return AVERROR(EINVAL);
         }
-        /* Intentional fallthrough */
+        av_fallthrough;
     default:
         /* better than nothing : send the codec raw data */
         rtp_send_raw(s1, pkt->data, size);
@@ -679,9 +699,15 @@ static int rtp_write_trailer(AVFormatContext *s1)
      * be NULL here even if it was successfully allocated at the start. */
     if (s1->pb && (s->flags & FF_RTP_FLAG_SEND_BYE))
         rtcp_send_sr(s1, ff_ntp_time(), 1);
-    av_freep(&s->buf);
 
     return 0;
+}
+
+static void rtp_deinit(AVFormatContext *s1)
+{
+    RTPMuxContext *s = s1->priv_data;
+
+    av_freep(&s->buf);
 }
 
 const FFOutputFormat ff_rtp_muxer = {
@@ -693,6 +719,7 @@ const FFOutputFormat ff_rtp_muxer = {
     .write_header      = rtp_write_header,
     .write_packet      = rtp_write_packet,
     .write_trailer     = rtp_write_trailer,
+    .deinit            = rtp_deinit,
     .p.priv_class      = &rtp_muxer_class,
     .p.flags           = AVFMT_NODIMENSIONS | AVFMT_TS_NONSTRICT,
 };

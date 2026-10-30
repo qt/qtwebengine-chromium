@@ -31,9 +31,13 @@
 #include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/hwcontext.h"
 #include "config.h"
 #include "swscale_internal.h"
 #include "swscale.h"
+#if CONFIG_VULKAN
+#include "vulkan/ops.h"
+#endif
 
 DECLARE_ALIGNED(8, const uint8_t, ff_dither_8x8_128)[9][8] = {
     {  36, 68,  60, 92,  34, 66,  58, 90, },
@@ -353,7 +357,6 @@ int ff_swscale(SwsInternal *c, const uint8_t *const src[], const int srcStride[]
 #if ARCH_X86
     if (   (uintptr_t) dst[0]&15 || (uintptr_t) dst[1]&15 || (uintptr_t) dst[2]&15
         || (uintptr_t)src2[0]&15 || (uintptr_t)src2[1]&15 || (uintptr_t)src2[2]&15
-        ||  dstStride[0]&15 ||  dstStride[1]&15 ||  dstStride[2]&15 ||  dstStride[3]&15
         || srcStride2[0]&15 || srcStride2[1]&15 || srcStride2[2]&15 || srcStride2[3]&15
     ) {
         SwsInternal *const ctx = c->parent ? sws_internal(c->parent) : c;
@@ -509,7 +512,7 @@ int ff_swscale(SwsInternal *c, const uint8_t *const src[], const int srcStride[]
         if (!enough_lines)
             break;  // we can't output a dstY line so let's try with the next slice
 
-#if HAVE_MMX_INLINE
+#if ARCH_X86 && HAVE_MMX
         ff_updateMMXDitherTables(c, dstY);
         c->dstW_mmx = c->opts.dst_w;
 #endif
@@ -1000,6 +1003,16 @@ static int scale_cascaded(SwsInternal *c,
                              0, dstH0);
     if (ret < 0)
         return ret;
+
+    /* The first stage assembles the full intermediate image from the input,
+     * one slice at a time (it is itself a regular slice-capable context). The
+     * second stage scales that whole intermediate to the output in one step,
+     * so it can only run once the entire source has been consumed. The first
+     * stage resets its slice direction to 0 at end of frame; until then the
+     * intermediate is incomplete and this call produces no output lines. */
+    if (sws_internal(c->cascaded_context[0])->sliceDir != 0)
+        return 0;
+
     ret = scale_internal(c->cascaded_context[1],
                          (const uint8_t * const * )c->cascaded_tmp[0], c->cascaded_tmpStride[0],
                          0, dstH0, dstSlice, dstStride, dstSliceY, dstSliceH);
@@ -1033,6 +1046,8 @@ static int scale_internal(SwsContext *sws,
     if ((srcSliceY  & (macro_height_src - 1)) ||
         ((srcSliceH & (macro_height_src - 1)) && srcSliceY + srcSliceH != sws->src_h) ||
         srcSliceY + srcSliceH > sws->src_h ||
+        srcSliceY < 0 ||
+        srcSliceH < 0 ||
         (isBayer(sws->src_format) && srcSliceH <= 1)) {
         av_log(c, AV_LOG_ERROR, "Slice parameters %d, %d are invalid\n", srcSliceY, srcSliceH);
         return AVERROR(EINVAL);
@@ -1062,7 +1077,7 @@ static int scale_internal(SwsContext *sws,
         return scale_gamma(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                            dstSlice, dstStride, dstSliceY, dstSliceH);
 
-    if (c->cascaded_context[0] && srcSliceY == 0 && srcSliceH == c->cascaded_context[0]->src_h)
+    if (c->cascaded_context[0])
         return scale_cascaded(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                               dstSlice, dstStride, dstSliceY, dstSliceH);
 
@@ -1204,15 +1219,94 @@ static int scale_internal(SwsContext *sws,
 void sws_frame_end(SwsContext *sws)
 {
     SwsInternal *c = sws_internal(sws);
+    if (!c->is_legacy_init)
+        return;
     av_frame_unref(c->frame_src);
     av_frame_unref(c->frame_dst);
     c->src_ranges.nb_ranges = 0;
+}
+
+static int ptr_in_buf(const uint8_t *ptr, const AVBufferRef *buf)
+{
+    uintptr_t ptr_val = (uintptr_t) ptr;
+    uintptr_t buf_start = (uintptr_t) buf->data;
+    return ptr_val >= buf_start && ptr_val < buf_start + buf->size;
+}
+
+/* Similar to av_frame_ref() but only references planes in the given map */
+static int frame_ref(AVFrame *dst, const AVFrame *src, const int plane_copy[4])
+{
+    int copied[AV_NUM_DATA_POINTERS] = {0};
+    int nb_copied = 0;
+
+    for (int i = 0; i < 4; i++) {
+        const int idx = plane_copy[i];
+        if (idx < 0)
+            continue;
+        /* Find corresponding source buffer */
+        uint8_t *src_data = src->data[idx];
+        if (!src_data)
+            return AVERROR(EINVAL);
+        for (int j = 0; j < FF_ARRAY_ELEMS(src->buf); j++) {
+            AVBufferRef *buf = src->buf[j];
+            if (!buf)
+                break;
+            if (!ptr_in_buf(src_data, buf))
+                continue;
+            if (!copied[j]) {
+                AVBufferRef *ref = av_buffer_ref(buf);
+                if (!ref)
+                    return AVERROR(ENOMEM);
+                dst->buf[nb_copied++] = ref;
+                copied[j] = 1;
+            }
+            dst->data[i]     = src_data;
+            dst->linesize[i] = src->linesize[idx];
+            break;
+        }
+    }
+
+    return 0;
+}
+
+/* Returns the number of buffers allocated */
+static int frame_alloc_buffers(SwsContext *sws, AVFrame *frame)
+{
+    SwsInternal *c = sws_internal(sws);
+    FFFramePool *pool = &c->frame_pool;
+    av_assert0(!frame->hw_frames_ctx);
+
+    /* Find first free buffer slot */
+    int buf_start = 0;
+    while (frame->buf[buf_start])
+        buf_start++;
+    int nb_bufs = 0;
+
+    const int nb_planes = av_pix_fmt_count_planes(frame->format);
+    for (int i = 0; i < nb_planes; i++) {
+        if (frame->data[i])
+            continue; /* already ref'd by frame_ref */
+
+        const int idx = buf_start + nb_bufs++;
+        av_assert1(idx < FF_ARRAY_ELEMS(frame->buf));
+        frame->buf[idx] = av_buffer_pool_get(pool->pools[i]);
+        if (!frame->buf[idx]) {
+            av_frame_unref(frame);
+            return AVERROR(ENOMEM);
+        }
+        frame->data[i] = frame->buf[idx]->data;
+        frame->linesize[i] = pool->linesize[i];
+    }
+
+    return nb_bufs;
 }
 
 int sws_frame_start(SwsContext *sws, AVFrame *dst, const AVFrame *src)
 {
     SwsInternal *c = sws_internal(sws);
     int ret, allocated = 0;
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     ret = av_frame_ref(c->frame_src, src);
     if (ret < 0)
@@ -1245,6 +1339,8 @@ int sws_send_slice(SwsContext *sws, unsigned int slice_start,
 {
     SwsInternal *c = sws_internal(sws);
     int ret;
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     ret = ff_range_add(&c->src_ranges, slice_start, slice_height);
     if (ret < 0)
@@ -1268,6 +1364,8 @@ int sws_receive_slice(SwsContext *sws, unsigned int slice_start,
     SwsInternal *c = sws_internal(sws);
     unsigned int align = sws_receive_slice_alignment(sws);
     uint8_t *dst[4];
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     /* wait until complete input has been received */
     if (!(c->src_ranges.nb_ranges == 1        &&
@@ -1285,26 +1383,13 @@ int sws_receive_slice(SwsContext *sws, unsigned int slice_start,
 
     if (c->slicethread) {
         int nb_jobs = c->nb_slice_ctx;
-        int ret = 0;
-
         if (c->slice_ctx[0]->dither == SWS_DITHER_ED)
             nb_jobs = 1;
 
         c->dst_slice_start  = slice_start;
         c->dst_slice_height = slice_height;
 
-        avpriv_slicethread_execute(c->slicethread, nb_jobs, 0);
-
-        for (int i = 0; i < c->nb_slice_ctx; i++) {
-            if (c->slice_err[i] < 0) {
-                ret = c->slice_err[i];
-                break;
-            }
-        }
-
-        memset(c->slice_err, 0, c->nb_slice_ctx * sizeof(*c->slice_err));
-
-        return ret;
+        return avpriv_slicethread_execute2(c->slicethread, nb_jobs, 0);
     }
 
     for (int i = 0; i < FF_ARRAY_ELEMS(dst); i++) {
@@ -1317,61 +1402,16 @@ int sws_receive_slice(SwsContext *sws, unsigned int slice_start,
                           dst, c->frame_dst->linesize, slice_start, slice_height);
 }
 
-static void get_frame_pointers(const AVFrame *frame, uint8_t *data[4],
-                               int linesize[4], int field)
-{
-    for (int i = 0; i < 4; i++) {
-        data[i]     = frame->data[i];
-        linesize[i] = frame->linesize[i];
-    }
-
-    if (!(frame->flags & AV_FRAME_FLAG_INTERLACED)) {
-        av_assert1(!field);
-        return;
-    }
-
-    if (field == FIELD_BOTTOM) {
-        /* Odd rows, offset by one line */
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
-        for (int i = 0; i < 4; i++) {
-            data[i] += linesize[i];
-            if (desc->flags & AV_PIX_FMT_FLAG_PAL)
-                break;
-        }
-    }
-
-    /* Take only every second line */
-    for (int i = 0; i < 4; i++)
-        linesize[i] <<= 1;
-}
-
-/* Subset of av_frame_ref() that only references (video) data buffers */
-static int frame_ref(AVFrame *dst, const AVFrame *src)
-{
-    /* ref the buffers */
-    for (int i = 0; i < FF_ARRAY_ELEMS(src->buf); i++) {
-        if (!src->buf[i])
-            continue;
-        dst->buf[i] = av_buffer_ref(src->buf[i]);
-        if (!dst->buf[i])
-            return AVERROR(ENOMEM);
-    }
-
-    memcpy(dst->data,     src->data,     sizeof(src->data));
-    memcpy(dst->linesize, src->linesize, sizeof(src->linesize));
-    return 0;
-}
-
 int sws_scale_frame(SwsContext *sws, AVFrame *dst, const AVFrame *src)
 {
-    int ret;
+    int ret, allocated = 0;
     SwsInternal *c = sws_internal(sws);
     if (!src || !dst)
         return AVERROR(EINVAL);
 
-    if (c->frame_src) {
+    if (c->is_legacy_init) {
         /* Context has been initialized with explicit values, fall back to
-         * legacy API */
+         * legacy API behavior. */
         ret = sws_frame_start(sws, dst, src);
         if (ret < 0)
             return ret;
@@ -1392,31 +1432,47 @@ int sws_scale_frame(SwsContext *sws, AVFrame *dst, const AVFrame *src)
     if (!src->data[0])
         return 0;
 
-    if (c->graph[FIELD_TOP]->noop &&
-        (!c->graph[FIELD_BOTTOM] || c->graph[FIELD_BOTTOM]->noop) &&
-        src->buf[0] && !dst->buf[0] && !dst->data[0])
-    {
-        /* Lightweight refcopy */
-        ret = frame_ref(dst, src);
-        if (ret < 0)
-            return ret;
-    } else {
-        if (!dst->data[0]) {
-            ret = av_frame_get_buffer(dst, 0);
-            if (ret < 0)
-                return ret;
+    const SwsGraph *top = c->graph[FIELD_TOP];
+    const SwsGraph *bot = c->graph[FIELD_BOTTOM];
+    if (dst->data[0]) /* user-provided buffers */
+        goto process_frame;
+
+    /* Sanity */
+    memset(dst->buf, 0, sizeof(dst->buf));
+    memset(dst->data, 0, sizeof(dst->data));
+    memset(dst->linesize, 0, sizeof(dst->linesize));
+    dst->extended_data = dst->data;
+
+    if (src->buf[0]) {
+        /* Determine end-to-end plane copy map */
+        int plane_copy[FF_ARRAY_ELEMS(top->plane_copy)];
+        memcpy(plane_copy, top->plane_copy, sizeof(plane_copy));
+        for (int i = 0; bot && i < FF_ARRAY_ELEMS(plane_copy); i++) {
+            if (bot->plane_copy[i] != plane_copy[i])
+                plane_copy[i] = -1;
         }
 
-        for (int field = 0; field < 2; field++) {
-            SwsGraph *graph = c->graph[field];
-            uint8_t *dst_data[4], *src_data[4];
-            int dst_linesize[4], src_linesize[4];
-            get_frame_pointers(dst, dst_data, dst_linesize, field);
-            get_frame_pointers(src, src_data, src_linesize, field);
-            ff_sws_graph_run(graph, dst_data, dst_linesize,
-                          (const uint8_t **) src_data, src_linesize);
-            if (!graph->dst.interlaced)
-                break;
+        ret = frame_ref(dst, src, plane_copy);
+        if (ret < 0)
+            return ret;
+    }
+
+    /* Allocate any missing buffers not yet ref'd */
+    ret = frame_alloc_buffers(sws, dst);
+    if (ret < 0)
+        return ret;
+    else if (!ret)
+        return 0; /* no buffers allocated, no-op (all ref'd) */
+    else
+        allocated = 1;
+
+process_frame:
+    for (int field = 0; field < (bot ? 2 : 1); field++) {
+        ret = ff_sws_graph_run(c->graph[field], dst, src);
+        if (ret < 0) {
+            if (allocated)
+                av_frame_unref(dst);
+            return ret;
         }
     }
 
@@ -1435,6 +1491,9 @@ static int validate_params(SwsContext *ctx)
     VALIDATE(threads,       0, SWS_MAX_THREADS);
     VALIDATE(dither,        0, SWS_DITHER_NB - 1)
     VALIDATE(alpha_blend,   0, SWS_ALPHA_BLEND_NB - 1)
+    VALIDATE(intent,        0, SWS_INTENT_NB - 1);
+    VALIDATE(scaler,        0, SWS_SCALE_NB - 1)
+    VALIDATE(scaler_sub,    0, SWS_SCALE_NB - 1)
     return 0;
 }
 
@@ -1449,6 +1508,49 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
     if ((ret = validate_params(ctx)) < 0)
         return ret;
 
+    const AVPixFmtDescriptor *src_desc = av_pix_fmt_desc_get(src->format);
+    const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get(dst->format);
+    av_assert0(src_desc);
+    av_assert0(dst_desc);
+
+    const int src_is_hwaccel = !!(src_desc->flags & AV_PIX_FMT_FLAG_HWACCEL);
+    const int dst_is_hwaccel = !!(dst_desc->flags & AV_PIX_FMT_FLAG_HWACCEL);
+    if (src_is_hwaccel && !src->hw_frames_ctx)
+        return AVERROR(EINVAL);
+    if (dst_is_hwaccel && !dst->hw_frames_ctx)
+        return AVERROR(EINVAL);
+
+    /* For now, if a single frame has a context, then both need a context */
+    if (src_is_hwaccel ^ dst_is_hwaccel) {
+        return AVERROR(ENOTSUP);
+    } else if (src_is_hwaccel) {
+        /* Both hardware frames must already be allocated */
+        if (!src->data[0] || !dst->data[0])
+            return AVERROR(EINVAL);
+
+        AVHWFramesContext *src_hwfc, *dst_hwfc;
+        src_hwfc = (AVHWFramesContext *)src->hw_frames_ctx->data;
+        dst_hwfc = (AVHWFramesContext *)dst->hw_frames_ctx->data;
+
+        /* Both frames must live on the same device */
+        if (src_hwfc->device_ref->data != dst_hwfc->device_ref->data)
+            return AVERROR(EINVAL);
+
+        /* Only Vulkan devices are supported */
+        AVHWDeviceContext *dev_ctx;
+        dev_ctx = (AVHWDeviceContext *)src_hwfc->device_ref->data;
+        if (dev_ctx->type != AV_HWDEVICE_TYPE_VULKAN)
+            return AVERROR(ENOTSUP);
+
+#if CONFIG_UNSTABLE && CONFIG_VULKAN
+        ret = ff_sws_vk_init(ctx, src_hwfc->device_ref);
+        if (ret < 0)
+            return ret;
+#endif
+    }
+
+    int dst_width = dst->width;
+    const SwsBackend backends = ff_sws_enabled_backends(ctx);
     for (int field = 0; field < 2; field++) {
         SwsFormat src_fmt = ff_fmt_from_frame(src, field);
         SwsFormat dst_fmt = ff_fmt_from_frame(dst, field);
@@ -1460,24 +1562,41 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
             goto fail;
         }
 
-        src_ok = ff_test_fmt(&src_fmt, 0);
-        dst_ok = ff_test_fmt(&dst_fmt, 1);
-        if ((!src_ok || !dst_ok) && !ff_props_equal(&src_fmt, &dst_fmt)) {
+        src_ok = ff_test_fmt(backends, &src_fmt, 0);
+        dst_ok = ff_test_fmt(backends, &dst_fmt, 1);
+        if ((!src_ok || !dst_ok) && !ff_fmt_equal(&src_fmt, &dst_fmt)) {
             err_msg = src_ok ? "Unsupported output" : "Unsupported input";
             ret = AVERROR(ENOTSUP);
             goto fail;
         }
 
-        ret = ff_sws_graph_reinit(ctx, &dst_fmt, &src_fmt, field, &s->graph[field]);
+        if (!s->graph[field]) {
+            s->graph[field] = ff_sws_graph_alloc();
+            if (!s->graph[field]) {
+                err_msg = "Failed allocating scaling graph";
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+        }
+
+        ret = ff_sws_graph_reinit(s->graph[field], ctx, &dst_fmt, &src_fmt);
         if (ret < 0) {
             err_msg = "Failed initializing scaling graph";
             goto fail;
         }
 
-        if (s->graph[field]->incomplete && ctx->flags & SWS_STRICT) {
+        const SwsGraph *graph = s->graph[field];
+        if (graph->incomplete && ctx->flags & SWS_STRICT) {
             err_msg = "Incomplete scaling graph";
             ret = AVERROR(EINVAL);
             goto fail;
+        }
+
+        if (!graph->noop) {
+            av_assert0(graph->num_passes);
+            const SwsPass *last_pass = graph->passes[graph->num_passes - 1];
+            const int aligned_w = ff_sws_pass_aligned_width(last_pass, dst->width);
+            dst_width = FFMAX(dst_width, aligned_w);
         }
 
         if (!src_fmt.interlaced) {
@@ -1502,6 +1621,13 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
         return ret;
     }
 
+    if (!dst->hw_frames_ctx) {
+        ret = ff_frame_pool_video_reinit(&s->frame_pool, dst_width, dst->height,
+                                         dst->format, av_cpu_max_align());
+        if (ret < 0)
+            return ret;
+    }
+
     return 0;
 }
 
@@ -1516,6 +1642,9 @@ int attribute_align_arg sws_scale(SwsContext *sws,
                                   const int dstStride[])
 {
     SwsInternal *c = sws_internal(sws);
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
+
     if (c->nb_slice_ctx) {
         sws = c->slice_ctx[0];
         c = sws_internal(sws);
@@ -1525,8 +1654,8 @@ int attribute_align_arg sws_scale(SwsContext *sws,
                           dst, dstStride, 0, sws->dst_h);
 }
 
-void ff_sws_slice_worker(void *priv, int jobnr, int threadnr,
-                         int nb_jobs, int nb_threads)
+int ff_sws_slice_worker(void *priv, int jobnr, int threadnr,
+                        int nb_jobs, int nb_threads)
 {
     SwsInternal *parent = priv;
     SwsContext     *sws = parent->slice_ctx[threadnr];
@@ -1555,5 +1684,8 @@ void ff_sws_slice_worker(void *priv, int jobnr, int threadnr,
                              parent->dst_slice_start + slice_start, slice_end - slice_start);
     }
 
-    parent->slice_err[threadnr] = err;
+    if (err < 0)
+        return err;
+
+    return 0; /* ff_slicethread_execute() aborts on non-zero */
 }

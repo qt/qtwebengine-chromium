@@ -36,6 +36,7 @@
 #include "avformat.h"
 #include "demux.h"
 #include "internal.h"
+#include "avio_internal.h"
 #include "riff.h"
 
 #define MLV_VERSION "v2.0"
@@ -74,12 +75,15 @@ static int check_file_header(AVIOContext *pb, uint64_t guid)
 {
     unsigned int size;
     uint8_t version[8];
+    int ret;
 
     avio_skip(pb, 4);
     size = avio_rl32(pb);
     if (size < 52)
         return AVERROR_INVALIDDATA;
-    avio_read(pb, version, 8);
+    ret = ffio_read_size(pb, version, 8);
+    if (ret < 0)
+        return ret;
     if (memcmp(version, MLV_VERSION, 5) || avio_rl64(pb) != guid)
         return AVERROR_INVALIDDATA;
     avio_skip(pb, size - 24);
@@ -97,7 +101,7 @@ static void read_string(AVFormatContext *avctx, AVIOContext *pb, const char *tag
     }
 
     ret = avio_read(pb, value, size);
-    if (ret != size || !value[0]) {
+    if (ret != size || !size || !value[0]) {
         av_free(value);
         return;
     }
@@ -524,6 +528,7 @@ static int get_packet_lj92(AVFormatContext *avctx, AVStream *st, AVIOContext *pb
     ret = avio_read(pbio, pkt->data + header_size, size);
     if (ret < 0)
         return ret;
+    av_shrink_packet(pkt, header_size + ret);
 
     return 0;
 }

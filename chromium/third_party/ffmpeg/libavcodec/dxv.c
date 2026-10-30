@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem.h"
 
@@ -828,7 +829,12 @@ static int dxv_decompress_dxt5(AVCodecContext *avctx)
 static int dxv_decompress_lzf(AVCodecContext *avctx)
 {
     DXVContext *ctx = avctx->priv_data;
-    return ff_lzf_uncompress(&ctx->gbc, &ctx->tex_data, &ctx->tex_size, &ctx->tex_data_size);
+    unsigned old_size = ctx->tex_data_size;
+    int ret = ff_lzf_uncompress(&ctx->gbc, &ctx->tex_data, &ctx->tex_size, &ctx->tex_data_size);
+    old_size = FFMAX(old_size, ctx->tex_size);
+    if (ctx->tex_data_size > old_size)
+        memset(ctx->tex_data + old_size, 0, ctx->tex_data_size - old_size);
+    return ret;
 }
 
 static int dxv_decompress_raw(AVCodecContext *avctx)
@@ -1036,7 +1042,7 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         ret = ff_texturedsp_exec_decompress_threads(avctx, &texdsp_ctx);
         if (ret < 0)
             return ret;
-        /* fallthrough */
+        av_fallthrough;
     case DXV_FMT_YCG6:
         /* BC5 texture with Co in the first half of each block and Cg in the second */
         ctexdsp_ctx.tex_data.in    = ctx->ctex_data;
@@ -1051,7 +1057,7 @@ static int dxv_decode(AVCodecContext *avctx, AVFrame *frame,
         ret = ff_texturedsp_exec_decompress_threads(avctx, &ctexdsp_ctx);
         if (ret < 0)
             return ret;
-        /* fallthrough */
+        av_fallthrough;
     case DXV_FMT_DXT1:
     case DXV_FMT_DXT5:
         /* For DXT1 and DXT5, self explanatory
@@ -1083,8 +1089,8 @@ static av_cold int dxv_init(AVCodecContext *avctx)
         return ret;
     }
 
-    /* Since codec is based on 4x4 blocks, size is aligned to 4 */
-    avctx->coded_width  = FFALIGN(avctx->width,  TEXTURE_BLOCK_W);
+    /* Codec is based on 4x4 blocks, but in practice width is aligned to 16 */
+    avctx->coded_width  = FFALIGN(avctx->width,  16);
     avctx->coded_height = FFALIGN(avctx->height, TEXTURE_BLOCK_H);
 
     ff_texturedsp_init(&ctx->texdsp);

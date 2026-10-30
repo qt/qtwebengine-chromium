@@ -198,8 +198,6 @@ static int mxpeg_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     MXpegDecodeContext *s = avctx->priv_data;
     MJpegDecodeContext *jpg = &s->jpg;
     const uint8_t *buf_end, *buf_ptr;
-    const uint8_t *unescaped_buf_ptr;
-    int unescaped_buf_size;
     int start_code;
     int ret;
 
@@ -212,15 +210,15 @@ static int mxpeg_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     s->got_mxm_bitmask = 0;
     s->got_sof_data = !!s->got_sof_data;
     while (buf_ptr < buf_end) {
-        start_code = ff_mjpeg_find_marker(jpg, &buf_ptr, buf_end,
-                                          &unescaped_buf_ptr, &unescaped_buf_size);
+        start_code = ff_mjpeg_find_marker(&buf_ptr, buf_end);
         if (start_code < 0)
             goto the_end;
 
-        bytestream2_init(&jpg->gB, unescaped_buf_ptr, unescaped_buf_size);
+        int bytes_left = buf_end - buf_ptr;
+        bytestream2_init(&jpg->gB, buf_ptr, bytes_left);
 
         if (start_code >= APP0 && start_code <= APP15) {
-            mxpeg_decode_app(s, unescaped_buf_ptr, unescaped_buf_size);
+            mxpeg_decode_app(s, buf_ptr, bytes_left);
         }
 
         switch (start_code) {
@@ -247,8 +245,7 @@ static int mxpeg_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
             }
             break;
         case COM:
-            ret = mxpeg_decode_com(s, unescaped_buf_ptr,
-                                   unescaped_buf_size);
+            ret = mxpeg_decode_com(s, buf_ptr, bytes_left);
             if (ret < 0)
                 return ret;
             break;
@@ -314,11 +311,16 @@ static int mxpeg_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
                                          AV_GET_BUFFER_FLAG_REF)) < 0)
                     return ret;
 
-                ret = ff_mjpeg_decode_sos(jpg, s->mxm_bitmask, s->bitmask_size, reference_ptr);
+                jpg->mb_bitmask = s->mxm_bitmask;
+                jpg->mb_bitmask_size = s->bitmask_size;
+                jpg->reference = reference_ptr;
+                ret = ff_mjpeg_decode_sos(jpg);
                 if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                     return ret;
             } else {
-                ret = ff_mjpeg_decode_sos(jpg, NULL, 0, NULL);
+                jpg->mb_bitmask = NULL;
+                jpg->reference = NULL;
+                ret = ff_mjpeg_decode_sos(jpg);
                 if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
                     return ret;
             }

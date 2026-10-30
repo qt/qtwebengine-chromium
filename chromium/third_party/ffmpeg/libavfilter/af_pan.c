@@ -70,7 +70,7 @@ static int parse_channel_name(char **arg, int *rchannel, int *rnamed)
 
     skip_spaces(arg);
     /* try to parse a channel name, e.g. "FL" */
-    if (sscanf(*arg, "%7[A-Z]%n", buf, &len)) {
+    if (sscanf(*arg, "%7[A-Z]%n", buf, &len) >= 1) {
         channel_id = av_channel_from_string(buf);
         if (channel_id < 0)
             return channel_id;
@@ -81,7 +81,7 @@ static int parse_channel_name(char **arg, int *rchannel, int *rnamed)
         return 0;
     }
     /* try to parse a channel number, e.g. "c2" */
-    if (sscanf(*arg, "c%d%n", &channel_id, &len) &&
+    if (sscanf(*arg, "c%d%n", &channel_id, &len) >= 1 &&
         channel_id >= 0 && channel_id < MAX_CHANNELS) {
         *rchannel = channel_id;
         *rnamed = 0;
@@ -209,6 +209,12 @@ static av_cold int init(AVFilterContext *ctx)
                 av_log(ctx, AV_LOG_ERROR,
                        "Can not mix named and numbered channels\n");
                 ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            if (in_ch_id < 0 || in_ch_id >= MAX_CHANNELS) {
+                av_log(ctx, AV_LOG_ERROR,
+                       "Input channel id %d is not supported\n", in_ch_id);
+                ret = AVERROR_PATCHWELCOME;
                 goto fail;
             }
             if (used_in_ch[in_ch_id]) {

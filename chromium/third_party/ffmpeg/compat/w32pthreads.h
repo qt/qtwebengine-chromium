@@ -53,7 +53,7 @@ typedef struct w32pthread_t {
     void *ret;
 } *pthread_t;
 
-/* use light weight mutex/condition variable API for Windows Vista and later */
+/* use light weight mutex/condition variable API */
 typedef SRWLOCK pthread_mutex_t;
 typedef CONDITION_VARIABLE pthread_cond_t;
 
@@ -144,6 +144,11 @@ static inline int pthread_mutex_unlock(pthread_mutex_t *m)
 {
     ReleaseSRWLockExclusive(m);
     return 0;
+}
+
+static inline int pthread_mutex_trylock(pthread_mutex_t *m)
+{
+    return TryAcquireSRWLockExclusive(m) == 0 ? EBUSY : 0;
 }
 
 typedef INIT_ONCE pthread_once_t;

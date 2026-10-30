@@ -33,6 +33,7 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/dict.h"
 #include "libavutil/common.h"
@@ -140,7 +141,7 @@ typedef struct GraphPrintContext {
 #define print_q(k, v, s)        avtext_print_rational(tfc, k, v, s)
 #define print_str(k, v)         avtext_print_string(tfc, k, v, 0)
 #define print_str_opt(k, v)     avtext_print_string(tfc, k, v, gpc->opt_flags)
-#define print_val(k, v, u)      avtext_print_unit_integer(tfc, k, v, u)
+#define print_val(k, v, u)      avtext_print_unit_integer(tfc, k, v, AV_TEXTFORMAT_VALUE_FMT_INT, u)
 
 #define print_fmt(k, f, ...) do {              \
     av_bprint_clear(&gpc->pbuf);                    \
@@ -271,7 +272,7 @@ static void print_link(GraphPrintContext *gpc, AVFilterLink *link)
         }
 
         if (link->w && link->h) {
-            if (tfc->show_value_unit) {
+            if (tfc->opts.show_value_unit) {
                 print_fmt("size", "%dx%d", link->w, link->h);
             } else {
                 print_int("width", link->w);
@@ -292,7 +293,7 @@ static void print_link(GraphPrintContext *gpc, AVFilterLink *link)
         ////print_str("format", av_x_if_null(av_get_subtitle_fmt_name(link->format), "?"));
 
         if (link->w && link->h) {
-            if (tfc->show_value_unit) {
+            if (tfc->opts.show_value_unit) {
                 print_fmt("size", "%dx%d", link->w, link->h);
             } else {
                 print_int("width", link->w);
@@ -306,7 +307,7 @@ static void print_link(GraphPrintContext *gpc, AVFilterLink *link)
         av_channel_layout_describe(&link->ch_layout, layout_string, sizeof(layout_string));
         print_str("channel_layout", layout_string);
         print_val("channels", link->ch_layout.nb_channels, "ch");
-        if (tfc->show_value_unit)
+        if (tfc->opts.show_value_unit)
             print_fmt("sample_rate", "%d.1 kHz", link->sample_rate / 1000);
         else
             print_val("sample_rate", link->sample_rate, "Hz");
@@ -912,8 +913,8 @@ static int init_graphprint(GraphPrintContext **pgpc, AVBPrint *target_buf)
     gpc->id_prefix_num = atomic_fetch_add(&prefix_num, 1);
     gpc->is_diagram = !!(tfc->formatter->flags & AV_TEXTFORMAT_FLAG_IS_DIAGRAM_FORMATTER);
     if (gpc->is_diagram) {
-        tfc->show_value_unit = 1;
-        tfc->show_optional_fields = -1;
+        tfc->opts.show_value_unit = 1;
+        tfc->opts.show_optional_fields = -1;
         gpc->opt_flags = AV_TEXTFORMAT_PRINT_STRING_OPTIONAL;
         gpc->skip_buffer_filters = 1;
         ////} else {

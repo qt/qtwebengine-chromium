@@ -20,6 +20,7 @@
 
 #include "libavutil/random_seed.h"
 #include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
 #include "vulkan_filter.h"
 
 #include "filters.h"
@@ -53,8 +54,7 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     AvgBlurVulkanContext *s = ctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
     const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
-
-    FFVulkanDescriptorSetBinding *desc;
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(s->vkctx.output_format);
 
     s->qf = ff_vk_qf_find(vkctx, VK_QUEUE_COMPUTE_BIT, 0);
     if (!s->qf) {
@@ -63,7 +63,7 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
     ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT,
                       NULL, (uint32_t []) { 32, 1, planes }, 0);
@@ -71,22 +71,19 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     ff_vk_shader_add_push_const(&s->shd, 0, sizeof(s->opts),
                                 VK_SHADER_STAGE_COMPUTE_BIT);
 
-    desc = (FFVulkanDescriptorSetBinding []) {
-        {
-            .name   = "input_img",
+    const FFVulkanDescriptorSetBinding desc_set[] = {
+        { /* input_img */
             .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .stages = VK_SHADER_STAGE_COMPUTE_BIT,
             .elems  = planes,
         },
-        {
-            .name   = "output_img",
+        { /* output_img */
             .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .stages = VK_SHADER_STAGE_COMPUTE_BIT,
             .elems  = planes,
         },
     };
-
-    ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 2, 0, 0);
+    ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc_set, 2, 0);
 
     RET(ff_vk_shader_link(vkctx, &s->shd,
                           ff_avgblur_comp_spv_data,
@@ -95,11 +92,13 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     RET(ff_vk_shader_register_exec(vkctx, &s->e, &s->shd));
 
     s->initialized = 1;
-    s->opts.filter_len[0] = s->size_x - 1;
-    s->opts.filter_len[1] = s->size_y - 1;
+    /* like avgblur, at most half the chroma plane */
+    s->opts.filter_len[0] = FFMIN(s->size_x,
+                                  AV_CEIL_RSHIFT(vkctx->output_width,  desc->log2_chroma_w) / 2);
+    s->opts.filter_len[1] = FFMIN(s->size_y,
+                                  AV_CEIL_RSHIFT(vkctx->output_height, desc->log2_chroma_h) / 2);
 
-    s->opts.filter_norm[0] = s->opts.filter_len[0]*2 + 1;
-    s->opts.filter_norm[0] = 1.0/(s->opts.filter_norm[0]*s->opts.filter_norm[0]);
+    s->opts.filter_norm[0] = 1.0/((s->opts.filter_len[0]*2 + 1)*(s->opts.filter_len[1]*2 + 1));
     s->opts.filter_norm[1] = s->opts.filter_norm[0];
     s->opts.filter_norm[2] = s->opts.filter_norm[0];
     s->opts.filter_norm[3] = s->opts.filter_norm[0];
@@ -127,7 +126,7 @@ static int avgblur_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
 
     RET(ff_vk_filter_process_simple(&s->vkctx, &s->e, &s->shd,
                                     out, in, VK_NULL_HANDLE,
-                                    &s->opts, sizeof(s->opts)));
+                                    1, &s->opts, sizeof(s->opts)));
 
     err = av_frame_copy_props(out, in);
     if (err < 0)

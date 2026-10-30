@@ -20,6 +20,7 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+#include <limits.h>
 #include <stdbool.h>
 
 #include "libavcodec/cbs_h266.h"
@@ -1045,14 +1046,39 @@ static void decode_recovery_flag(VVCContext *s)
         s->no_output_before_recovery_flag = s->last_eos;
 }
 
-static void decode_recovery_poc(VVCContext *s, const VVCPH *ph)
+static int decode_recovery_poc(VVCContext *s, const VVCFrameParamSets *fps)
 {
+    const VVCPH *ph = &fps->ph;
+
+    if (IS_GDR(s)) {
+        const uint32_t recovery_poc_cnt     = ph->r->ph_recovery_poc_cnt;
+        const uint32_t max_recovery_poc_cnt = fps->sps->max_pic_order_cnt_lsb - 1;
+
+        const int64_t recovery_poc = (int64_t)ph->poc + recovery_poc_cnt;
+        if (recovery_poc < INT_MIN || recovery_poc > INT_MAX) {
+            av_log(s->avctx, AV_LOG_ERROR, "Recovery point POC out of range: %"PRId64".\n", recovery_poc);
+            return AVERROR_INVALIDDATA;
+        }
+
+        if (recovery_poc_cnt > max_recovery_poc_cnt) {
+            const int strict = s->avctx->strict_std_compliance >= FF_COMPLIANCE_STRICT;
+            av_log(s->avctx, strict ? AV_LOG_ERROR : AV_LOG_WARNING,
+                   "ph_recovery_poc_cnt out of range: %"PRIu32
+                   ", expected [0, %"PRIu32"].\n", recovery_poc_cnt, max_recovery_poc_cnt);
+            if (strict)
+                return AVERROR_INVALIDDATA;
+        }
+
+        if (s->no_output_before_recovery_flag)
+            s->gdr_recovery_point_poc = recovery_poc;
+    }
+
     if (s->no_output_before_recovery_flag) {
-        if (IS_GDR(s))
-            s->gdr_recovery_point_poc = ph->poc + ph->r->ph_recovery_poc_cnt;
         if (!GDR_IS_RECOVERED(s) && s->gdr_recovery_point_poc <= ph->poc)
             GDR_SET_RECOVERED(s);
     }
+
+    return 0;
 }
 
 int ff_vvc_decode_frame_ps(struct VVCFrameContext *fc, struct VVCContext *s)
@@ -1071,8 +1097,10 @@ int ff_vvc_decode_frame_ps(struct VVCFrameContext *fc, struct VVCContext *s)
         return ret;
 
     ret = decode_frame_ps(fps, ps, sc, s->poc_tid0, is_clvss, s);
-    decode_recovery_poc(s, &fps->ph);
-    return ret;
+    if (ret < 0)
+        return ret;
+
+    return decode_recovery_poc(s, fps);
 }
 
 void ff_vvc_frame_ps_free(VVCFrameParamSets *fps)
@@ -1439,7 +1467,7 @@ static void sh_partition_constraints(VVCSH *sh, const H266RawSPS *sps, const H26
     sh->min_qt_size[CHROMA] = 1 << min_qt_log2_size_y[CHROMA];
 }
 
-static void sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
+static int sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
 {
     if (sps->sps_entry_point_offsets_present_flag) {
         for (int i = 1, j = 0; i < sh->num_ctus_in_curr_slice; i++) {
@@ -1450,10 +1478,14 @@ static void sh_entry_points(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
             if (pps->ctb_to_row_bd[ctb_addr_y] != pps->ctb_to_row_bd[pre_ctb_addr_y] ||
                 pps->ctb_to_col_bd[ctb_addr_x] != pps->ctb_to_col_bd[pre_ctb_addr_x] ||
                 (ctb_addr_y != pre_ctb_addr_y && sps->sps_entropy_coding_sync_enabled_flag)) {
+                if (j >= VVC_MAX_ENTRY_POINTS)
+                    return AVERROR_INVALIDDATA;
                 sh->entry_point_start_ctu[j++] = i;
             }
         }
     }
+
+    return 0;
 }
 
 static int sh_derive(VVCSH *sh, const VVCFrameParamSets *fps)
@@ -1473,7 +1505,9 @@ static int sh_derive(VVCSH *sh, const VVCFrameParamSets *fps)
     sh_qp_y(sh, pps, ph);
     sh_deblock_offsets(sh);
     sh_partition_constraints(sh, sps, ph);
-    sh_entry_points(sh, sps, fps->pps);
+    ret = sh_entry_points(sh, sps, fps->pps);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }

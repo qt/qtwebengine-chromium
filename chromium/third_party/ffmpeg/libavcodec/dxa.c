@@ -24,6 +24,7 @@
  * DXA Video decoder
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "bytestream.h"
@@ -82,6 +83,7 @@ static int decode_13(AVCodecContext *avctx, DxaDecContext *c, uint8_t* dst,
                     return AVERROR_INVALIDDATA;
                 }
                 tmp2 += x + y*stride;
+                av_fallthrough;
             case 0: // skip
             case 5: // skip in method 12
                 for(y = 0; y < 4; y++){
@@ -144,6 +146,7 @@ static int decode_13(AVCodecContext *avctx, DxaDecContext *c, uint8_t* dst,
                             return AVERROR_INVALIDDATA;
                         }
                         tmp2 += x + y*stride;
+                        av_fallthrough;
                     case 0x00: // skip
                         tmp[d + 0         ] = tmp2[0];
                         tmp[d + 1         ] = tmp2[1];
@@ -335,7 +338,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
     c->dsize = avctx->width * avctx->height * 2;
-    c->decomp_buf = av_malloc(c->dsize + DECOMP_BUF_PADDING);
+    c->decomp_buf = av_mallocz(c->dsize + DECOMP_BUF_PADDING);
     if (!c->decomp_buf) {
         av_log(avctx, AV_LOG_ERROR, "Can't allocate decompression buffer.\n");
         return AVERROR(ENOMEM);

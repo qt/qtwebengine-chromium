@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
@@ -237,7 +238,7 @@ static void unpack_frame(AVCodecContext *avctx, AVFrame *p, const uint8_t *buf,
         break;
     case 16:
         elements *= 2;
-    // fall-through
+        av_fallthrough;
     case 8:
         if (   avctx->pix_fmt == AV_PIX_FMT_YUVA444P
             || avctx->pix_fmt == AV_PIX_FMT_YUV444P) {
@@ -769,13 +770,16 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     buf =  avpkt->data + offset;
     dpx->frame = p;
 
+    ret = ff_hwaccel_frame_priv_alloc(avctx, &dpx->hwaccel_picture_private);
+    if (ret < 0)
+        return ret;
+
+    /* Everything the next frame thread needs is known, let it start */
+    ff_thread_finish_setup(avctx);
+
     /* Start */
     if (avctx->hwaccel) {
         const FFHWAccel *hwaccel = ffhwaccel(avctx->hwaccel);
-
-        ret = ff_hwaccel_frame_priv_alloc(avctx, &dpx->hwaccel_picture_private);
-        if (ret < 0)
-            return ret;
 
         ret = hwaccel->start_frame(avctx, avpkt->buf, buf, avpkt->size - offset);
         if (ret < 0)

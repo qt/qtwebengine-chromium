@@ -24,9 +24,8 @@
 #define AVFILTER_SCALE_CUDA_H
 
 #if defined(__CUDACC__) || defined(__CUDA__)
-#include <stdint.h>
 typedef cudaTextureObject_t CUtexObject;
-typedef uint8_t* CUdeviceptr;
+typedef unsigned char* CUdeviceptr;
 #else
 #include <ffnvcodec/dynlink_cuda.h>
 #endif
@@ -45,6 +44,13 @@ typedef struct {
     int src_height;
     float param;
     int mpeg_range;
+    int src_depth;
+    int src_storage_max;
+
+    /* Weights for the generic filter kernel */
+    CUdeviceptr weights;
+    CUdeviceptr offsets;
+    int filter_size;
 } CUDAScaleKernelParams;
 
 #endif

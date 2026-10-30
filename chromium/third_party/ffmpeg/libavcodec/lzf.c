@@ -32,22 +32,22 @@
 #include "libavutil/mem.h"
 
 #include "bytestream.h"
+#include "defs.h"
 #include "lzf.h"
 
 #define LZF_LITERAL_MAX (1 << 5)
 #define LZF_LONG_BACKREF 7 + 2
 
 
-static inline int lzf_realloc(uint8_t **buf, size_t *size, int addition, unsigned *allocated_size)
+static inline int lzf_realloc(uint8_t **buf, size_t new_size, unsigned *allocated_size)
 {
-    void *ptr = av_fast_realloc(*buf, allocated_size, *size + addition);
+    void *ptr = av_fast_realloc(*buf, allocated_size, new_size);
 
     if (!ptr) {
         av_freep(buf); //probably not needed
         return AVERROR(ENOMEM);
     }
     *buf = ptr;
-    *size += addition;
 
     return 0;
 }
@@ -63,8 +63,8 @@ int ff_lzf_uncompress(GetByteContext *gb, uint8_t **buf, size_t *size, unsigned 
 
         if (s < LZF_LITERAL_MAX) {
             s++;
-            if (s > *size - len) {
-                ret = lzf_realloc(buf, size, s, allocated_size);
+            if (s + AV_INPUT_BUFFER_PADDING_SIZE > *allocated_size - len) {
+                ret = lzf_realloc(buf, len + s + AV_INPUT_BUFFER_PADDING_SIZE, allocated_size);
                 if (ret < 0)
                     return ret;
                 p = *buf + len;
@@ -88,8 +88,8 @@ int ff_lzf_uncompress(GetByteContext *gb, uint8_t **buf, size_t *size, unsigned 
             if (off > len)
                 return AVERROR_INVALIDDATA;
 
-            if (l > *size - len) {
-                ret = lzf_realloc(buf, size, l, allocated_size);
+            if (l + AV_INPUT_BUFFER_PADDING_SIZE > *allocated_size - len) {
+                ret = lzf_realloc(buf, len + l + AV_INPUT_BUFFER_PADDING_SIZE, allocated_size);
                 if (ret < 0)
                     return ret;
                 p = *buf + len;
@@ -101,6 +101,9 @@ int ff_lzf_uncompress(GetByteContext *gb, uint8_t **buf, size_t *size, unsigned 
             len += l;
         }
     }
+
+    if (*buf)
+        memset(*buf + len, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     *size = len;
 

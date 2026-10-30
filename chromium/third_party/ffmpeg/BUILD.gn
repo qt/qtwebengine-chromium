@@ -78,7 +78,7 @@ if (has_nasm_deps) {
     }
 
     # See comments on fix_textrels config.
-    if (use_lld && current_cpu == "x86" && !is_win) {
+    if ((use_lld || use_mold) && current_cpu == "x86" && !is_win) {
       all_dependent_configs = [ ":fix_textrels" ]
     }
   }
@@ -213,6 +213,33 @@ buildflag_header("ffmpeg_features") {
   }
 }
 
+if (os_config == "linux-noasm") {
+  # When assembly is disabled, exclude architecture-specific C init files
+  # (which contain static global tables referencing assembly functions) to
+  # prevent unresolved symbol lookup errors in libffmpeg.so, while preserving
+  # core C utility files like cpu.c. Also clear GNU Assembler sources.
+  _filtered_c_sources = filter_exclude(ffmpeg_c_sources,
+                                       [
+                                         "*/x86/*_init.c",
+                                         "*/x86/*_init_*.c",
+                                         "*/arm/*_init.c",
+                                         "*/arm/*_init_*.c",
+                                         "*/aarch64/*_init.c",
+                                         "*/aarch64/*_init_*.c",
+                                         "*/riscv/*_init.c",
+                                         "*/riscv/*_init_*.c",
+                                         "*/mips/*_init.c",
+                                         "*/mips/*_init_*.c",
+                                         "*/loongarch/*_init.c",
+                                         "*/loongarch/*_init_*.c",
+                                         "*/ppc/*_init.c",
+                                         "*/ppc/*_init_*.c",
+                                       ])
+  ffmpeg_c_sources = []
+  ffmpeg_c_sources = _filtered_c_sources
+  ffmpeg_gas_sources = []
+}
+
 if (is_component_ffmpeg) {
   link_target_type = "source_set"
 } else {
@@ -292,7 +319,7 @@ target(link_target_type, "ffmpeg_internal") {
   # Windows builds can't compile without EBP because we can't omit frame
   # pointers like we do on posix.
   if (current_cpu == "x86") {
-    if (using_sanitizer || is_win || use_lld) {
+    if (using_sanitizer || is_win || use_lld || use_mold) {
       defines += [ "HAVE_EBP_AVAILABLE=0" ]
     } else {
       defines += [ "HAVE_EBP_AVAILABLE=1" ]
@@ -301,7 +328,7 @@ target(link_target_type, "ffmpeg_internal") {
     # Despite the name, this isn't fixing any bugs with the linker. It's just
     # preventing ffmpeg from silently emitting text relocations. See discussion
     # https://crbug.com/911658#c19 and https://trac.ffmpeg.org/ticket/7878
-    if (use_lld && !is_win) {
+    if ((use_lld || use_mold) && !is_win) {
       defines += [ "BROKEN_RELOCATIONS=1" ]
     }
   }
@@ -396,14 +423,6 @@ target(link_target_type, "ffmpeg_internal") {
       "_LARGEFILE_SOURCE",
       "HAVE_AV_CONFIG_H",
     ]
-
-    if (is_component_ffmpeg) {
-      # Required to avoid 4049 and 4217 errors around redundant imports.
-      cflags += [
-        "/FIcompat/msvcrt/snprintf.h",
-        "/FIcompat/msvcrt/strtod.h",
-      ]
-    }
 
     # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
     cflags += [

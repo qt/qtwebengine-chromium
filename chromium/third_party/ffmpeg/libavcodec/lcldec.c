@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
@@ -119,6 +120,9 @@ static unsigned int mszh_decomp(const unsigned char * srcptr, int srclen, unsign
         }
     }
 
+    if (destptr < destptr_end)
+        memset(destptr, 0, destptr_end - destptr);
+
     return destptr - destptr_bak;
 }
 
@@ -152,8 +156,11 @@ static int zlib_decomp(AVCodecContext *avctx, const uint8_t *src, int src_len, i
     if (expected != (unsigned int)zstream->total_out) {
         av_log(avctx, AV_LOG_ERROR, "Decoded size differs (%d != %lu)\n",
                expected, zstream->total_out);
-        if (expected > (unsigned int)zstream->total_out)
+        if (expected > (unsigned int)zstream->total_out) {
+            memset(c->decomp_buf + offset + zstream->total_out, 0,
+                   c->decomp_size - offset - zstream->total_out);
             return (unsigned int)zstream->total_out;
+        }
         return AVERROR_UNKNOWN;
     }
     return zstream->total_out;
@@ -175,7 +182,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     int height = avctx->height; // Real image height
     unsigned int mszh_dlen;
     unsigned char yq, y1q, uq, vq;
-    int uqvq, ret;
+    int ret;
     unsigned int mthread_inlen, mthread_outlen;
     unsigned int len = buf_size;
     int linesize, offset;
@@ -239,11 +246,13 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
                 break;
             case IMGTYPE_YUV422:
                 aligned_width &= ~3;
+                av_fallthrough;
             case IMGTYPE_YUV211:
                 bppx2 = 4;
                 break;
             case IMGTYPE_YUV411:
                 aligned_width &= ~3;
+                av_fallthrough;
             case IMGTYPE_YUV420:
                 bppx2 = 3;
                 break;
@@ -283,6 +292,8 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
             ret = zlib_decomp(avctx, buf + 8 + mthread_inlen, len - 8 - mthread_inlen,
                               mthread_outlen, mthread_outlen);
             if (ret < 0) return ret;
+            memset(c->decomp_buf + mthread_outlen + ret, 0,
+                   c->decomp_size - mthread_outlen - ret);
             len = c->decomp_size;
         } else {
             int ret = zlib_decomp(avctx, buf, len, 0, c->decomp_size);
@@ -306,7 +317,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
             for (row = 0; row < height; row++) {
                 pixel_ptr = row * width * 3;
                 yq = encoded[pixel_ptr++];
-                uqvq = AV_RL16(encoded+pixel_ptr);
+                unsigned uqvq = AV_RL16(encoded+pixel_ptr);
                 pixel_ptr += 2;
                 for (col = 1; col < width; col++) {
                     encoded[pixel_ptr] = yq -= encoded[pixel_ptr];

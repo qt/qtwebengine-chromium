@@ -377,6 +377,24 @@ on MPEG-4 Part 14 format with a few incompatible variants, used to
 play files on PlayStation devices.
 @end table
 
+@subsection Stereoscopic 3D
+
+When the output stream has stereoscopic 3D side data (see the
+@option{-stereo3d} option), these muxers write:
+
+@itemize
+@item
+MP4: Google spatial-media @code{st3d} and Apple @code{vexu} can be
+written for supported metadata with @option{-strict unofficial}.
+Stricter compliance levels skip these boxes. Warnings are logged
+when stereoscopic or spherical side data is present, naming
+@code{st3d} or @code{sv3d}, respectively; there is no corresponding
+compliance warning for @code{vexu}. Monoscopic layouts do not
+produce an @code{eyes} box.
+@item
+MOV: Apple @code{vexu} eyes only. @code{st3d} is not written.
+@end itemize
+
 @subsection Fragmentation
 
 The @samp{mov}, @samp{mp4}, and @samp{ismv} muxers support
@@ -882,6 +900,17 @@ Specify loop end position expressed in milliseconds, from @code{0} to
 assumes the total stream duration.
 @end table
 
+@section astc
+ASTC (Adaptive Scalable Texture Compression) muxer.
+
+This muxer accepts a single @samp{libastcenc} video stream and writes one
+image: the 16-byte @file{.astc} header, taken from the encoder's extradata,
+followed by the raw ASTC bitstream. The block footprint and the image
+dimensions come from the same extradata, and a second packet is rejected.
+
+Use the @file{.ktx} container for a texture that also needs its color space
+or row order recorded.
+
 @section au
 SUN AU audio muxer.
 
@@ -1330,10 +1359,20 @@ element. Imply that the @option{single_file} option is set to
 @var{true}. In the template, @code{$ext$} is replaced with the file
 name extension specific for the segment format.
 
+@item availability_start_time_ms @var{milliseconds}
+Set the MPD @code{availabilityStartTime} attribute as Unix epoch time in
+milliseconds. If set to @code{0}, the wall clock is used when the first
+packet is written. This is useful for live outputs that need a stable
+availability start time across restarts.
+
 @item streaming @var{bool}
 Enable or disable chunk streaming mode of output. In chunk streaming
 mode, each frame will be a @code{moof} fragment which forms a
 chunk. This is disabled by default.
+
+@item suggested_presentation_delay @var{duration}
+Set the MPD @code{suggestedPresentationDelay} attribute. If set to
+@code{0}, the last segment duration is used.
 
 @item target_latency @var{target_latency}
 Set an intended target latency in seconds for serving (fractional
@@ -1759,7 +1798,7 @@ See also the @ref{framehash} and @ref{md5} muxers.
 Animated GIF muxer.
 
 Note that the GIF format has a very large time base: the delay between two frames can
-therefore not be smaller than one centi second.
+therefore not be smaller than one centisecond.
 
 @subsection Options
 @table @option
@@ -2644,6 +2683,12 @@ writing is completed. Default is disabled.
 @item protocol_opts @var{options_list}
 Set protocol options as a :-separated list of key=value parameters. Values
 containing the @code{:} special character must be escaped.
+
+@item update_filemtime @var{bool}
+If set to 1, set each output file's modification time to the
+@code{creation_time} metadata value plus the frame's PTS offset.
+If @code{creation_time} is missing or unparsable, a warning is
+logged and the option is ignored. Default value is 0.
 @end table
 
 @subsection Examples
@@ -2652,7 +2697,7 @@ containing the @code{:} special character must be escaped.
 Use @command{ffmpeg} for creating a sequence of files @file{img-001.jpeg},
 @file{img-002.jpeg}, ..., taking one image every second from the input video:
 @example
-ffmpeg -i in.avi -vsync cfr -r 1 -f image2 'img-%03d.jpeg'
+ffmpeg -i in.avi -fps_mode cfr -r 1 -f image2 'img-%03d.jpeg'
 @end example
 
 Note that with @command{ffmpeg}, if the format is not specified with the
@@ -2660,7 +2705,7 @@ Note that with @command{ffmpeg}, if the format is not specified with the
 format, the image2 muxer is automatically selected, so the previous
 command can be written as:
 @example
-ffmpeg -i in.avi -vsync cfr -r 1 'img-%03d.jpeg'
+ffmpeg -i in.avi -fps_mode cfr -r 1 'img-%03d.jpeg'
 @end example
 
 Note also that the pattern must not necessarily contain "%d" or
@@ -2712,6 +2757,79 @@ computer-generated compositions.
 
 This muxer accepts a single audio stream containing PCM data.
 
+@section iterm2
+iTerm2 inline image protocol muxer.
+
+This muxer writes video frames as OSC 1337 inline images for display in
+terminals that support the iTerm2 image protocol. Use @option{-re} to limit
+the output rate to the source framerate; without it, frames are emitted as
+fast as they are encoded, which is usually not desired for live display.
+
+Frames are sent with the multipart form of the protocol, which splits each
+image across several short control sequences. This avoids the per-sequence
+size limit that otherwise discards large frames, and requires iTerm2 3.5 or
+newer.
+
+The output is a self-contained byte stream and can be redirected to a file.
+Replaying the file with @command{cat} displays the images in the terminal.
+
+@subsection Options
+@table @option
+@item display_width @var{size}
+Set the displayed image width. @var{size} can be @samp{auto}, @var{N} terminal
+cells, @var{N}px pixels, or @var{N}% of the terminal width. When unset, the
+terminal derives the width from the image.
+
+@item display_height @var{size}
+Set the displayed image height. @var{size} uses the same syntax as
+@option{display_width}. When unset, the terminal derives the height from the
+image.
+
+@item keep_aspect @var{bool}
+Preserve the input aspect ratio when scaling. Default is enabled.
+
+@item tmux @var{bool}
+Wrap image data in tmux DCS passthrough. This requires a tmux version whose
+passthrough sequence size limit is large enough for image data, with
+passthrough enabled via @command{tmux set -g allow-passthrough on}. Default is
+disabled.
+@end table
+
+@subsection Examples
+
+Display a video in an iTerm2 terminal:
+@example
+ffmpeg -re -i input.mp4 -f iterm2 -
+@end example
+
+Scale the displayed image to 40 terminal cells tall. Inside tmux, enable
+passthrough first with @command{tmux set -g allow-passthrough on}, then add
+@option{tmux}:
+@example
+ffmpeg -re -i input.mp4 -f iterm2 -display_height 40 -tmux 1 -
+@end example
+
+@section jpeg_mpf
+JPEG Multi-Picture Format muxer.
+
+Stores multiple JPEG images in a single file using the CIPA DC-007 MP
+extensions. The first input stream is always the primary image. Every other
+stream must be specified by a stream group describing what it is; see the
+@option{-stream_group} option of the @command{ffmpeg} tool.
+
+Note: Currently, the only implemented type of stream group is @samp{gain_map},
+which may be used to store a gain map for JPEG Ultra HDR.
+
+@subsection Examples
+
+Encode an SDR tone-mapped image and an HDR gain map computed from it:
+@example
+ffmpeg -i input-hdr.png -filter_complex
+"[0:v] scale=out_transfer=srgb:out_primaries=bt709,split [base][sdr];
+[base][0:v] gainmap [gain]" -map "[sdr]" -map "[gain]" -c:v mjpeg
+-stream_group type=gain_map:st=0:st=1:el_index=1 -f jpeg_mpf output.jpg
+@end example
+
 @section ivf
 On2 IVF muxer.
 
@@ -2728,6 +2846,36 @@ This muxer accepts a single @samp{jacosub} subtitles stream.
 
 For more information about the format, see
 @url{http://unicorn.us.com/jacosub/jscripts.html}.
+
+@section ktx
+Khronos Texture 1.0 muxer for ASTC textures.
+
+This muxer accepts a single @samp{libastcenc} video stream and writes one
+image: the ASTC block size and the image dimensions are taken from the
+encoder's extradata, and a second packet is rejected. The stored row order
+is recorded in a @code{KTXorientation} key.
+
+@subsection Options
+
+@table @option
+
+@item srgb @var{integer}
+Select the GL internal format color space. Possible values:
+@table @samp
+@item auto
+Use the color profile published by the encoder, which is the default.
+@item linear
+Write the linear ASTC format.
+@item srgb
+Write the sRGB ASTC format.
+@end table
+
+An explicit value that contradicts a known encoder profile is rejected.
+A raw @file{.astc} input does not carry a color profile, so remuxing it to
+@file{.ktx} with @code{auto} writes the sRGB format; pass
+@option{-srgb linear} to keep a linear texture.
+
+@end table
 
 @section kvag
 Simon & Schuster Interactive VAG muxer.
@@ -2750,6 +2898,14 @@ LRC (short for LyRiCs) is a computer file format that synchronizes
 song lyrics with an audio file, such as MP3, Vorbis, or MIDI.
 
 This muxer accepts a single @samp{subrip} or @samp{text} subtitles stream.
+
+@subsection Options
+@table @option
+@item precision @var{number}
+Set the number of decimal digits used for the fractional (sub-second)
+part of the timestamps. Range is @code{1} to @code{6}. Default is
+@code{2}, i.e. centiseconds.
+@end table
 
 @subsection Metadata
 The following metadata tags are converted to the format corresponding
@@ -2791,6 +2947,11 @@ French).
 
 @item stereo_mode
 Set stereo 3D video layout of two views in a single video track.
+The @option{-stereo3d} option overrides existing stereoscopic side data
+and @code{stereo_mode} metadata for the selected output stream.
+Otherwise, stream-level @code{stereo_mode} metadata takes priority over
+global metadata, and stereoscopic side data is used when neither tag is
+present.
 
 The following values are recognized:
 @table @samp
@@ -3069,7 +3230,7 @@ Default is @code{0x0001}.
 Set the @samp{original_network_id}. This is unique identifier of a
 network in DVB. Its main use is in the unique identification of a service
 through the path @samp{Original_Network_ID, Transport_Stream_ID}. Default
-is @code{0x0001}.
+is @code{0xff01}.
 
 @item mpegts_service_id @var{integer}
 Set the @samp{service_id}, also known as program in DVB. Default is
@@ -3096,6 +3257,8 @@ MPEG2 Digital HDTV service.
 Advanced Codec Digital SDTV service.
 @item advanced_codec_digital_hdtv
 Advanced Codec Digital HDTV service.
+@item hevc_digital_hdtv
+HEVC Digital Television service.
 @end table
 
 @item mpegts_pmt_start_pid @var{integer}
@@ -3149,6 +3312,12 @@ Override the default PCR retransmission time in milliseconds. Default is
 @code{-1} which means that the PCR interval will be determined automatically:
 20 ms is used for CBR streams, the highest multiple of the frame duration which
 is less than 100 ms is used for VBR streams.
+
+@item mpegts_pcr_pid @var{integer}
+Set a separate PID for PCR packets. When set to a valid PID value, PCR is
+carried in adaptation-field-only packets on the specified PID, separate from
+the elementary stream PIDs. This is required for example by ARIB TR-B14.
+Default is @code{-1} which means PCR is placed on the elementary stream PIDs.
 
 @item pat_period @var{duration}
 Maximum time in seconds between PAT/PMT tables. Default is @code{0.1}.
@@ -3266,10 +3435,35 @@ possible. A value of 1 will effectively use 1 packet-per-page in most
 situations, giving a small seek granularity at the cost of additional container
 overhead.
 @item -serial_offset @var{value}
-Serial value from which to set the streams serial number.
-Setting it to different and sufficiently large values ensures that the produced
-ogg files can be safely chained.
+Serial number of the first stream in bitexact mode, the others following
+consecutively.
+Chained links need distinct serial numbers, which disjoint ranges of values
+guarantee.
+The default of -1 derives each serial number from the stream's headers
+instead.
+This makes links with different headers or tags unlikely to share a serial
+number, without ruling it out.
+Links with identical headers and tags always share one, which separately muxed
+outputs avoid with explicit offsets.
 
+A link the muxer starts itself on new stream metadata keeps the offset of the
+link before it.
+With an explicit offset it then reuses its serial number.
+With the default it does so when its headers and tags are unchanged.
+
+@end table
+
+@section pdv
+
+Playdate Video muxer.
+
+This muxer writes the Playdate video container used by Panic's Playdate SDK.
+It requires a seekable output and a single PDV video stream.
+
+@table @option
+@item max_frames @var{frames}
+Reserve space for at most @var{frames} video frames in the file header. This
+option is mandatory.
 @end table
 
 @anchor{rcwtenc}
@@ -3517,6 +3711,13 @@ Wrap around segment index once it reaches @var{limit}.
 @item segment_start_number @var{number}
 Set the sequence number of the first segment. Defaults to @code{0}.
 
+@item segment_wrap_number @var{number}
+Set the number of times the segment index is assumed to have already wrapped
+when generating the indexes reported in the segment list. Together with
+@option{segment_wrap} and @option{segment_start_number} it offsets the reported
+index, which is computed as @code{segment_start_number + segment_wrap *
+segment_wrap_number}. Defaults to @code{0}.
+
 @item strftime @var{1|0}
 Use the @code{strftime} function to define the name of the new
 segments to write. If this is selected, the output segment name must
@@ -3543,6 +3744,25 @@ argument must be a time duration specification, and defaults to 0.
 If enabled, write an empty segment if there are no packets during the period a
 segment would usually span. Otherwise, the segment will be filled with the next
 packet written. Defaults to @code{0}.
+
+@item write_header_trailer @var{bool}
+Write a header to the first segment and a trailer to the last one, instead of
+writing a header and a trailer to every individual segment. Disabling it
+(@code{false}) also forces @option{individual_header_trailer} to @code{false},
+so that no segment is given a header or trailer. Default value is @code{true}.
+
+@item individual_header_trailer @var{bool}
+If enabled, write a complete header and trailer to every segment, making each
+segment an independently usable file. If disabled (@code{false}), only the first
+segment is given a header and only the last one a trailer. It is forced to
+@code{false} when @option{write_header_trailer} is @code{false} or when
+@option{segment_header_filename} is set. Default value is @code{true}.
+
+@item segment_header_filename @var{name}
+Write the stream header to a separate file named @var{name} instead of storing
+it in the segments. Setting it forces @option{write_header_trailer} to
+@code{true} and @option{individual_header_trailer} to @code{false}, so the
+header is written only once, to @var{name}. Unset by default.
 @end table
 
 Make sure to require a closed GOP when encoding and to set the GOP
@@ -3808,6 +4028,76 @@ ffmpeg -i ... -map 0 -flags +global_header -c:v libx264 -c:a aac
 @end example
 @end itemize
 
+@section wav
+
+RIFF Wave Audio muxer.
+
+@subsection Options
+
+@table @option
+
+@item rf64 @var{mode}
+Choose whether to use the RF64 file format instead of RIFF.
+RF64 allows files larger than 4 gigabytes, but RF64 support is not as
+universal as RIFF.
+
+The following modes are recognized:
+@table @samp
+@item auto
+Start writing a standard RIFF file to retain compatibility with non-RF64-aware
+software, but switch to RF64 if the output file grows larger than 4 gigabytes.
+Reserves a small amount of extra space in the header using a @code{JUNK} chunk,
+which should be ignored by all compliant RIFF readers, but some extremely
+simplistic WAV readers may be confused by this.
+
+@item always
+Always use the RF64 format regardless of file size. The output file will only
+be readable by RF64-compatible software and is no longer a standard RIFF WAVE
+file.
+
+@item never
+Always use plain RIFF, never RF64. This mode is the most compatible with legacy
+software, but if the output file grows beyond 4 gigabytes, the 32-bit size field
+in the @code{data} chunk will no longer be able to correctly represent the size,
+and most audio software will not be able to read some or all of the data.
+(The @ref{wav} demuxer's @code{ignore_length} option can be used to recover such
+a file.)
+This is the default mode.
+@end table
+
+@item write_bext @var{bool}
+Add a Broadcast Wave Format @code{BEXT} chunk containing extended audio
+metadata if enabled. Defaults to false.
+
+@item write_peak @var{mode}
+Add a Peak Envelope chunk (EBU Tech 3285 Supplement 3) if enabled.
+Defaults to off.
+
+@table @samp
+@item off
+Do not add the Peak Envelope chunk.
+
+@item on
+Add the Peak Envelope chunk, calculating the peak values based on the
+@code{peak_block_size}, @code{peak_format}, and @code{peak_ppv} options.
+
+@item only
+Like @code{on}, but skip writing the actual audio data (no @code{data}
+chunk will be written to the file; only the Peak Envelope and other metadata
+chunks will be written.)
+@end table
+
+@item peak_block_size @var{int}
+Number of audio samples used to generate each peak frame, up to 65536.
+Default is 256.
+
+@item peak_format @var{format}
+The format of the peak envelope data (1: uint8, 2: uint16). Default is 2 (uint16).
+
+@item peak_ppv @var{int}
+Number of peak points per peak value (1 or 2). Default is 2.
+@end table
+
 @section webm_chunk
 
 WebM Live Chunk Muxer.
@@ -3951,15 +4241,17 @@ This muxer supports the following options:
 Set the timeout in milliseconds for ICE and DTLS handshake.
 Default value is 5000.
 
+@item timeout @var{integer}
+Set timeout in seconds for socket I/O operations. Applicable only for HTTP output.
+Default value is -1.
+
 @item pkt_size @var{integer}
 Set the maximum size, in bytes, of RTP packets that send out.
 Default value is 1200.
 
-@item buffer_size, ts_buffer_size @var{integer}
+@item ts_buffer_size @var{integer}
 Set the buffer size, in bytes, of underlying protocol.
 Default value is -1(auto). The UDP auto selects a reasonable value.
-
-Using the buffer_size option name is deprecated and should not be used.
 
 @item whip_flags @var{flags}
 Possible values:
@@ -3968,6 +4260,10 @@ Possible values:
 @item dtls_active
 The muxer will try to set dtls active role and send the first client hello.
 @end table
+
+@item rtp_history @var{integer}
+Set the number of RTP history items to store.
+Default value is 512.
 
 @item authorization @var{string}
 The optional Bearer token for WHIP Authorization.

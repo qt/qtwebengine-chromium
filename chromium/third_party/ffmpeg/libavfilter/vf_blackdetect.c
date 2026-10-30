@@ -168,8 +168,8 @@ static int black_counter(AVFilterContext *ctx, void *arg,
     const int plane = s->alpha ? 3 : 0;
     const int linesize = in->linesize[plane];
     const int h = in->height;
-    const int start = (h * jobnr) / nb_jobs;
-    const int end = (h * (jobnr+1)) / nb_jobs;
+    const int start = ff_slice_pos(h, jobnr, nb_jobs);
+    const int end = ff_slice_pos(h, jobnr + 1, nb_jobs);
 
     s->counter[jobnr] = s->func(in->data[plane] + start * linesize,
                                 linesize, in->width, end - start,
@@ -187,7 +187,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *picref)
     const int max = (1 << s->depth) - 1;
     const int factor = (1 << (s->depth - 8));
     const int full = picref->color_range == AVCOL_RANGE_JPEG ||
-                     ff_fmt_is_in(picref->format, yuvj_formats) ||
+                     ff_pixfmt_is_in(picref->format, yuvj_formats) ||
                      s->alpha;
 
     s->pixel_black_th_i = full ? s->pixel_black_th * max :

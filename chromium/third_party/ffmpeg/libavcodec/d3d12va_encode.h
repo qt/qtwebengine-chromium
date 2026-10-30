@@ -61,6 +61,11 @@ typedef struct D3D12VAEncodePicture {
     // ROI delta QP map (void* to support both INT8 for H.264/HEVC and INT16 for AV1)
     void           *qp_map;
     int             qp_map_size;
+
+    // Hidden-frame (AV1 show_existing_frame) support
+    int             non_independent_frame;
+    char            tail_data[MAX_PARAM_BUFFER_SIZE];
+    size_t          tail_size;
 } D3D12VAEncodePicture;
 
 typedef struct D3D12VAEncodeProfile {
@@ -271,6 +276,8 @@ typedef struct D3D12VAEncodeContext {
 
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA subregions_layout;
 
+    D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE subregion_mode;
+
     /**
      * Intra refresh configuration
      */
@@ -290,6 +297,8 @@ typedef struct D3D12VAEncodeContext {
      * QP map region pixel size (block size for QP map)
      */
     int qp_map_region_size;
+
+    int num_subregions;
 } D3D12VAEncodeContext;
 
 typedef struct D3D12VAEncodeType {
@@ -370,6 +379,9 @@ int ff_d3d12va_encode_receive_packet(AVCodecContext *avctx, AVPacket *pkt);
 
 int ff_d3d12va_encode_init(AVCodecContext *avctx);
 int ff_d3d12va_encode_close(AVCodecContext *avctx);
+
+void ff_d3d12va_encode_check_encoder_feature_flags(void *log_ctx,
+                                                   D3D12_VIDEO_ENCODER_VALIDATION_FLAGS flags);
 
 #define D3D12VA_ENCODE_INTRA_REFRESH_MODE(name, mode, desc) \
     { #name, desc, 0, AV_OPT_TYPE_CONST, { .i64 = D3D12_VIDEO_ENCODER_INTRA_REFRESH_MODE_ ## mode }, \

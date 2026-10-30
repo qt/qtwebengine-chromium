@@ -314,6 +314,7 @@ static int parse_dsd_prop(AVFormatContext *s, AVStream *st, uint64_t eof)
                        av_fourcc2str(tag));
                 return AVERROR_PATCHWELCOME;
             }
+            st->codecpar->format = AV_SAMPLE_FMT_DSD;
             break;
 
         case MKTAG('F','S',' ',' '):
@@ -346,8 +347,10 @@ static int parse_dsd_prop(AVFormatContext *s, AVStream *st, uint64_t eof)
             if (config != 0xFFFF) {
                 if (config < FF_ARRAY_ELEMS(dsd_loudspeaker_config))
                     st->codecpar->ch_layout = dsd_loudspeaker_config[config];
-                if (!st->codecpar->ch_layout.nb_channels)
+                if (!st->codecpar->ch_layout.nb_channels) {
                     avpriv_request_sample(s, "loudspeaker configuration %d", config);
+                    return AVERROR_PATCHWELCOME;
+                }
             }
             break;
         }
@@ -990,7 +993,11 @@ static int iff_read_packet(AVFormatContext *s,
         if (pb->eof_reached)
             return AVERROR_EOF;
 
+        if (!data_size || data_size > INT_MAX)
+            return AVERROR_INVALIDDATA;
         ret = av_get_packet(pb, pkt, data_size);
+        if (ret < 0)
+            return ret;
         pkt->stream_index = iff->video_stream_index;
         pkt->pos = orig_pos;
         pkt->duration = get_anim_duration(pkt->data, pkt->size);

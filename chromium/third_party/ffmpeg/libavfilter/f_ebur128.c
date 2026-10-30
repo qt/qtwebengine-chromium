@@ -433,10 +433,11 @@ static int config_audio_output(AVFilterLink *outlink)
     EBUR128Context *ebur128 = ctx->priv;
     const int nb_channels = outlink->ch_layout.nb_channels;
 
-#define BACK_MASK (AV_CH_BACK_LEFT    |AV_CH_BACK_CENTER    |AV_CH_BACK_RIGHT| \
-                   AV_CH_TOP_BACK_LEFT|AV_CH_TOP_BACK_CENTER|AV_CH_TOP_BACK_RIGHT| \
-                   AV_CH_SIDE_LEFT                          |AV_CH_SIDE_RIGHT| \
-                   AV_CH_SURROUND_DIRECT_LEFT               |AV_CH_SURROUND_DIRECT_RIGHT)
+    /* Height channels always use a weight of 1.0 in ITU-R BS.1770. */
+#define WEIGHT_1_41_MASK (AV_CH_BACK_LEFT             |AV_CH_BACK_CENTER          | \
+                          AV_CH_BACK_RIGHT            |AV_CH_SIDE_LEFT            | \
+                          AV_CH_SIDE_RIGHT            |AV_CH_SURROUND_DIRECT_LEFT | \
+                          AV_CH_SURROUND_DIRECT_RIGHT)
 
     ebur128->nb_channels  = nb_channels;
     ebur128->dsp.y        = av_calloc(nb_channels, 3 * sizeof(*ebur128->dsp.y));
@@ -445,15 +446,22 @@ static int config_audio_output(AVFilterLink *outlink)
     if (!ebur128->ch_weighting || !ebur128->dsp.y || !ebur128->dsp.z)
         return AVERROR(ENOMEM);
 
-#define I400_BINS(x)  ((x) * 4 / 10)
+#define I400_BINS(x)  ((x) * 2 / 5)
 #define I3000_BINS(x) ((x) * 3)
+
+    if (outlink->sample_rate  > INT_MAX/3U || outlink->sample_rate < 3)
+        return AVERROR(EINVAL);
 
     ebur128->i400.cache_size = I400_BINS(outlink->sample_rate);
     ebur128->i3000.cache_size = I3000_BINS(outlink->sample_rate);
+    size_t i400_count, i3000_count;
+    if (av_size_mult(nb_channels, ebur128->i400.cache_size,  &i400_count)  < 0 || i400_count  > INT_MAX ||
+        av_size_mult(nb_channels, ebur128->i3000.cache_size, &i3000_count) < 0 || i3000_count > INT_MAX)
+        return AVERROR(EINVAL);
     ebur128->i400.sum = av_calloc(nb_channels, sizeof(*ebur128->i400.sum));
     ebur128->i3000.sum = av_calloc(nb_channels, sizeof(*ebur128->i3000.sum));
-    ebur128->i400.cache = av_calloc(nb_channels * ebur128->i400.cache_size, sizeof(*ebur128->i400.cache));
-    ebur128->i3000.cache = av_calloc(nb_channels * ebur128->i3000.cache_size, sizeof(*ebur128->i3000.cache));
+    ebur128->i400.cache  = av_calloc(i400_count,  sizeof(*ebur128->i400.cache));
+    ebur128->i3000.cache = av_calloc(i3000_count, sizeof(*ebur128->i3000.cache));
     if (!ebur128->i400.sum || !ebur128->i3000.sum ||
         !ebur128->i400.cache || !ebur128->i3000.cache)
         return AVERROR(ENOMEM);
@@ -463,7 +471,7 @@ static int config_audio_output(AVFilterLink *outlink)
         const enum AVChannel chl = av_channel_layout_channel_from_index(&outlink->ch_layout, i);
         if (chl == AV_CHAN_LOW_FREQUENCY || chl == AV_CHAN_LOW_FREQUENCY_2) {
             ebur128->ch_weighting[i] = 0;
-        } else if (chl < 64 && (1ULL << chl) & BACK_MASK) {
+        } else if (chl < 64 && (1ULL << chl) & WEIGHT_1_41_MASK) {
             ebur128->ch_weighting[i] = 1.41;
         } else {
             ebur128->ch_weighting[i] = 1.0;

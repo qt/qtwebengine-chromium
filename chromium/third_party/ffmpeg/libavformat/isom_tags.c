@@ -63,11 +63,6 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_AVRP,   MKTAG('S', 'U', 'D', 'S') }, /* Avid DS Uncompressed */
     { AV_CODEC_ID_V210,   MKTAG('v', '2', '1', '0') }, /* uncompressed 10-bit 4:2:2 */
     { AV_CODEC_ID_V210,   MKTAG('b', 'x', 'y', '2') }, /* BOXX 10-bit 4:2:2 */
-#if FF_API_V408_CODECID
-    { AV_CODEC_ID_V308,   MKTAG('v', '3', '0', '8') }, /* uncompressed  8-bit 4:4:4 */
-    { AV_CODEC_ID_V408,   MKTAG('v', '4', '0', '8') }, /* uncompressed  8-bit 4:4:4:4 */
-    { AV_CODEC_ID_V410,   MKTAG('v', '4', '1', '0') }, /* uncompressed 10-bit 4:4:4 */
-#endif
     { AV_CODEC_ID_Y41P,   MKTAG('Y', '4', '1', 'P') }, /* uncompressed 12-bit 4:1:1 */
     { AV_CODEC_ID_YUV4,   MKTAG('y', 'u', 'v', '4') }, /* libquicktime packed yuv420p */
     { AV_CODEC_ID_TARGA_Y216, MKTAG('Y', '2', '1', '6') },
@@ -160,6 +155,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_VP8,  MKTAG('v', 'p', '0', '8') }, /* VP8 */
     { AV_CODEC_ID_VP9,  MKTAG('v', 'p', '0', '9') }, /* VP9 */
     { AV_CODEC_ID_AV1,  MKTAG('a', 'v', '0', '1') }, /* AV1 */
+    { AV_CODEC_ID_AV1,  MKTAG('d', 'a', 'v', '1') }, /* AV1-related Dolby Vision */
 
     { AV_CODEC_ID_MPEG1VIDEO, MKTAG('m', '1', 'v', ' ') },
     { AV_CODEC_ID_MPEG1VIDEO, MKTAG('m', '1', 'v', '1') }, /* Apple MPEG-1 Camcorder */
@@ -310,6 +306,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 
 const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_AAC,             MKTAG('m', 'p', '4', 'a') },
+    { AV_CODEC_ID_APPLE_APAC,      MKTAG('a', 'p', 'a', 'c') },
     { AV_CODEC_ID_AC3,             MKTAG('a', 'c', '-', '3') }, /* ETSI TS 102 366 Annex F */
     { AV_CODEC_ID_AC3,             MKTAG('s', 'a', 'c', '3') }, /* Nero Recode */
     { AV_CODEC_ID_AC4,             MKTAG('a', 'c', '-', '4') },
@@ -348,8 +345,10 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_PCM_S16LE,       MKTAG('l', 'p', 'c', 'm') },
     { AV_CODEC_ID_PCM_S24BE,       MKTAG('i', 'n', '2', '4') },
     { AV_CODEC_ID_PCM_S24LE,       MKTAG('i', 'n', '2', '4') },
+    { AV_CODEC_ID_PCM_S24LE,       MKTAG('4', '2', 'n', 'i') },
     { AV_CODEC_ID_PCM_S32BE,       MKTAG('i', 'n', '3', '2') },
     { AV_CODEC_ID_PCM_S32LE,       MKTAG('i', 'n', '3', '2') },
+    { AV_CODEC_ID_PCM_S32LE,       MKTAG('2', '3', 'n', 'i') },
     { AV_CODEC_ID_PCM_S8,          MKTAG('s', 'o', 'w', 't') },
     { AV_CODEC_ID_PCM_U8,          MKTAG('r', 'a', 'w', ' ') },
     { AV_CODEC_ID_PCM_U8,          MKTAG('N', 'O', 'N', 'E') },

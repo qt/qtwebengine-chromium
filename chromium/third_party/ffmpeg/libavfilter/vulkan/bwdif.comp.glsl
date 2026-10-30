@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#version 460
 #pragma shader_stage(compute)
 
 #extension GL_EXT_shader_image_load_formatted : require
@@ -27,10 +26,10 @@
 
 layout (local_size_x_id = 253, local_size_y_id = 254, local_size_z_id = 255) in;
 
-layout (set = 0, binding = 0) uniform readonly  image2D prev[];
-layout (set = 0, binding = 1) uniform readonly  image2D  cur[];
-layout (set = 0, binding = 2) uniform readonly  image2D next[];
-layout (set = 0, binding = 3) uniform writeonly image2D  dst[];
+layout (set = 0, binding = 0) uniform writeonly image2D  dst[];
+layout (set = 0, binding = 1) uniform readonly  image2D prev[];
+layout (set = 0, binding = 2) uniform readonly  image2D  cur[];
+layout (set = 0, binding = 3) uniform readonly  image2D next[];
 
 layout (push_constant, scalar) uniform pushConstants {
     int parity;

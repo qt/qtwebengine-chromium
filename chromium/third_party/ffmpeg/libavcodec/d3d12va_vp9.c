@@ -126,7 +126,8 @@ static int d3d12va_vp9_end_frame(AVCodecContext *avctx)
         return -1;
 
     return ff_d3d12va_common_end_frame(avctx, h->frames[CUR_FRAME].tf.f,
-               &ctx_pic->pp, sizeof(ctx_pic->pp), NULL, 0, update_input_arguments);
+               &ctx_pic->pp, sizeof(ctx_pic->pp), NULL, 0, ctx_pic->bitstream_size,
+               update_input_arguments);
 }
 
 static av_cold int d3d12va_vp9_decode_init(AVCodecContext *avctx)

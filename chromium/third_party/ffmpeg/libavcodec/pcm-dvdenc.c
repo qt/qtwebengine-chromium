@@ -106,8 +106,7 @@ static av_cold int pcm_dvd_encode_init(AVCodecContext *avctx)
     s->header[1] = (quant << 6) | (freq << 4) | (avctx->ch_layout.nb_channels - 1);
     s->header[2] = 0x80;
 
-    if (!avctx->frame_size)
-        avctx->frame_size = frame_size;
+    avctx->frame_size = frame_size;
 
     return 0;
 }
@@ -174,7 +173,7 @@ static int pcm_dvd_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
 
 const FFCodec ff_pcm_dvd_encoder = {
     .p.name         = "pcm_dvd",
-    CODEC_LONG_NAME("PCM signed 16|20|24-bit big-endian for DVD media"),
+    CODEC_LONG_NAME("PCM signed 16|20|24-bit big-endian for DVD-Video media"),
     .p.type         = AVMEDIA_TYPE_AUDIO,
     .p.id           = AV_CODEC_ID_PCM_DVD,
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SMALL_LAST_FRAME |

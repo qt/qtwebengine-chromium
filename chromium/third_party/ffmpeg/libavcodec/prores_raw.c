@@ -20,9 +20,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/avassert.h"
+#include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/mem.h"
+#include "libavutil/raw_color_params.h"
+#include "libavutil/rational.h"
 
 #define CACHED_BITSTREAM_READER !ARCH_X86_32
 
@@ -44,31 +48,47 @@ static av_cold int decode_init(AVCodecContext *avctx)
 {
     ProResRAWContext *s = avctx->priv_data;
 
-    avctx->bits_per_raw_sample = 12;
+    /* The codec outputs linear data, with the transfer function of the
+     * camera and any adjustments built into an 8-point linearization curve */
+    avctx->bits_per_raw_sample = 16;
+    avctx->color_trc = AVCOL_TRC_LINEAR;
     avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
-    avctx->color_trc = AVCOL_TRC_UNSPECIFIED;
     avctx->colorspace = AVCOL_SPC_UNSPECIFIED;
 
     s->pix_fmt = AV_PIX_FMT_NONE;
 
     ff_blockdsp_init(&s->bdsp);
-    ff_proresdsp_init(&s->prodsp, avctx->bits_per_raw_sample);
+    /* Coefficients and the iDCT are 12-bit, the linearization curve then
+     * expands the result to the 16-bit linear output range. */
+    ff_proresdsp_init(&s->prodsp, 12);
 
     ff_permute_scantable(s->scan, ff_prores_interlaced_scan, s->prodsp.idct_permutation);
 
     return 0;
 }
 
-static uint16_t get_value(GetBitContext *gb, int16_t codebook)
+/* Decodes a symbol from the next 32 bits, zero-filled past the end of the
+ * data. Returns a negative value once those are all zero, which is where
+ * the reference decoder stops decoding a component. */
+static av_always_inline int get_value(GetBitContext *gb, int16_t codebook)
 {
-    const int16_t switch_bits = codebook >> 8;
-    const int16_t rice_order  = codebook & 0xf;
-    const int16_t exp_order   = (codebook >> 4) & 0xf;
-    int16_t q, bits;
+    const int switch_bits = codebook >> 8;
+    const int rice_order  = codebook & 0xf;
+    const int exp_order   = (codebook >> 4) & 0xf;
+    int left = get_bits_left(gb);
+    uint32_t b;
+    int q, bits;
 
-    uint32_t b = show_bits_long(gb, 32);
+    b = show_bits_long(gb, 32);
+    if (left < 32) {
+        /* The reader has read past the end of the data; mask that off */
+        if (left <= 0)
+            return -1;
+        b &= 0xFFFFFFFFu << (32 - left);
+    }
     if (!b)
-        return 0;
+        return -1;
+
     q = ff_clz(b);
 
     if (b & 0x80000000) {
@@ -82,9 +102,10 @@ static uint16_t get_value(GetBitContext *gb, int16_t codebook)
                 (((b << (q + 1)) >> 1) >> (31 - rice_order));
     }
 
+    /* No valid code is longer than the window */
     bits = exp_order + (q << 1) - switch_bits;
     if (bits > 32)
-        return 0; // we do not return a negative error code so that we dont produce out of range values on errors
+        return -1;
     skip_bits_long(gb, bits);
     return (b >> (32 - bits)) +
            ((switch_bits + 1) << rice_order) -
@@ -131,19 +152,18 @@ static int decode_comp(AVCodecContext *avctx, TileContext *tile,
     uint16_t *dst = (uint16_t *)(frame->data[0] + tile->y*frame->linesize[0] + 2*tile->x);
 
     int idx;
-    const int w = FFMIN(s->tw, avctx->width - tile->x) / 2;
-    const int nb_blocks = w / 8;
-    const int log2_nb_blocks = 31 - ff_clz(nb_blocks);
-    const int block_mask = (1 << log2_nb_blocks) - 1;
-    const int nb_codes = 64 * nb_blocks;
+    const int log2_nb_blocks = tile->log2_nb_blocks;
+    const int nb_blocks  = 1 << log2_nb_blocks;
+    const int block_mask = nb_blocks - 1;
+    const int nb_codes   = 64 * nb_blocks;
 
-    LOCAL_ALIGNED_32(int16_t, block, [64*16]);
+    LOCAL_ALIGNED_32(int32_t, block, [64*16]);
 
-    int16_t sign = 0;
-    int16_t dc_add = 0;
+    int sign = 0;
+    int dc_add = 0;
     int16_t dc_codebook;
 
-    uint16_t ac, rn, ln;
+    int ac, rn, ln;
     int16_t ac_codebook = 49;
     int16_t rn_codebook = 0;
     int16_t ln_codebook = 66;
@@ -158,83 +178,78 @@ static int decode_comp(AVCodecContext *avctx, TileContext *tile,
     if ((ret = init_get_bits8(&gb, data, size)) < 0)
         return ret;
 
-    for (int n = 0; n < nb_blocks; n++)
-        s->bdsp.clear_block(block + n*64);
+    memset(block, 0, nb_blocks * 64 * sizeof(*block));
 
     /* Special handling for first block */
     int dc = get_value(&gb, 700);
+    if (dc < 0)
+        goto end;
     int prev_dc = (dc >> 1) ^ -(dc & 1);
-    block[0] = (((dc&1) + (dc>>1) ^ -(int)(dc & 1)) + (dc & 1)) + 1;
+    block[0] = prev_dc;
 
     for (int n = 1; n < nb_blocks; n++) {
-        if (get_bits_left(&gb) <= 0)
-            break;
-
         if ((n & 15) == 1)
             dc_codebook = 100;
         else
             dc_codebook = ff_prores_raw_dc_cb[FFMIN(TODCCODEBOOK(dc), DC_CB_MAX)];
 
         dc = get_value(&gb, dc_codebook);
+        if (dc < 0)
+            goto end;
 
         sign = sign ^ dc & 1;
         dc_add = (-sign ^ TODCCODEBOOK(dc)) + sign;
         sign = dc_add < 0;
         prev_dc += dc_add;
 
-        block[n*64] = prev_dc + 1;
+        block[n*64] = prev_dc;
     }
 
-    for (int n = nb_blocks; n <= nb_codes;) {
-        if (get_bits_left(&gb) <= 0)
-            break;
-
+    for (int n = nb_blocks; n < nb_codes;) {
         ln = get_value(&gb, ln_codebook);
+        if (ln < 0)
+            goto end;
 
         for (int i = 0; i < ln; i++) {
-            if (get_bits_left(&gb) <= 0)
-                break;
-
-            if ((n + i) >= nb_codes)
-                break;
-
             ac = get_value(&gb, ac_codebook);
+            if (ac < 0)
+                goto end;
             ac_codebook = ff_prores_raw_ac_cb[FFMIN(ac, AC_CB_MAX)];
             sign = -get_bits1(&gb);
 
-            idx = scan[(n + i) >> log2_nb_blocks] + (((n + i) & block_mask) << 6);
+            idx = scan[n >> log2_nb_blocks] + ((n & block_mask) << 6);
             block[idx] = ((ac + 1) ^ sign) - sign;
+
+            if (++n == nb_codes)
+                goto end;
         }
 
-        n += ln;
-        if (n >= nb_codes)
-            break;
-
         rn = get_value(&gb, rn_codebook);
+        if (rn < 0)
+            goto end;
         rn_codebook = ff_prores_raw_rn_cb[FFMIN(rn, RN_CB_MAX)];
 
         n += rn + 1;
         if (n >= nb_codes)
             break;
 
-        if (get_bits_left(&gb) <= 0)
-            break;
-
         ac = get_value(&gb, ac_codebook);
+        if (ac < 0)
+            goto end;
+        ac_codebook = ff_prores_raw_ac_cb[FFMIN(ac, AC_CB_MAX)];
+        ln_codebook = ff_prores_raw_ln_cb[FFMIN(ac, LN_CB_MAX)];
         sign = -get_bits1(&gb);
 
         idx = scan[n >> log2_nb_blocks] + ((n & block_mask) << 6);
         block[idx] = ((ac + 1) ^ sign) - sign;
 
-        ac_codebook = ff_prores_raw_ac_cb[FFMIN(ac, AC_CB_MAX)];
-        ln_codebook = ff_prores_raw_ln_cb[FFMIN(ac, LN_CB_MAX)];
-
         n++;
     }
 
+end:
     for (int n = 0; n < nb_blocks; n++) {
         uint16_t *ptr = dst + n*16;
-        s->prodsp.idct_put_bayer(ptr, linesize, block + n*64, qmat);
+        s->prodsp.idct_put_bayer(ptr, linesize, block + n*64, qmat, s->lin_curve);
     }
 
     return 0;
@@ -265,7 +280,7 @@ static int decode_tile(AVCodecContext *avctx, TileContext *tile,
         return AVERROR_INVALIDDATA;
 
     for (int i = 0; i < 64; i++)
-        qmat[i] = s->qmat[i] * scale >> 1;
+        qmat[i] = s->qmat[i] * scale;
 
     const uint8_t *comp_start = gb->buffer_start + header_len;
 
@@ -312,6 +327,9 @@ static enum AVPixelFormat get_pixel_format(AVCodecContext *avctx,
 #if CONFIG_PRORES_RAW_VULKAN_HWACCEL
         AV_PIX_FMT_VULKAN,
 #endif
+#if CONFIG_PRORES_RAW_VIDEOTOOLBOX_HWACCEL
+        AV_PIX_FMT_VIDEOTOOLBOX,
+#endif
         pix_fmt,
         AV_PIX_FMT_NONE,
     };
@@ -327,9 +345,6 @@ static int decode_frame(AVCodecContext *avctx,
     int ret, dimensions_changed = 0, old_version = s->version;
     DECLARE_ALIGNED(32, uint8_t, qmat)[64];
     memset(qmat, 1, 64);
-
-    if (avctx->skip_frame >= AVDISCARD_ALL)
-        return avpkt->size;
 
     switch (avctx->codec_tag) {
     case 0:
@@ -363,7 +378,7 @@ static int decode_frame(AVCodecContext *avctx,
     bytestream2_init(&gb_hdr, gb.buffer, header_len - 2);
     bytestream2_skip(&gb, header_len - 2);
 
-    bytestream2_skip(&gb_hdr, 1);
+    bytestream2_skip(&gb_hdr, 1); /* 1 reserved byte */
     s->version = bytestream2_get_byte(&gb_hdr);
     if (s->version > 1) {
         avpriv_request_sample(avctx, "Version %d", s->version);
@@ -402,39 +417,71 @@ static int decode_frame(AVCodecContext *avctx,
         avctx->pix_fmt = ret;
     }
 
-    bytestream2_skip(&gb_hdr, 1 * 4);
-    bytestream2_skip(&gb_hdr, 2); /* & 0x3 */
-    bytestream2_skip(&gb_hdr, 2);
-    bytestream2_skip(&gb_hdr, 4);
-    bytestream2_skip(&gb_hdr, 4);
-    bytestream2_skip(&gb_hdr, 4 * 3 * 3);
-    bytestream2_skip(&gb_hdr, 4);
-    bytestream2_skip(&gb_hdr, 2);
+    /* RecommendedCrop: pixel margins to discard after debayer. Order is
+     * left/right/top/bottom */
+    uint8_t crop_l = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_r = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_t = bytestream2_get_byte(&gb_hdr);
+    uint8_t crop_b = bytestream2_get_byte(&gb_hdr);
+
+    /* BayerPattern: 0=RGGB, 1/2/3 = alternates */
+    int bayer_pattern = bytestream2_get_be16(&gb_hdr) & 0x3;
+    if (bayer_pattern != 0) {
+        avpriv_request_sample(avctx, "Bayer pattern %d", bayer_pattern);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    /* senselValueRange: black_level is hardcoded to 0x100,
+     * white_level = senselValueRange + 0x100 */
+    uint16_t black_level = 0x100;
+    uint16_t white_level = bytestream2_get_be16(&gb_hdr) + 0x100;
+
+    float wb_red  = av_int2float(bytestream2_get_be32(&gb_hdr)); /* WhiteBalanceRedFactor */
+    float wb_blue = av_int2float(bytestream2_get_be32(&gb_hdr)); /* WhiteBalanceBlueFactor */
+
+    /* ColorMatrix (3x3 float, camera RGB -> CIE 1931 XYZ D65, row-major) */
+    float color_matrix[3][3];
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            color_matrix[r][c] = av_int2float(bytestream2_get_be32(&gb_hdr));
+
+    float gain = av_int2float(bytestream2_get_be32(&gb_hdr)); /* GainFactor (post-matrix mult) */
+    uint16_t wb_cct = bytestream2_get_be16(&gb_hdr); /* WhiteBalanceCCT (Kelvin, informational) */
 
     /* Flags */
     int flags = bytestream2_get_be16(&gb_hdr);
     int align = (flags >> 1) & 0x7;
+    if (align > 4) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Invalid tile alignment %d (max 4)\n", align);
+        return AVERROR_INVALIDDATA;
+    }
 
     /* Quantization matrix */
     if (flags & 1)
         bytestream2_get_buffer(&gb_hdr, qmat, 64);
 
     if ((flags >> 4) & 1) {
-        bytestream2_skip(&gb_hdr, 2);
-        bytestream2_skip(&gb_hdr, 2 * 7);
+        /* 8-poing 16-bit control points, defining the combined linearization
+         * curve (inv. transfer fn + encoder-defined shaping) */
+        for (int i = 0; i < 8; i++)
+            s->lin_curve[i] = bytestream2_get_be16(&gb_hdr);
+    } else {
+        /* default curve: ptwos */
+        static const uint16_t default_lin_curve[8] =
+            { 0, 512, 1024, 2048, 4096, 8192, 16384, 32768 };
+        memcpy(s->lin_curve, default_lin_curve, sizeof(s->lin_curve));
     }
 
     ff_permute_scantable(s->qmat, s->prodsp.idct_permutation, qmat);
 
-    s->nb_tw = (w + 15) >> 4;
+    int tw16 = (w + 15) >> 4;
+    s->nb_tw = (tw16 >> align) + av_popcount(~(-1 * (1 << align)) & tw16);
     s->nb_th = (h + 15) >> 4;
-    s->nb_tw = (s->nb_tw >> align) + av_popcount(~(-1 * (1 << align)) & s->nb_tw);
     s->nb_tiles = s->nb_tw * s->nb_th;
     av_log(avctx, AV_LOG_DEBUG, "%dx%d | nb_tiles: %d\n", s->nb_tw, s->nb_th, s->nb_tiles);
 
-    s->tw = s->version == 0 ? 128 : 256;
     s->th = 16;
-    av_log(avctx, AV_LOG_DEBUG, "tile_size: %dx%d\n", s->tw, s->th);
 
     av_fast_mallocz(&s->tiles, &s->tiles_size, s->nb_tiles * sizeof(*s->tiles));
     if (!s->tiles)
@@ -443,26 +490,57 @@ static int decode_frame(AVCodecContext *avctx,
     if (bytestream2_get_bytes_left(&gb) < s->nb_tiles * 2)
         return AVERROR_INVALIDDATA;
 
-    /* Read tile data offsets */
+    /* First tile that extends past the right edge gets halved in width,
+     * next one gets quartered, and so on */
     int offset = bytestream2_tell(&gb) + s->nb_tiles * 2;
-    for (int n = 0; n < s->nb_tiles; n++) {
-        TileContext *tile = &s->tiles[n];
+    int n = 0;
+    for (int ty = 0; ty < s->nb_th; ty++) {
+        unsigned tx = 0;
+        int rem = tw16;
+        for (int e = align; rem > 0; e--) {
+            int unit = 1 << e;
+            while (unit <= rem) {
+                TileContext *tile = &s->tiles[n++];
+                int size = bytestream2_get_be16(&gb);
 
-        int size = bytestream2_get_be16(&gb);
-        if (offset >= avpkt->size)
-            return AVERROR_INVALIDDATA;
-        if (size >= avpkt->size)
-            return AVERROR_INVALIDDATA;
-        if (offset > avpkt->size - size)
-            return AVERROR_INVALIDDATA;
+                if (offset >= avpkt->size)
+                    return AVERROR_INVALIDDATA;
+                if (size >= avpkt->size)
+                    return AVERROR_INVALIDDATA;
+                if (offset > avpkt->size - size)
+                    return AVERROR_INVALIDDATA;
 
-        bytestream2_init(&tile->gb, avpkt->data + offset, size);
+                bytestream2_init(&tile->gb, avpkt->data + offset, size);
+                tile->x = tx * 16;
+                tile->y = ty * s->th;
+                tile->log2_nb_blocks = e;
+                offset += size;
 
-        tile->y = (n / s->nb_tw) * s->th;
-        tile->x = (n % s->nb_tw) * s->tw;
-
-        offset += size;
+                tx  += unit;
+                rem -= unit;
+            }
+        }
     }
+    av_assert1(n == s->nb_tiles);
+
+    /* The stream parameters are all set by now, which is all that probing
+     * with frames skipped needs */
+    if (avctx->skip_frame >= AVDISCARD_ALL)
+        return avpkt->size;
+
+    /**
+     * Any data between last tile and frame end is vendor-specific metadata:
+     * [psim record]  4 be32 size + "psim" + pascal string + payload
+     * <more records, if any>, or:
+     * [eomd]         4 be32 size=8 + "eomd" fourcc (end of metadata)
+     * [padding]      zero-fill to next-frame alignment
+     *
+     * Known records (feel free to extend):
+     * com.panasonic.Semi-Pro.optical_correction (IEEE doubles):
+     *     R - radial polynomial? + padding: [ k0, k1, k2, k3, pad0, pad1 ]
+     *     G, B: same
+     *     Trailer: optical center in normalized frame coords: [ x, y ]
+     */
 
     ret = ff_thread_get_buffer(avctx, frame, 0);
     if (ret < 0)
@@ -470,13 +548,16 @@ static int decode_frame(AVCodecContext *avctx,
 
     s->frame = frame;
 
+    ret = ff_hwaccel_frame_priv_alloc(avctx, &s->hwaccel_picture_private);
+    if (ret < 0)
+        return ret;
+
+    /* Everything the next frame thread needs is known, let it start */
+    ff_thread_finish_setup(avctx);
+
     /* Start */
     if (avctx->hwaccel) {
         const FFHWAccel *hwaccel = ffhwaccel(avctx->hwaccel);
-
-        ret = ff_hwaccel_frame_priv_alloc(avctx, &s->hwaccel_picture_private);
-        if (ret < 0)
-            return ret;
 
         ret = hwaccel->start_frame(avctx, avpkt->buf, avpkt->data, avpkt->size);
         if (ret < 0)
@@ -499,8 +580,28 @@ static int decode_frame(AVCodecContext *avctx,
         avctx->execute2(avctx, decode_tiles, frame, NULL, s->nb_tiles);
     }
 
-    frame->pict_type = AV_PICTURE_TYPE_I;
-    frame->flags    |= AV_FRAME_FLAG_KEY;
+    frame->pict_type   = AV_PICTURE_TYPE_I;
+    frame->flags      |= AV_FRAME_FLAG_KEY;
+    frame->crop_left   = crop_l;
+    frame->crop_right  = crop_r;
+    frame->crop_top    = crop_t;
+    frame->crop_bottom = crop_b;
+
+    AVRawColorParams *rcp = av_raw_color_params_create_side_data(frame);
+    if (!rcp)
+        return AVERROR(ENOMEM);
+    rcp->type        = AV_RAW_COLOR_PARAMS_PRORES_RAW;
+    rcp->black_level = av_make_q(black_level, 65535);
+    rcp->white_level = av_make_q(white_level, 65535);
+    rcp->wb_cct      = wb_cct;
+
+    AVProResRawColorParams *pr = &rcp->codec.prores_raw;
+    pr->wb_red  = av_d2q(wb_red, INT_MAX);
+    pr->wb_blue = av_d2q(wb_blue, INT_MAX);
+    pr->gain    = av_d2q(gain, INT_MAX);
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 3; c++)
+            pr->color_matrix[r][c] = av_d2q(color_matrix[r][c], INT_MAX);
 
     *got_frame_ptr = 1;
 
@@ -546,6 +647,9 @@ const FFCodec ff_prores_raw_decoder = {
     .hw_configs     = (const AVCodecHWConfigInternal *const []) {
 #if CONFIG_PRORES_RAW_VULKAN_HWACCEL
         HWACCEL_VULKAN(prores_raw),
+#endif
+#if CONFIG_PRORES_RAW_VIDEOTOOLBOX_HWACCEL
+        HWACCEL_VIDEOTOOLBOX(prores_raw),
 #endif
         NULL
     },

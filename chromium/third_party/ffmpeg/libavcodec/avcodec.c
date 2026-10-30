@@ -354,6 +354,16 @@ int attribute_align_arg avcodec_open2(AVCodecContext *avctx, const AVCodec *code
         if (!avctx->bit_rate)
             avctx->bit_rate = get_bit_rate(avctx);
 
+
+        if (avctx->codec_type == AVMEDIA_TYPE_AUDIO &&
+            !avctx->frame_size && (avctx->flags2 & AV_CODEC_FLAG2_FIXED_FRAME_SIZE)) {
+            av_log(avctx, AV_LOG_ERROR, "Fixed frame size requested but no frame_size value set\n");
+            ret = AVERROR(EINVAL);
+            goto free_and_end;
+        }
+
+        avci->skip_samples = avctx->delay;
+
         /* validate channel layout from the decoder */
         if ((avctx->ch_layout.nb_channels && !av_channel_layout_check(&avctx->ch_layout)) ||
             avctx->ch_layout.nb_channels > FF_SANE_NB_CHANNELS) {
@@ -637,17 +647,6 @@ void avcodec_string(char *buf, int buf_size, AVCodecContext *enc, int encode)
         }
         if (encode) {
             av_bprintf(&bprint, ", q=%d-%d", enc->qmin, enc->qmax);
-        } else {
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
-            if (enc->properties & FF_CODEC_PROPERTY_CLOSED_CAPTIONS)
-                av_bprintf(&bprint, ", Closed Captions");
-            if (enc->properties & FF_CODEC_PROPERTY_FILM_GRAIN)
-                av_bprintf(&bprint, ", Film Grain");
-            if (enc->properties & FF_CODEC_PROPERTY_LOSSLESS)
-                av_bprintf(&bprint, ", lossless");
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         }
         break;
     case AVMEDIA_TYPE_AUDIO:
@@ -727,7 +726,7 @@ int avcodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     do {                                                                    \
         if (codec->type != (allowed_type))                                  \
             return AVERROR(EINVAL);                                         \
-        const field_type *ptr = codec->field;                               \
+        const field_type *ptr = codec2->field;                              \
         *out_configs = ptr;                                                 \
         if (ptr) {                                                          \
             for (int i = 0;; i++) {                                         \
@@ -773,7 +772,6 @@ int ff_default_get_supported_config(const AVCodecContext *avctx,
     const FFCodec *codec2 = ffcodec(codec);
 
     switch (config) {
-FF_DISABLE_DEPRECATION_WARNINGS
     case AV_CODEC_CONFIG_PIX_FORMAT:
         WRAP_CONFIG(AVMEDIA_TYPE_VIDEO, pix_fmts, pix_fmt, enum AVPixelFormat, pix_fmt == AV_PIX_FMT_NONE);
     case AV_CODEC_CONFIG_FRAME_RATE:
@@ -784,7 +782,6 @@ FF_DISABLE_DEPRECATION_WARNINGS
         WRAP_CONFIG(AVMEDIA_TYPE_AUDIO, sample_fmts, sample_fmt, enum AVSampleFormat, sample_fmt == AV_SAMPLE_FMT_NONE);
     case AV_CODEC_CONFIG_CHANNEL_LAYOUT:
         WRAP_CONFIG(AVMEDIA_TYPE_AUDIO, ch_layouts, ch_layout, AVChannelLayout, ch_layout.nb_channels == 0);
-FF_ENABLE_DEPRECATION_WARNINGS
 
     case AV_CODEC_CONFIG_COLOR_RANGE:
         if (codec->type != AVMEDIA_TYPE_VIDEO)
@@ -812,6 +809,10 @@ FF_ENABLE_DEPRECATION_WARNINGS
             *out_configs = NULL;
         *out_num_configs = av_popcount(alpha_modes);
         return 0;
+
+    case AV_CODEC_CONFIG_CHROMA_LOCATION:
+        WRAP_CONFIG(AVMEDIA_TYPE_VIDEO, chroma_locations, loc,
+                    enum AVChromaLocation, loc == AVCHROMA_LOC_UNSPECIFIED);
 
     default:
         return AVERROR(EINVAL);

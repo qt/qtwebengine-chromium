@@ -21,7 +21,6 @@
 
 #include <float.h>
 
-#include "encode.h"
 #include "enc.h"
 #include "pvq.h"
 #include "enc_psy.h"
@@ -32,9 +31,11 @@
 #include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
-#include "bytestream.h"
-#include "audio_frame_queue.h"
-#include "codec_internal.h"
+
+#include "libavcodec/audio_frame_queue.h"
+#include "libavcodec/bytestream.h"
+#include "libavcodec/codec_internal.h"
+#include "libavcodec/encode.h"
 
 typedef struct OpusEncContext {
     AVClass *av_class;
@@ -130,9 +131,17 @@ static void celt_frame_setup_input(OpusEncContext *s, CeltFrame *f)
 
     for (int ch = 0; ch < f->channels; ch++) {
         CeltBlock *b = &f->block[ch];
-        const void *input = cur->extended_data[ch];
-        size_t bps = av_get_bytes_per_sample(cur->format);
-        memcpy(b->overlap, input, bps*cur->nb_samples);
+        const float *input = (const float *)cur->extended_data[ch];
+        /* The MDCT overlap is the trailing CELT_OVERLAP samples of the
+         * previous packet's last frame, as they were when that frame was
+         * encoded. Because the encoder advertises AV_CODEC_CAP_SMALL_LAST_FRAME,
+         * that frame may have been shorter than frame_size, in which case it
+         * was zero padded, so the overlap has to be zero padded the same way. */
+        const int start = subframesize - CELT_OVERLAP;
+        const int n = av_clip(cur->nb_samples - start, 0, CELT_OVERLAP);
+        if (n > 0)
+            memcpy(b->overlap, input + start, n * sizeof(float));
+        memset(b->overlap + n, 0, (CELT_OVERLAP - n) * sizeof(float));
     }
 
     av_frame_free(&cur);
@@ -145,12 +154,11 @@ static void celt_frame_setup_input(OpusEncContext *s, CeltFrame *f)
 
         for (int ch = 0; ch < f->channels; ch++) {
             CeltBlock *b = &f->block[ch];
-            const void *input = cur->extended_data[ch];
-            const size_t bps  = av_get_bytes_per_sample(cur->format);
-            const size_t left = (subframesize - cur->nb_samples)*bps;
-            const size_t len  = FFMIN(subframesize, cur->nb_samples)*bps;
-            memcpy(&b->samples[sf*subframesize], input, len);
-            memset(&b->samples[cur->nb_samples], 0, left);
+            const float *input = (const float *)cur->extended_data[ch];
+            float *dst = &b->samples[sf * subframesize];
+            const int n = FFMIN(cur->nb_samples, subframesize);
+            memcpy(dst, input, n * sizeof(float));
+            memset(dst + n, 0, (subframesize - n) * sizeof(float));
         }
 
         /* Last frame isn't popped off and freed yet - we need it for overlap */
@@ -162,34 +170,29 @@ static void celt_frame_setup_input(OpusEncContext *s, CeltFrame *f)
 /* Apply the pre emphasis filter */
 static void celt_apply_preemph_filter(OpusEncContext *s, CeltFrame *f)
 {
-    const int subframesize = s->avctx->frame_size;
-    const int subframes = OPUS_BLOCK_SIZE(s->packet.framesize) / subframesize;
+    const int frame_len = OPUS_BLOCK_SIZE(s->packet.framesize);
     const float c = ff_opus_deemph_weights[0];
 
-    /* Filter overlap */
     for (int ch = 0; ch < f->channels; ch++) {
         CeltBlock *b = &f->block[ch];
         float m = b->emph_coeff;
+
+        /* Filter the overlap (the trailing CELT_OVERLAP samples of the previous frame) */
         for (int i = 0; i < CELT_OVERLAP; i++) {
             float sample = b->overlap[i];
             b->overlap[i] = sample - m;
             m = sample * c;
         }
-        b->emph_coeff = m;
-    }
 
-    /* Filter the samples but do not update the last subframe's coeff - overlap ^^^ */
-    for (int sf = 0; sf < subframes; sf++) {
-        for (int ch = 0; ch < f->channels; ch++) {
-            CeltBlock *b = &f->block[ch];
-            float m = b->emph_coeff;
-            for (int i = 0; i < subframesize; i++) {
-                float sample = b->samples[sf*subframesize + i];
-                b->samples[sf*subframesize + i] = sample - m;
-                m = sample * c;
-            }
-            if (sf != (subframes - 1))
+        /* Filter the samples. The trailing CELT_OVERLAP samples are filtered
+         * again as the next frame's overlap, so the filter state saved for
+         * the next frame is the one from right before them. */
+        for (int i = 0; i < frame_len; i++) {
+            float sample = b->samples[i];
+            if (i == frame_len - CELT_OVERLAP)
                 b->emph_coeff = m;
+            b->samples[i] = sample - m;
+            m = sample * c;
         }
     }
 }
@@ -434,8 +437,15 @@ static void celt_encode_frame(OpusEncContext *s, OpusRangeCoder *rc,
     if (f->silence) {
         if (f->framebits >= 16)
             ff_opus_rc_enc_log(rc, 1, 15); /* Silence (if using explicit signalling) */
-        for (int ch = 0; ch < s->channels; ch++)
-            memset(s->last_quantized_energy[ch], 0.0f, sizeof(float)*CELT_MAX_BANDS);
+        for (int ch = 0; ch < s->channels; ch++) {
+            /* The decoder sets all band energies to CELT_ENERGY_SILENCE on
+             * a silence frame, and predicts the next frame's from them. */
+            for (int i = 0; i < CELT_MAX_BANDS; i++)
+                s->last_quantized_energy[ch][i] = CELT_ENERGY_SILENCE;
+            /* The frame is all zeros, so this is the pre emphasis filter state
+             * at the point the next frame's overlap starts */
+            f->block[ch].emph_coeff = 0.0f;
+        }
         return;
     }
 
@@ -548,7 +558,7 @@ static int opus_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                              const AVFrame *frame, int *got_packet_ptr)
 {
     OpusEncContext *s = avctx->priv_data;
-    int ret, frame_size, alloc_size = 0;
+    int ret, frame_size, discard_padding, alloc_size = 0;
 
     if (frame) { /* Add new frame to queue */
         if ((ret = ff_af_queue_add(&s->afq, frame)) < 0)
@@ -599,12 +609,16 @@ static int opus_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     ff_opus_psy_postencode_update(&s->psyctx, s->frame);
 
     /* Remove samples from queue and skip if needed */
-    ff_af_queue_remove(&s->afq, s->packet.frames*frame_size, &avpkt->pts, &avpkt->duration);
-    if (s->packet.frames*frame_size > avpkt->duration) {
+    ret = ff_af_queue_remove(&s->afq, s->packet.frames*frame_size, avpkt);
+    if (ret < 0)
+        return ret;
+
+    discard_padding = s->packet.frames*frame_size - ff_samples_from_time_base(avctx, avpkt->duration);
+    if (discard_padding > 0) {
         uint8_t *side = av_packet_new_side_data(avpkt, AV_PKT_DATA_SKIP_SAMPLES, 10);
         if (!side)
             return AVERROR(ENOMEM);
-        AV_WL32(&side[4], s->packet.frames*frame_size - avpkt->duration + 120);
+        AV_WL32(&side[4], discard_padding);
     }
 
     *got_packet_ptr = 1;
@@ -638,12 +652,8 @@ static av_cold int opus_encode_init(AVCodecContext *avctx)
     s->avctx = avctx;
     s->channels = avctx->ch_layout.nb_channels;
 
-    /* Opus allows us to change the framesize on each packet (and each packet may
-     * have multiple frames in it) but we can't change the codec's frame size on
-     * runtime, so fix it to the lowest possible number of samples and use a queue
-     * to accumulate AVFrames until we have enough to encode whatever the encoder
-     * decides is the best */
-    avctx->frame_size = 120;
+    int max_delay_samples = (s->options.max_delay_ms * s->avctx->sample_rate) / 1000;
+    avctx->frame_size = OPUS_BLOCK_SIZE(FFMIN(OPUS_SAMPLES_TO_BLOCK_SIZE(max_delay_samples), CELT_BLOCK_960));
     /* Initial padding will change if SILK is ever supported */
     avctx->initial_padding = 120;
 

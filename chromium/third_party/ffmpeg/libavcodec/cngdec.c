@@ -153,8 +153,10 @@ static int cng_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
     buf_out = (int16_t *)frame->data[0];
-    for (i = 0; i < avctx->frame_size; i++)
-        buf_out[i] = av_clip_int16(p->filter_out[i + p->order]);
+    for (i = 0; i < avctx->frame_size; i++) {
+        const float f = p->filter_out[i + p->order];
+        buf_out[i] = !isfinite(f) ? 0 : av_clipf(f, INT16_MIN, INT16_MAX);
+    }
     memcpy(p->filter_out, p->filter_out + avctx->frame_size,
            p->order * sizeof(*p->filter_out));
 
@@ -173,7 +175,6 @@ const FFCodec ff_comfortnoise_decoder = {
     FF_CODEC_DECODE_CB(cng_decode_frame),
     .flush          = cng_decode_flush,
     .close          = cng_decode_close,
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

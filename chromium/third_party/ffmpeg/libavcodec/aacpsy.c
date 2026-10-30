@@ -99,6 +99,19 @@ enum {
 #define AAC_NUM_BLOCKS_SHORT 8      ///< number of blocks in a short sequence
 #define PSY_LAME_NUM_SUBBLOCKS 2    ///< Number of sub-blocks in each short block
 
+/* Pre-echo-aware attack detection: the LAME ratio test misses gentler attacks after a quiet
+ * gap, which then stay long and pre-echo. For an isolated onset (long for PSY_LAME_PE_GAP
+ * frames) whose pre-onset is below PSY_LAME_PE_QUIET of the frame peak, scale the threshold by
+ * PSY_LAME_PE_RED so it switches short; dense-transient content never qualifies. */
+#define PSY_LAME_PE_GAP    12       ///< min consecutive long frames before the relaxation applies
+#define PSY_LAME_PE_QUIET  0.4f     ///< pre-onset must be below this fraction of the frame peak
+#define PSY_LAME_PE_RED    0.45f    ///< attack-threshold multiplier for a qualifying isolated onset
+
+/* The novelty check must see at least one full period of a pulse train to
+ * recognize its pulses as repeats; 30 sub-blocks reaches down to ~23Hz. */
+#define PSY_LAME_HIST      32       ///< HP sub-block peak history depth
+#define PSY_LAME_NOV_BACK  30       ///< novelty look-back in sub-blocks
+
 /**
  * @}
  */
@@ -132,8 +145,17 @@ typedef struct AacPsyChannel{
     /* LAME psy model specific members */
     float attack_threshold;              ///< attack threshold for this channel
     float prev_energy_subshort[AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS];
+    float hp_env_hist[PSY_LAME_HIST];    ///< rolling HP sub-block peak envelope
     int   prev_attack;                   ///< attack value for the last short block in the previous sequence
     int   next_attack0_zero;          ///< whether attack[0] of the next frame is zero
+    int   frames_since_short;            ///< consecutive long frames (pre-echo-aware isolated-onset gate)
+    float prev_frame_energy;             ///< previous frame's full-band lookahead energy (attack veto)
+    int64_t win_count;                   ///< window() calls so far (frame counter for pair sync)
+    int64_t last_att;                    ///< win_count value of this channel's last own attack
+
+    /* rate-loop re-analysis rewind state, see psy_3gpp_analyze() */
+    int64_t    rc_frame_num;             ///< frame this channel last saved rewind state for
+    AacPsyBand rc_prev_band[128];        ///< prev_band as it was entering the frame
 }AacPsyChannel;
 
 /**
@@ -163,6 +185,12 @@ typedef struct AacPsyContext{
     AacPsyCoeffs psy_coef[2][64];
     AacPsyChannel *ch;
     float global_quality; ///< normalized global quality taken from avctx
+
+    /* rate-loop re-analysis rewind state, see psy_3gpp_analyze() */
+    int64_t rc_frame_num; ///< frame the rewind state was saved for
+    int     rc_first_ch;  ///< first channel analyzed in that frame
+    int     rc_fill_level;
+    float   rc_pe_min, rc_pe_max, rc_pe_previous;
 }AacPsyContext;
 
 /**
@@ -271,6 +299,8 @@ static av_cold void lame_window_init(AacPsyContext *ctx, AVCodecContext *avctx)
 
         for (j = 0; j < AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS; j++)
             pch->prev_energy_subshort[j] = 10.0f;
+        for (j = 0; j < PSY_LAME_HIST; j++)
+            pch->hp_env_hist[j] = 10.0f;
     }
 }
 
@@ -373,6 +403,10 @@ static av_cold int psy_3gpp_init(FFPsyContext *ctx) {
         av_freep(&ctx->model_priv_data);
         return AVERROR(ENOMEM);
     }
+
+    pctx->rc_frame_num = -1;
+    for (i = 0; i < ctx->avctx->ch_layout.nb_channels; i++)
+        pctx->ch[i].rc_frame_num = -1;
 
     lame_window_init(pctx, ctx->avctx);
 
@@ -654,6 +688,23 @@ static void psy_3gpp_analyze_channel(FFPsyContext *ctx, int channel,
     float pe = pctx->chan_bitrate > 32000 ? 0.0f : FFMAX(50.0f, 100.0f - pctx->chan_bitrate * 100.0f / 32000.0f);
     const int      num_bands   = ctx->num_bands[wi->num_windows == 8];
     const uint8_t *band_sizes  = ctx->bands[wi->num_windows == 8];
+    uint8_t s2l[16] = {0};
+    int start_after_long = wi->num_windows == 8 &&
+                           wi->window_type[1] == LONG_START_SEQUENCE;
+    {   /* short->long grid band map for cross-transition pre-echo control */
+        if (start_after_long) {
+            const uint8_t *ls = ctx->bands[0];
+            const int      ln = ctx->num_bands[0];
+            const uint8_t *ss = ctx->bands[1];
+            int lacc = 0, sacc = 0, gl = 0;
+            for (int gs = 0; gs < num_bands && gs < 16; gs++) {
+                int center8 = (sacc + ss[gs] / 2) * 8;
+                while (gl < ln - 1 && lacc + ls[gl] <= center8) { lacc += ls[gl]; gl++; }
+                s2l[gs] = gl;
+                sacc += ss[gs];
+            }
+        }
+    }
     AacPsyCoeffs  *coeffs      = pctx->psy_coef[wi->num_windows == 8];
     const float avoid_hole_thr = wi->num_windows == 8 ? PSY_3GPP_AH_THR_SHORT : PSY_3GPP_AH_THR_LONG;
     const int bandwidth        = ctx->cutoff ? ctx->cutoff : AAC_CUTOFF(ctx->avctx);
@@ -685,6 +736,12 @@ static void psy_3gpp_analyze_channel(FFPsyContext *ctx, int channel,
             if (!(wi->window_type[0] == LONG_STOP_SEQUENCE || (!w && wi->window_type[1] == LONG_START_SEQUENCE)))
                 band->thr = FFMAX(PSY_3GPP_RPEMIN*band->thr, FFMIN(band->thr,
                                   PSY_3GPP_RPELEV*pch->prev_band[w+g].thr_quiet));
+            else if (!w && start_after_long)
+                /* w0 after a START frame: grid-mapped, scaled continuity
+                 * clamp instead of the spec's skip (cannot bind on noise
+                 * content - see memory - but correct for tonal) */
+                band->thr = FFMAX(PSY_3GPP_RPEMIN*band->thr, FFMIN(band->thr,
+                                  PSY_3GPP_RPELEV*pch->prev_band[s2l[FFMIN(g,15)]].thr / 8.0f));
 
             /* 5.6.1.3.1 "Preparatory steps of the perceptual entropy calculation" */
             pe += calc_pe_3gpp(band);
@@ -844,9 +901,36 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel,
 {
     int ch;
     FFPsyChannelGroup *group = ff_psy_find_group(ctx, channel);
+    AacPsyContext *pctx = ctx->model_priv_data;
 
-    for (ch = 0; ch < group->num_ch; ch++)
+    /* The encoder's rate-control loop may re-run the analysis for the same
+     * frame; carried state (bit reservoir, PE history, previous-frame
+     * thresholds) must advance exactly once per frame, so save it on the
+     * frame's first run and rewind on re-runs. */
+    if (ctx->avctx->frame_num != pctx->rc_frame_num) {
+        pctx->rc_frame_num    = ctx->avctx->frame_num;
+        pctx->rc_first_ch     = channel;
+        pctx->rc_fill_level   = pctx->fill_level;
+        pctx->rc_pe_min       = pctx->pe.min;
+        pctx->rc_pe_max       = pctx->pe.max;
+        pctx->rc_pe_previous  = pctx->pe.previous;
+    } else if (channel == pctx->rc_first_ch) {
+        pctx->fill_level  = pctx->rc_fill_level;
+        pctx->pe.min      = pctx->rc_pe_min;
+        pctx->pe.max      = pctx->rc_pe_max;
+        pctx->pe.previous = pctx->rc_pe_previous;
+    }
+
+    for (ch = 0; ch < group->num_ch; ch++) {
+        AacPsyChannel *pch = &pctx->ch[channel + ch];
+        if (ctx->avctx->frame_num != pch->rc_frame_num) {
+            pch->rc_frame_num = ctx->avctx->frame_num;
+            memcpy(pch->rc_prev_band, pch->prev_band, sizeof(pch->prev_band));
+        } else {
+            memcpy(pch->prev_band, pch->rc_prev_band, sizeof(pch->prev_band));
+        }
         psy_3gpp_analyze_channel(ctx, channel + ch, coeffs[ch], &wi[ch]);
+    }
 }
 
 static av_cold void psy_3gpp_end(FFPsyContext *apc)
@@ -875,16 +959,16 @@ static void lame_apply_block_type(AacPsyChannel *ctx, FFPsyWindowInfo *wi, int u
     ctx->next_window_seq = blocktype;
 }
 
-static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
-                                       const float *la, int channel, int prev_type)
+/* Attack detection half of the LAME window decision: everything up to (and
+ * excluding) the block-type state machine. Fills attacks[] and returns the raw
+ * uselongblock; mutates only the detection history. Split out so a channel
+ * pair can be detected first and DECIDED together (synced block switching). */
+static int psy_lame_detect(AacPsyContext *pctx, AacPsyChannel *pch,
+                           const float *la, int channel, int prev_type,
+                           int attacks[AAC_NUM_BLOCKS_SHORT + 1])
 {
-    AacPsyContext *pctx = (AacPsyContext*) ctx->model_priv_data;
-    AacPsyChannel *pch  = &pctx->ch[channel];
-    int grouping     = 0;
     int uselongblock = 1;
-    int attacks[AAC_NUM_BLOCKS_SHORT + 1] = { 0 };
     int i;
-    FFPsyWindowInfo wi = { { 0 } };
 
     if (la) {
         float hpfsmpl[AAC_BLOCK_SIZE_LONG];
@@ -925,11 +1009,45 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
             attack_intensity[i + PSY_LAME_NUM_SUBBLOCKS] = p;
         }
 
-        /* compare energy between sub-short blocks */
-        for (i = 0; i < (AAC_NUM_BLOCKS_SHORT + 1) * PSY_LAME_NUM_SUBBLOCKS; i++)
-            if (!attacks[i / PSY_LAME_NUM_SUBBLOCKS])
-                if (attack_intensity[i] > pch->attack_threshold)
-                    attacks[i / PSY_LAME_NUM_SUBBLOCKS] = (i % PSY_LAME_NUM_SUBBLOCKS) + 1;
+        {   /* pre-echo-aware threshold relaxation + periodicity/novelty check
+             * (a pulse train repeats its peak; a real onset towers) */
+            float frame_peak = 1.0f;
+            float env[PSY_LAME_HIST + AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS];
+            const float nov_gate = 1.25f;
+            memcpy(env, pch->hp_env_hist, sizeof(pch->hp_env_hist));
+            memcpy(env + PSY_LAME_HIST, energy_subshort + PSY_LAME_NUM_SUBBLOCKS,
+                   AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS * sizeof(*env));
+            for (i = PSY_LAME_NUM_SUBBLOCKS; i < (AAC_NUM_BLOCKS_SHORT + 1) * PSY_LAME_NUM_SUBBLOCKS; i++)
+                frame_peak = FFMAX(frame_peak, energy_subshort[i]);
+            for (i = 0; i < (AAC_NUM_BLOCKS_SHORT + 1) * PSY_LAME_NUM_SUBBLOCKS; i++)
+                if (!attacks[i / PSY_LAME_NUM_SUBBLOCKS]) {
+                    float thr = pch->attack_threshold;
+                    if (i >= PSY_LAME_NUM_SUBBLOCKS &&
+                        pch->frames_since_short >= PSY_LAME_PE_GAP &&
+                        energy_subshort[i - PSY_LAME_NUM_SUBBLOCKS] < PSY_LAME_PE_QUIET * frame_peak)
+                        thr *= PSY_LAME_PE_RED;
+                    if (attack_intensity[i] > thr) {
+                        /* An attack must tower over the recent HP envelope:
+                         * within ~12ms always (pitch-rate trains), within
+                         * ~44ms only from steady long-window state (slow
+                         * pulse trains, where an isolated short excursion
+                         * is an audible click). */
+                        if (nov_gate > 0.0f && i >= PSY_LAME_NUM_SUBBLOCKS) {
+                            const int pos = PSY_LAME_HIST + i - PSY_LAME_NUM_SUBBLOCKS;
+                            float nearmax = 1.0f, deepmax = 1.0f;
+                            for (int k = 3; k <= 8; k++)
+                                nearmax = FFMAX(nearmax, env[pos - k]);
+                            for (int k = 3; k <= PSY_LAME_NOV_BACK; k++)
+                                deepmax = FFMAX(deepmax, env[pos - k]);
+                            if (energy_subshort[i] < nov_gate * nearmax ||
+                                (energy_subshort[i] < nov_gate * deepmax &&
+                                 pch->frames_since_short >= PSY_LAME_PE_GAP))
+                                continue;    /* periodic, not an onset */
+                        }
+                        attacks[i / PSY_LAME_NUM_SUBBLOCKS] = (i % PSY_LAME_NUM_SUBBLOCKS) + 1;
+                    }
+                }
+        }
 
         /* should have energy change between short blocks, in order to avoid periodic signals */
         /* Good samples to show the effect are Trumpet test songs */
@@ -949,6 +1067,15 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
             att_sum += attacks[i];
         }
 
+        /* roll the HP sub-block peak history */
+        memmove(pch->hp_env_hist,
+                pch->hp_env_hist + AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS,
+                (PSY_LAME_HIST - AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS) *
+                sizeof(*pch->hp_env_hist));
+        memcpy(pch->hp_env_hist + PSY_LAME_HIST - AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS,
+               energy_subshort + PSY_LAME_NUM_SUBBLOCKS,
+               AAC_NUM_BLOCKS_SHORT * PSY_LAME_NUM_SUBBLOCKS * sizeof(*pch->hp_env_hist));
+
         if (pch->next_attack0_zero)
             attacks[0] = 0;
         pch->next_attack0_zero = !attacks[AAC_NUM_BLOCKS_SHORT];
@@ -967,10 +1094,27 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
                 if (attacks[i] && attacks[i-1])
                     attacks[i] = 0;
         }
+
     } else {
         /* We have no lookahead info, so just use same type as the previous sequence. */
         uselongblock = !(prev_type == EIGHT_SHORT_SEQUENCE);
     }
+    return uselongblock;
+}
+
+/* Decision half: the block-type state machine and window/grouping fill,
+ * given the (possibly pair-synced) final uselongblock. */
+static FFPsyWindowInfo psy_lame_apply(AacPsyContext *pctx, AacPsyChannel *pch,
+                                      int uselongblock,
+                                      const int attacks[AAC_NUM_BLOCKS_SHORT + 1],
+                                      int prev_type, int have_la)
+{
+    int grouping = 0;
+    int i;
+    FFPsyWindowInfo wi = { { 0 } };
+
+    if (have_la)
+        pch->frames_since_short = uselongblock ? pch->frames_since_short + 1 : 0;
 
     lame_apply_block_type(pch, &wi, uselongblock);
 
@@ -1015,6 +1159,55 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
     return wi;
 }
 
+static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
+                                       const float *la, int channel, int prev_type)
+{
+    AacPsyContext *pctx = (AacPsyContext*) ctx->model_priv_data;
+    AacPsyChannel *pch  = &pctx->ch[channel];
+    int attacks[AAC_NUM_BLOCKS_SHORT + 1] = { 0 };
+    int uselongblock = psy_lame_detect(pctx, pch, la, channel, prev_type, attacks);
+
+    return psy_lame_apply(pctx, pch, uselongblock, attacks, prev_type, !!la);
+}
+
+/* Pair-synced block switching: either channel's attack switches both. */
+static void psy_lame_window_pair(FFPsyContext *ctx,
+                                 const float *audio0, const float *la0,
+                                 const float *audio1, const float *la1,
+                                 int channel0, int channel1,
+                                 int prev_type0, int prev_type1,
+                                 FFPsyWindowInfo wi[2])
+{
+    AacPsyContext *pctx = (AacPsyContext*) ctx->model_priv_data;
+    AacPsyChannel *pch0 = &pctx->ch[channel0];
+    AacPsyChannel *pch1 = &pctx->ch[channel1];
+    int att0[AAC_NUM_BLOCKS_SHORT + 1] = { 0 };
+    int att1[AAC_NUM_BLOCKS_SHORT + 1] = { 0 };
+    int merged[AAC_NUM_BLOCKS_SHORT + 1];
+    int u0 = psy_lame_detect(pctx, pch0, la0, channel0, prev_type0, att0);
+    int u1 = psy_lame_detect(pctx, pch1, la1, channel1, prev_type1, att1);
+    int u  = u0 && u1;
+
+    if (ctx->pair_decoupled[(channel0 >> 1) & 15]) {
+        /* Joint tools are dead on this pair (encoder-fed state): each channel
+         * windows for ITS transients - divergence costs nothing there, while
+         * union-syncing forces the steady channel short at every event in
+         * the other. Correlated content keeps the sync. */
+        wi[0] = psy_lame_apply(pctx, pch0, u0, att0, prev_type0, !!la0);
+        wi[1] = psy_lame_apply(pctx, pch1, u1, att1, prev_type1, !!la1);
+        return;
+    }
+
+    /* One merged attack map for both channels: the grouping (and with it
+     * common_window) must match across the pair, and the group boundary
+     * should isolate the first attack heard in EITHER channel. */
+    for (int i = 0; i < AAC_NUM_BLOCKS_SHORT + 1; i++)
+        merged[i] = att0[i] ? att0[i] : att1[i];
+
+    wi[0] = psy_lame_apply(pctx, pch0, u, merged, prev_type0, !!la0);
+    wi[1] = psy_lame_apply(pctx, pch1, u, merged, prev_type1, !!la1);
+}
+
 const FFPsyModel ff_aac_psy_model =
 {
     .name    = "3GPP TS 26.403-inspired model",
@@ -1022,4 +1215,5 @@ const FFPsyModel ff_aac_psy_model =
     .window  = psy_lame_window,
     .analyze = psy_3gpp_analyze,
     .end     = psy_3gpp_end,
+    .window_pair = psy_lame_window_pair,
 };

@@ -895,7 +895,7 @@ static int floor_encode(vorbis_enc_context *venc, vorbis_enc_floor *fc,
 static float *put_vector(vorbis_enc_codebook *book, PutBitContext *pb,
                          float *num)
 {
-    int i, entry = -1;
+    int i, entry = 0;
     float distance = FLT_MAX;
     assert(book->dimensions);
     for (i = 0; i < book->nentries; i++) {
@@ -1196,7 +1196,9 @@ static int vorbis_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     flush_put_bits(&pb);
     avpkt->size = put_bytes_output(&pb);
 
-    ff_af_queue_remove(&venc->afq, frame_size, &avpkt->pts, &avpkt->duration);
+    ret = ff_af_queue_remove(&venc->afq, frame_size, avpkt);
+    if (ret < 0)
+        return ret;
 
     if (frame_size > avpkt->duration) {
         uint8_t *side = av_packet_new_side_data(avpkt, AV_PKT_DATA_SKIP_SAMPLES, 10);

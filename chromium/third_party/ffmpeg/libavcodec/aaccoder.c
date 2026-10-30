@@ -30,7 +30,7 @@
  * add sane pulse detection
  ***********************************/
 
-#include "libavutil/libm.h" // brought forward to work around cygwin header breakage
+#include <math.h> // brought forward to work around cygwin header breakage
 
 #include <float.h>
 
@@ -59,6 +59,7 @@
 #define NOISE_LAMBDA_REPLACE 1.948f
 
 #include "libavcodec/aaccoder_trellis.h"
+#include "libavcodec/aaccoder_nmr.h"
 
 typedef float (*quantize_and_encode_band_func)(struct AACEncContext *s, PutBitContext *pb,
                                                const float *in, float *quant, const float *scaled,
@@ -502,25 +503,12 @@ static void search_for_pns(AACEncContext *s, AVCodecContext *avctx, SingleChanne
     const float dist_bias = av_clipf(4.f * 120 / lambda, 0.25f, 4.0f);
     const float pns_transient_energy_r = FFMIN(0.7f, lambda / 140.f);
 
-    int refbits = avctx->bit_rate * 1024.0 / avctx->sample_rate
-        / ((avctx->flags & AV_CODEC_FLAG_QSCALE) ? 2.0f : avctx->ch_layout.nb_channels)
-        * (lambda / 120.f);
-
-    /** Keep this in sync with twoloop's cutoff selection */
-    float rate_bandwidth_multiplier = 1.5f;
     int prev = -1000, prev_sf = -1;
-    int frame_bit_rate = (avctx->flags & AV_CODEC_FLAG_QSCALE)
-        ? (refbits * rate_bandwidth_multiplier * avctx->sample_rate / 1024)
-        : (avctx->bit_rate / avctx->ch_layout.nb_channels);
 
-    frame_bit_rate *= 1.15f;
-
-    if (avctx->cutoff > 0) {
-        bandwidth = avctx->cutoff;
-    } else {
-        bandwidth = FFMAX(3000, AAC_CUTOFF_FROM_BITRATE(frame_bit_rate, 1, avctx->sample_rate));
-    }
-
+    /* PNS candidacy must use the coder's actual coding bandwidth (s->bandwidth,
+     * fixed at init), not a separate heuristic, or it evaluates a different band
+     * range than the coder later codes. */
+    bandwidth = s->bandwidth;
     cutoff = bandwidth * 2 * wlen / avctx->sample_rate;
 
     memcpy(sce->band_alt, sce->band_type, sizeof(sce->band_type));
@@ -639,24 +627,10 @@ static void mark_pns(AACEncContext *s, AVCodecContext *avctx, SingleChannelEleme
     const float spread_threshold = FFMIN(0.75f, NOISE_SPREAD_THRESHOLD*FFMAX(0.5f, lambda/100.f));
     const float pns_transient_energy_r = FFMIN(0.7f, lambda / 140.f);
 
-    int refbits = avctx->bit_rate * 1024.0 / avctx->sample_rate
-        / ((avctx->flags & AV_CODEC_FLAG_QSCALE) ? 2.0f : avctx->ch_layout.nb_channels)
-        * (lambda / 120.f);
-
-    /** Keep this in sync with twoloop's cutoff selection */
-    float rate_bandwidth_multiplier = 1.5f;
-    int frame_bit_rate = (avctx->flags & AV_CODEC_FLAG_QSCALE)
-        ? (refbits * rate_bandwidth_multiplier * avctx->sample_rate / 1024)
-        : (avctx->bit_rate / avctx->ch_layout.nb_channels);
-
-    frame_bit_rate *= 1.15f;
-
-    if (avctx->cutoff > 0) {
-        bandwidth = avctx->cutoff;
-    } else {
-        bandwidth = FFMAX(3000, AAC_CUTOFF_FROM_BITRATE(frame_bit_rate, 1, avctx->sample_rate));
-    }
-
+    /* PNS candidacy must use the coder's actual coding bandwidth (s->bandwidth,
+     * fixed at init), not a separate heuristic, or it evaluates a different band
+     * range than the coder later codes (NMR relies on this output directly). */
+    bandwidth = s->bandwidth;
     cutoff = bandwidth * 2 * wlen / avctx->sample_rate;
 
     memcpy(sce->band_alt, sce->band_type, sizeof(sce->band_type));
@@ -690,10 +664,20 @@ static void mark_pns(AACEncContext *s, AVCodecContext *avctx, SingleChannelEleme
              * 3. on short window groups, all windows have similar energy (variations in energy would be destroyed by PNS)
              */
             sce->pns_ener[w*16+g] = sfb_energy;
-            if (sfb_energy < threshold*sqrtf(1.5f/freq_boost) || spread < spread_threshold || min_energy < pns_transient_energy_r * max_energy) {
-                sce->can_pns[w*16+g] = 0;
-            } else {
-                sce->can_pns[w*16+g] = 1;
+            {
+                /* near-mask PNS class (E in [thr/4, 2*thr]): deletion
+                 * candidates go to noise, not silence (AAC_PNSHOLE) */
+                int near = sfb_energy < 2.0f * threshold &&
+                           sfb_energy > threshold * 0.25f;
+                if (near) {
+                    /* deletion candidate: noise beats the ~silent rendition */
+                    sce->can_pns[w*16+g] = spread >= spread_threshold &&
+                                           min_energy >= 0.2f * max_energy;
+                } else if (sfb_energy < threshold*sqrtf(1.5f/freq_boost) || spread < spread_threshold || min_energy < pns_transient_energy_r * max_energy) {
+                    sce->can_pns[w*16+g] = 0;
+                } else {
+                    sce->can_pns[w*16+g] = 1;
+                }
             }
         }
     }
@@ -866,5 +850,18 @@ const AACCoefficientsEncoder ff_aac_coders[AAC_CODER_NB] = {
         ff_aac_search_for_tns,
         search_for_ms,
         ff_aac_search_for_is,
+    },
+    [AAC_CODER_NMR] = {
+        search_for_quantizers_nmr,
+        codebook_trellis_rate,
+        quantize_and_encode_band,
+        ff_aac_encode_tns_info,
+        ff_aac_apply_tns,
+        set_special_band_scalefactors,
+        NULL,                    /* PNS decided in the trellis (search_for_quantizers_nmr) */
+        mark_pns,
+        ff_aac_search_for_tns,
+        NULL,
+        NULL,
     },
 };

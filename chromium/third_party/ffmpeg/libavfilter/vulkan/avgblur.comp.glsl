@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#version 460
 #pragma shader_stage(compute)
 
 #extension GL_EXT_shader_image_load_formatted : require
@@ -55,7 +54,7 @@ void main()
     for (int y = -filter_len.y; y <= filter_len.y; y++)
         for (int x = -filter_len.x; x <= filter_len.x; x++)
             sum += imageLoad(input_img[nonuniformEXT(gl_LocalInvocationID.z)],
-                             pos + ivec2(x, y));
+                             clamp(pos + ivec2(x, y), ivec2(0), size - 1));
 
     imageStore(output_img[nonuniformEXT(gl_LocalInvocationID.z)],
                pos, sum * filter_norm);

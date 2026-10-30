@@ -32,7 +32,6 @@
 #include <float.h>
 
 #include "avstring.h"
-#include "libm.h"
 
 typedef struct FFFILE {
     size_t buf_size;
@@ -828,6 +827,7 @@ static int ff_vfscanf(FFFILE *f, const char *fmt, va_list ap)
         switch (t) {
             case 'c':
                 if (width < 1) width = 1;
+                break;
             case '[':
                 break;
             case 'n':

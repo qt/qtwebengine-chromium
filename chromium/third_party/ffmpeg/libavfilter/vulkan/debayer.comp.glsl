@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#version 460
 #pragma shader_stage(compute)
 
 #extension GL_EXT_shader_image_load_formatted : require
@@ -37,6 +36,7 @@ layout(push_constant, std430) uniform pushConstants {
    int crop_y;
    int crop_w;
    int crop_h;
+   vec2 in_dims;
 };
 
 #define LD(xo, yo) \

@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include "libavutil/attributes.h"
+#include "avcodec.h"
 #include "codec.h"
 #include "config.h"
 
@@ -48,7 +49,7 @@
  */
 #define FF_CODEC_CAP_SETS_PKT_DTS           (1 << 2)
 /**
- * The decoder extracts and fills its parameters even if the frame is
+ * The decoder extracts and fills its parameters if all frames are
  * skipped due to the skip_frame setting.
  */
 #define FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM  (1 << 3)
@@ -96,12 +97,13 @@
 typedef struct FFCodecDefault {
     const char *key;
     const char *value;
+    int flags;
 } FFCodecDefault;
 
 struct AVCodecContext;
+struct AVDictionary;
 struct AVSubtitle;
 struct AVPacket;
-enum AVCodecConfig;
 
 enum FFCodecType {
     /* The codec is a decoder using the decode callback;
@@ -151,6 +153,14 @@ typedef struct FFCodec {
      * Should be set to a bitmask of AVALPHA_MODE_PREMULTIPLIED and AVALPHA_MODE_STRAIGHT.
      */
     unsigned alpha_modes:2;
+
+    /**
+     * This field determines the chroma sample locations supported by an
+     * encoder, terminated by AVCHROMA_LOC_UNSPECIFIED. Only needs to be set
+     * by encoders whose format defines the chroma siting, a NULL list means
+     * the encoder accepts whatever it is given.
+     */
+    const enum AVChromaLocation *chroma_locations;
 
     /**
      * This field determines the type of the codec (decoder/encoder)
@@ -254,11 +264,19 @@ typedef struct FFCodec {
      */
     void (*flush)(struct AVCodecContext *);
 
-    /**
-     * Decoding only, a comma-separated list of bitstream filters to apply to
-     * packets before decoding.
-     */
-    const char *bsfs;
+    union {
+        /**
+        * Encoding only. Reconfigure the encoder
+        * Called by avcodec_encode_reconfigure()
+        */
+        int (*reconf)(struct AVCodecContext *avctx, struct AVDictionary **dict);
+
+        /**
+        * Decoding only, a comma-separated list of bitstream filters to apply to
+        * packets before decoding.
+        */
+        const char *bsfs;
+    };
 
     /**
      * Array of pointers to hardware configurations supported by the codec,
@@ -285,6 +303,23 @@ typedef struct FFCodec {
                                 unsigned flags,
                                 const void **out_configs,
                                 int *out_num_configs);
+#if defined(ASSERT_LEVEL) && ASSERT_LEVEL >= 2
+    struct {
+#else
+    union {
+#endif
+        /// Video-only fields
+        struct {
+            const AVRational *supported_framerates;
+            const enum AVPixelFormat *pix_fmts;
+        };
+        /// Audio-only fields
+        struct {
+            const AVChannelLayout *ch_layouts;
+            const int *supported_samplerates;
+            const enum AVSampleFormat *sample_fmts;
+        };
+    };
 } FFCodec;
 
 static av_always_inline const FFCodec *ffcodec(const AVCodec *codec)
@@ -369,14 +404,6 @@ int ff_default_get_supported_config(const struct AVCodecContext *avctx,
     .cb_type           = FF_CODEC_CB_TYPE_RECEIVE_PACKET, \
     .cb.receive_packet = (func)
 
-#ifdef __clang__
-#define DISABLE_DEPRECATION_WARNINGS FF_DISABLE_DEPRECATION_WARNINGS
-#define ENABLE_DEPRECATION_WARNINGS  FF_ENABLE_DEPRECATION_WARNINGS
-#else
-#define DISABLE_DEPRECATION_WARNINGS
-#define ENABLE_DEPRECATION_WARNINGS
-#endif
-
 #define CODEC_CH_LAYOUTS(...) CODEC_CH_LAYOUTS_ARRAY(((const AVChannelLayout[]) { __VA_ARGS__, { 0 } }))
 #define CODEC_CH_LAYOUTS_ARRAY(array) CODEC_ARRAY(ch_layouts, (array))
 
@@ -392,9 +419,10 @@ int ff_default_get_supported_config(const struct AVCodecContext *avctx,
 #define CODEC_PIXFMTS(...) CODEC_PIXFMTS_ARRAY(((const enum AVPixelFormat[]) { __VA_ARGS__, AV_PIX_FMT_NONE }))
 #define CODEC_PIXFMTS_ARRAY(array) CODEC_ARRAY(pix_fmts, (array))
 
+#define CODEC_CHROMA_LOCS(...) CODEC_CHROMA_LOCS_ARRAY(((const enum AVChromaLocation[]) { __VA_ARGS__, AVCHROMA_LOC_UNSPECIFIED }))
+#define CODEC_CHROMA_LOCS_ARRAY(array) CODEC_ARRAY(chroma_locations, (array))
+
 #define CODEC_ARRAY(field, array) \
-    DISABLE_DEPRECATION_WARNINGS  \
-    .p.field = (array)            \
-    ENABLE_DEPRECATION_WARNINGS
+    .field = (array)              \
 
 #endif /* AVCODEC_CODEC_INTERNAL_H */

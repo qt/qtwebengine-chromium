@@ -16,6 +16,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/mem.h"
+
 #include "h264dec.h"
 #include "h264_ps.h"
 
@@ -35,6 +37,10 @@ const FFVulkanDecodeDescriptor ff_vk_dec_h264_desc = {
 typedef struct H264VulkanDecodePicture {
     FFVulkanDecodePicture           vp;
 
+    /* DPB slot the picture was decoded into, and a PICT_* mask of what was */
+    int                             slot;
+    int                             decoded;
+
     /* Current picture */
     StdVideoDecodeH264ReferenceInfo h264_ref;
     VkVideoDecodeH264DpbSlotInfoKHR vkh264_ref;
@@ -51,22 +57,64 @@ typedef struct H264VulkanDecodePicture {
 
 const static int h264_scaling_list8_order[] = { 0, 3, 1, 4, 2, 5 };
 
+/* Returns 1 if the picture was bound, 0 if it cannot be */
 static int vk_h264_fill_pict(AVCodecContext *avctx, H264Picture **ref_src,
                              VkVideoReferenceSlotInfoKHR *ref_slot,       /* Main structure */
                              VkVideoPictureResourceInfoKHR *ref,          /* Goes in ^ */
                              VkVideoDecodeH264DpbSlotInfoKHR *vkh264_ref, /* Goes in ^ */
                              StdVideoDecodeH264ReferenceInfo *h264_ref,   /* Goes in ^ */
                              H264Picture *pic, int is_current,
-                             int is_field, int picture_structure,
-                             int dpb_slot_index)
+                             int is_field, int picture_structure)
 {
+    const H264Context *h = avctx->priv_data;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
     FFVulkanDecodeShared *ctx = dec->shared_ctx;
     H264VulkanDecodePicture *hp = pic->hwaccel_picture_private;
     FFVulkanDecodePicture *vkpic = &hp->vp;
+    int err;
 
-    int err = ff_vk_decode_prepare_frame(dec, pic->f, vkpic, is_current,
-                                         dec->dedicated_dpb);
+    if (is_current) {
+        /* Frame num gap dummies carry the duplicated picture's state, and with
+         * it its slot, which thus outlives that picture's DPB entry. Slots
+         * cannot follow DPB indices then: take the lowest one no reference
+         * holds when the picture is first decoded. */
+        if (!hp->decoded) {
+            uint32_t used = 0, free_slots;
+
+            for (int i = 0; i < H264_MAX_PICTURE_COUNT; i++) {
+                const H264VulkanDecodePicture *p = h->DPB[i].hwaccel_picture_private;
+                if ((h->DPB[i].reference & PICT_FRAME) && p && p->decoded)
+                    used |= 1U << p->slot;
+            }
+
+            /* ff_ctz(0) is undefined; a fully-set mask means no slot is free */
+            free_slots = ~used;
+            hp->slot = free_slots ? ff_ctz(free_slots) : ctx->caps.maxDpbSlots;
+            if (hp->slot >= ctx->caps.maxDpbSlots) {
+                av_log(avctx, AV_LOG_ERROR, "Not enough DPB slots for the "
+                       "stream's references\n");
+                return AVERROR(ENOTSUP);
+            }
+        }
+    } else {
+        H264VulkanDecodePicture *cur = h->cur_pic_ptr->hwaccel_picture_private;
+
+        /* A slot only holds what was decoded into it: not the pictures the
+         * decoder synthesizes to fill frame_num gaps or to stand in for
+         * missing references, nor fields lost to a seek. */
+        picture_structure &= hp->decoded;
+        if (!picture_structure)
+            return 0;
+
+        /* Frame_num gap dummies share the duplicated picture's state, and a
+         * slot can only be bound once. */
+        for (H264Picture **p = cur->ref_src; p < ref_src; p++)
+            if ((*p)->hwaccel_picture_private == hp)
+                return 0;
+    }
+
+    err = ff_vk_decode_prepare_frame(dec, pic->f, vkpic, is_current,
+                                     dec->dedicated_dpb);
     if (err < 0)
         return err;
 
@@ -97,21 +145,21 @@ static int vk_h264_fill_pict(AVCodecContext *avctx, H264Picture **ref_src,
         .sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR,
         .codedOffset = (VkOffset2D){ 0, 0 },
         .codedExtent = (VkExtent2D){ pic->f->width, pic->f->height },
-        .baseArrayLayer = ctx->common.layered_dpb ? dpb_slot_index : 0,
-        .imageViewBinding = vkpic->view.ref[0],
+        .baseArrayLayer = ctx->common.layered_dpb ? hp->slot : 0,
+        .imageViewBinding = vkpic->view.ref,
     };
 
     *ref_slot = (VkVideoReferenceSlotInfoKHR) {
         .sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
         .pNext = vkh264_ref,
-        .slotIndex = dpb_slot_index,
+        .slotIndex = hp->slot,
         .pPictureResource = ref,
     };
 
     if (ref_src)
         *ref_src = pic;
 
-    return 0;
+    return 1;
 }
 
 static StdVideoH264LevelIdc convert_to_vk_level_idc(int level_idc)
@@ -290,13 +338,8 @@ static void set_pps(const PPS *pps, const SPS *sps,
     };
 }
 
-static int vk_h264_create_params(AVCodecContext *avctx, AVBufferRef **buf)
-{
-    int err;
-    FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
-    FFVulkanDecodeShared *ctx = dec->shared_ctx;
-    const H264Context *h = avctx->priv_data;
-
+/* Too large to put on the stack: musl's default thread stack is 128KiB */
+typedef struct VulkanH264Params {
     /* SPS */
     StdVideoH264ScalingLists vksps_scaling[MAX_SPS_COUNT];
     StdVideoH264HrdParameters vksps_vui_header[MAX_SPS_COUNT];
@@ -306,12 +349,24 @@ static int vk_h264_create_params(AVCodecContext *avctx, AVBufferRef **buf)
     /* PPS */
     StdVideoH264ScalingLists vkpps_scaling[MAX_PPS_COUNT];
     StdVideoH264PictureParameterSet vkpps[MAX_PPS_COUNT];
+} VulkanH264Params;
+
+static int vk_h264_create_params(AVCodecContext *avctx, VkVideoSessionParametersKHR **buf)
+{
+    int err;
+    FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
+    FFVulkanDecodeShared *ctx = dec->shared_ctx;
+    const H264Context *h = avctx->priv_data;
+
+    VulkanH264Params *par = av_malloc(sizeof(*par));
+    if (!par)
+        return AVERROR(ENOMEM);
 
     VkVideoDecodeH264SessionParametersAddInfoKHR h264_params_info = {
         .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR,
-        .pStdSPSs = vksps,
+        .pStdSPSs = par->vksps,
         .stdSPSCount = 0,
-        .pStdPPSs = vkpps,
+        .pStdPPSs = par->vkpps,
         .stdPPSCount = 0,
     };
     VkVideoDecodeH264SessionParametersCreateInfoKHR h264_params = {
@@ -330,7 +385,8 @@ static int vk_h264_create_params(AVCodecContext *avctx, AVBufferRef **buf)
         if (h->ps.sps_list[i]) {
             const SPS *sps_l = h->ps.sps_list[i];
             int idx = h264_params_info.stdSPSCount;
-            set_sps(sps_l, &vksps_scaling[idx], &vksps_vui_header[idx], &vksps_vui[idx], &vksps[idx]);
+            set_sps(sps_l, &par->vksps_scaling[idx], &par->vksps_vui_header[idx],
+                    &par->vksps_vui[idx], &par->vksps[idx]);
             h264_params_info.stdSPSCount++;
         }
     }
@@ -340,7 +396,7 @@ static int vk_h264_create_params(AVCodecContext *avctx, AVBufferRef **buf)
         if (h->ps.pps_list[i]) {
             const PPS *pps_l = h->ps.pps_list[i];
             int idx = h264_params_info.stdPPSCount;
-            set_pps(pps_l, pps_l->sps, &vkpps_scaling[idx], &vkpps[idx]);
+            set_pps(pps_l, pps_l->sps, &par->vkpps_scaling[idx], &par->vkpps[idx]);
             h264_params_info.stdPPSCount++;
         }
     }
@@ -349,6 +405,7 @@ static int vk_h264_create_params(AVCodecContext *avctx, AVBufferRef **buf)
     h264_params.maxStdPPSCount = h264_params_info.stdPPSCount;
 
     err = ff_vk_decode_create_params(buf, avctx, ctx, &session_params_create);
+    av_free(par);
     if (err < 0)
         return err;
 
@@ -364,7 +421,7 @@ static int vk_h264_start_frame(AVCodecContext          *avctx,
                                av_unused uint32_t       size)
 {
     int err;
-    int dpb_slot_index = 0;
+    int nb_refs = 0;
     H264Context *h = avctx->priv_data;
 
     H264Picture *pic = h->cur_pic_ptr;
@@ -372,62 +429,36 @@ static int vk_h264_start_frame(AVCodecContext          *avctx,
     FFVulkanDecodePicture *vp = &hp->vp;
 
     /* Fill in main slot */
-    dpb_slot_index = 0;
-    for (unsigned slot = 0; slot < H264_MAX_PICTURE_COUNT; slot++) {
-        if (pic == &h->DPB[slot]) {
-            dpb_slot_index = slot;
-            break;
-        }
-    }
-
     err = vk_h264_fill_pict(avctx, NULL, &vp->ref_slot, &vp->ref,
                             &hp->vkh264_ref, &hp->h264_ref, pic, 1,
-                            h->DPB[dpb_slot_index].field_picture,
-                            h->DPB[dpb_slot_index].reference,
-                            dpb_slot_index);
+                            FIELD_PICTURE(h), h->picture_structure);
     if (err < 0)
         return err;
 
     /* Fill in short-term references */
     for (int i = 0; i < h->short_ref_count; i++) {
-        dpb_slot_index = 0;
-        for (unsigned slot = 0; slot < H264_MAX_PICTURE_COUNT; slot++) {
-            if (h->short_ref[i] == &h->DPB[slot]) {
-                dpb_slot_index = slot;
-                break;
-            }
-        }
-        err = vk_h264_fill_pict(avctx, &hp->ref_src[i], &vp->ref_slots[i],
-                                &vp->refs[i], &hp->vkh264_refs[i],
-                                &hp->h264_refs[i], h->short_ref[i], 0,
-                                h->DPB[dpb_slot_index].field_picture,
-                                h->DPB[dpb_slot_index].reference,
-                                dpb_slot_index);
+        H264Picture *ref = h->short_ref[i];
+        err = vk_h264_fill_pict(avctx, &hp->ref_src[nb_refs], &vp->ref_slots[nb_refs],
+                                &vp->refs[nb_refs], &hp->vkh264_refs[nb_refs],
+                                &hp->h264_refs[nb_refs], ref, 0,
+                                ref->field_picture, ref->reference);
         if (err < 0)
             return err;
+        nb_refs += err;
     }
 
     /* Fill in long-term refs */
-    for (int r = 0, i = h->short_ref_count; r < H264_MAX_DPB_FRAMES &&
-         i < h->short_ref_count + h->long_ref_count; r++) {
-        if (!h->long_ref[r])
+    for (int r = 0, i = 0; r < H264_MAX_DPB_FRAMES && i < h->long_ref_count; r++) {
+        H264Picture *ref = h->long_ref[r];
+        if (!ref)
             continue;
-
-        dpb_slot_index = 0;
-        for (unsigned slot = 0; slot < 16; slot++) {
-            if (h->long_ref[r] == &h->DPB[slot]) {
-                dpb_slot_index = slot;
-                break;
-            }
-        }
-        err = vk_h264_fill_pict(avctx, &hp->ref_src[i], &vp->ref_slots[i],
-                                &vp->refs[i], &hp->vkh264_refs[i],
-                                &hp->h264_refs[i], h->long_ref[r], 0,
-                                h->DPB[dpb_slot_index].field_picture,
-                                h->DPB[dpb_slot_index].reference,
-                                dpb_slot_index);
+        err = vk_h264_fill_pict(avctx, &hp->ref_src[nb_refs], &vp->ref_slots[nb_refs],
+                                &vp->refs[nb_refs], &hp->vkh264_refs[nb_refs],
+                                &hp->h264_refs[nb_refs], ref, 0,
+                                ref->field_picture, ref->reference);
         if (err < 0)
             return err;
+        nb_refs += err;
         i++;
     }
 
@@ -459,14 +490,14 @@ static int vk_h264_start_frame(AVCodecContext          *avctx,
         .pNext = &hp->h264_pic_info,
         .flags = 0x0,
         .pSetupReferenceSlot = &vp->ref_slot,
-        .referenceSlotCount = h->short_ref_count + h->long_ref_count,
+        .referenceSlotCount = nb_refs,
         .pReferenceSlots = vp->ref_slots,
         .dstPictureResource = (VkVideoPictureResourceInfoKHR) {
             .sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR,
             .codedOffset = (VkOffset2D){ 0, 0 },
             .codedExtent = (VkExtent2D){ pic->f->width, pic->f->height },
             .baseArrayLayer = 0,
-            .imageViewBinding = vp->view.out[0],
+            .imageViewBinding = vp->view.out,
         },
     };
 
@@ -509,6 +540,7 @@ static int vk_h264_end_frame(AVCodecContext *avctx)
     FFVulkanDecodePicture *vp = &hp->vp;
     FFVulkanDecodePicture *rvp[H264_MAX_PICTURE_COUNT] = { 0 };
     AVFrame *rav[H264_MAX_PICTURE_COUNT] = { 0 };
+    int err;
 
 #ifdef VK_KHR_video_maintenance2
     StdVideoH264ScalingLists vksps_scaling;
@@ -540,7 +572,7 @@ static int vk_h264_end_frame(AVCodecContext *avctx)
 
     if (!dec->session_params &&
         !(ctx->s.extensions & FF_VK_EXT_VIDEO_MAINTENANCE_2)) {
-        int err = vk_h264_create_params(avctx, &dec->session_params);
+        err = vk_h264_create_params(avctx, &dec->session_params);
         if (err < 0)
             return err;
 
@@ -559,7 +591,13 @@ static int vk_h264_end_frame(AVCodecContext *avctx)
     av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %zu bytes, %i slices\n",
            vp->slices_size, hp->h264_pic_info.sliceCount);
 
-    return ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);
+    err = ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);
+    if (err < 0)
+        return err;
+
+    hp->decoded |= h->picture_structure;
+
+    return 0;
 }
 
 static void vk_h264_free_frame_priv(AVRefStructOpaque _hwctx, void *data)

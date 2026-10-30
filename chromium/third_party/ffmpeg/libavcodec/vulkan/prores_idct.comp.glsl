@@ -16,11 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#version 460
 #pragma shader_stage(compute)
 #extension GL_GOOGLE_include_directive : require
 
-#include "common.comp"
+#include "common.glsl"
 #include "dct.glsl"
 
 layout (constant_id = 0) const bool interlaced = false;
@@ -83,11 +82,14 @@ void main(void)
         uint8_t qidx = quant_idx[(gid.y >> 1) * mb_width + (gid.x >> (4 - chroma_shift))];
         int qscale = qidx > 128 ? (qidx - 96) << 2 : qidx, mat = int(gid.z != 0) << 6;
 
+        /* Loop-invariant column scale */
+        const float col_scale = norm * idct_scale[idx];
+
         [[unroll]] for (uint i = 0; i < 8; ++i) {
             uint cidx = (i << 3) + idx;
             int   c = sign_extend(int(get_px(comp, ivec2(gid.x, (gid.y << 3) + i))), 16);
-            float v = float(c * qscale * int(qmat[mat + cidx])) * norm;
-            blocks[block][i * 9 + idx] = v * idct_scale[cidx];
+            float v = float(c * qscale * int(qmat[mat + cidx])) * col_scale;
+            blocks[block][i * 9 + idx] = v * idct_scale[i];
         }
     }
 
@@ -103,13 +105,16 @@ void main(void)
     barrier();
 
     float fact = 1 << (depth - 1);
-    int maxv = (1 << depth) - 1;
+
+    /* Samples are clipped to the legal range, excluding the values reserved
+     * for synchronization, matching the software decoder */
+    int minv = 4, maxv = (1 << depth) - 5;
 
     /* 7.5.1 Color Component Samples. Rescale, clamp and write back to global memory */
     if (act) {
         [[unroll]] for (uint i = 0; i < 8; ++i) {
             float v = round(blocks[block][i * 9 + idx] * fact);
-            put_px(comp, ivec2(gid.x, (gid.y << 3) + i), clamp(int(v), 0, maxv));
+            put_px(comp, ivec2(gid.x, (gid.y << 3) + i), clamp(int(v), minv, maxv));
         }
     }
 }

@@ -24,6 +24,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
@@ -301,9 +302,13 @@ static int flv_same_audio_codec(AVCodecParameters *apar, int flags, uint32_t cod
     }
 }
 
-static void flv_set_audio_codec(AVFormatContext *s, AVStream *astream,
+static int flv_set_audio_codec(AVFormatContext *s, AVStream *astream,
                                 AVCodecParameters *apar, int flv_codecid)
 {
+    FFStream *const astreami = ffstream(astream);
+    AVCodecParameters *par = astream->codecpar;
+    enum AVCodecID old_codec_id = astream->codecpar->codec_id;
+
     switch (flv_codecid) {
     // no distinction between S16 and S8 PCM codec flags
     case FLV_CODECID_PCM:
@@ -356,28 +361,34 @@ static void flv_set_audio_codec(AVFormatContext *s, AVStream *astream,
         break;
     case MKBETAG('m', 'p', '4', 'a'):
         apar->codec_id = AV_CODEC_ID_AAC;
-        return;
+        break;
     case MKBETAG('O', 'p', 'u', 's'):
         apar->codec_id = AV_CODEC_ID_OPUS;
         apar->sample_rate = 48000;
-        return;
+        break;
     case MKBETAG('.', 'm', 'p', '3'):
         apar->codec_id = AV_CODEC_ID_MP3;
-        return;
+        break;
     case MKBETAG('f', 'L', 'a', 'C'):
         apar->codec_id = AV_CODEC_ID_FLAC;
-        return;
+        break;
     case MKBETAG('a', 'c', '-', '3'):
         apar->codec_id = AV_CODEC_ID_AC3;
-        return;
+        break;
     case MKBETAG('e', 'c', '-', '3'):
         apar->codec_id = AV_CODEC_ID_EAC3;
-        return;
+        break;
     default:
         avpriv_request_sample(s, "Audio codec (%x)",
                flv_codecid >> FLV_AUDIO_CODECID_OFFSET);
         apar->codec_tag = flv_codecid >> FLV_AUDIO_CODECID_OFFSET;
     }
+
+    if (!astreami->need_context_update && par->codec_id != old_codec_id) {
+        avpriv_request_sample(s, "Changing the codec id midstream");
+        return AVERROR_PATCHWELCOME;
+    }
+    return 0;
 }
 
 static int flv_same_video_codec(AVCodecParameters *vpar, uint32_t flv_codecid)
@@ -386,6 +397,8 @@ static int flv_same_video_codec(AVCodecParameters *vpar, uint32_t flv_codecid)
         return 1;
 
     switch (flv_codecid) {
+    case MKBETAG('v', 'v', 'c', '1'):
+        return vpar->codec_id == AV_CODEC_ID_VVC;
     case FLV_CODECID_X_HEVC:
     case MKBETAG('h', 'v', 'c', '1'):
         return vpar->codec_id == AV_CODEC_ID_HEVC;
@@ -420,6 +433,10 @@ static int flv_set_video_codec(AVFormatContext *s, AVStream *vstream,
     enum AVCodecID old_codec_id = vstream->codecpar->codec_id;
 
     switch (flv_codecid) {
+    case MKBETAG('v', 'v', 'c', '1'):
+        par->codec_id = AV_CODEC_ID_VVC;
+        vstreami->need_parsing = AVSTREAM_PARSE_HEADERS;
+        break;
     case FLV_CODECID_X_HEVC:
     case MKBETAG('h', 'v', 'c', '1'):
         par->codec_id = AV_CODEC_ID_HEVC;
@@ -447,6 +464,7 @@ static int flv_set_video_codec(AVFormatContext *s, AVStream *vstream,
         break;
     case FLV_CODECID_VP6:
         par->codec_id = AV_CODEC_ID_VP6F;
+        av_fallthrough;
     case FLV_CODECID_VP6A:
         if (flv_codecid == FLV_CODECID_VP6A)
             par->codec_id = AV_CODEC_ID_VP6A;
@@ -533,7 +551,7 @@ static int parse_keyframes_index(AVFormatContext *s, AVIOContext *ioc, int64_t m
             break;
 
         arraylen = avio_rb32(ioc);
-        if (arraylen>>28)
+        if (arraylen>>28 || arraylen > (max_pos - avio_tell(ioc)) / 9)
             break;
 
         if       (!strcmp(KEYFRAMES_TIMESTAMP_TAG , str_val) && !times) {
@@ -719,7 +737,9 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
                             return ret;
                     } else if (!strcmp(key, "audiocodecid") && apar) {
                         int id = ((int)num_val) << FLV_AUDIO_CODECID_OFFSET;
-                        flv_set_audio_codec(s, astream, apar, id);
+                        int ret = flv_set_audio_codec(s, astream, apar, id);
+                        if (ret < 0)
+                            return ret;
                     } else if (!strcmp(key, "audiosamplerate") && apar) {
                         apar->sample_rate = num_val;
                     } else if (!strcmp(key, "audiosamplesize") && apar) {
@@ -1046,10 +1066,12 @@ static int amf_skip_tag(AVIOContext *pb, AMFDataType type, int depth)
         break;
     case AMF_DATA_TYPE_ARRAY:
         parse_name = 0;
+        av_fallthrough;
     case AMF_DATA_TYPE_MIXEDARRAY:
         nb = avio_rb32(pb);
         if (nb < 0)
             return AVERROR_INVALIDDATA;
+        av_fallthrough;
     case AMF_DATA_TYPE_OBJECT:
         while(!pb->eof_reached && (nb-- > 0 || type != AMF_DATA_TYPE_ARRAY)) {
             if (parse_name) {
@@ -1086,8 +1108,10 @@ static int flv_data_packet(AVFormatContext *s, AVPacket *pkt,
     switch (avio_r8(pb)) {
     case AMF_DATA_TYPE_ARRAY:
         array = 1;
+        av_fallthrough;
     case AMF_DATA_TYPE_MIXEDARRAY:
         avio_seek(pb, 4, SEEK_CUR);
+        av_fallthrough;
     case AMF_DATA_TYPE_OBJECT:
         break;
     default:
@@ -1541,6 +1565,10 @@ skip:
 
     for (;;) {
         int track_size = size;
+        if (size < 0) {
+            ret = FFERROR_REDO;
+            goto leave;
+        }
 
         if (multitrack_type != MultitrackTypeOneTrack) {
             track_size = avio_rb24(s->pb);
@@ -1641,8 +1669,10 @@ retry_duration:
                 st->codecpar->bits_per_coded_sample = bits_per_coded_sample;
             }
             if (!st->codecpar->codec_id) {
-                flv_set_audio_codec(s, st, st->codecpar,
+                ret = flv_set_audio_codec(s, st, st->codecpar,
                                     flags & FLV_AUDIO_CODECID_MASK);
+                if (ret < 0)
+                    goto leave;
                 flv->last_sample_rate =
                 sample_rate           = st->codecpar->sample_rate;
                 flv->last_channels    =
@@ -1655,14 +1685,19 @@ retry_duration:
                 }
                 par->sample_rate = sample_rate;
                 par->bits_per_coded_sample = bits_per_coded_sample;
-                flv_set_audio_codec(s, st, par, flags & FLV_AUDIO_CODECID_MASK);
+                ret = flv_set_audio_codec(s, st, par, flags & FLV_AUDIO_CODECID_MASK);
+                if (ret < 0)
+                    goto leave;
                 sample_rate = par->sample_rate;
                 avcodec_parameters_free(&par);
             }
         } else if (stream_type == FLV_STREAM_TYPE_AUDIO) {
-            if (!st->codecpar->codec_id)
-                flv_set_audio_codec(s, st, st->codecpar,
+            if (!st->codecpar->codec_id) {
+                ret = flv_set_audio_codec(s, st, st->codecpar,
                                     codec_id ? codec_id : (flags & FLV_AUDIO_CODECID_MASK));
+                if (ret < 0)
+                    goto leave;
+            }
 
             // These are not signalled in the flags anymore
             channels = 0;
@@ -1731,6 +1766,7 @@ retry_duration:
             st->codecpar->codec_id == AV_CODEC_ID_H264 ||
             st->codecpar->codec_id == AV_CODEC_ID_MPEG4 ||
             st->codecpar->codec_id == AV_CODEC_ID_HEVC ||
+            st->codecpar->codec_id == AV_CODEC_ID_VVC ||
             st->codecpar->codec_id == AV_CODEC_ID_AV1 ||
             st->codecpar->codec_id == AV_CODEC_ID_VP9) {
             int type = 0;
@@ -1754,8 +1790,14 @@ retry_duration:
             }
 
             if (st->codecpar->codec_id == AV_CODEC_ID_MPEG4 ||
-                ((st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC) &&
+                ((st->codecpar->codec_id == AV_CODEC_ID_H264 ||
+                  st->codecpar->codec_id == AV_CODEC_ID_VVC ||
+                  st->codecpar->codec_id == AV_CODEC_ID_HEVC) &&
                  (!enhanced_flv || type == PacketTypeCodedFrames))) {
+                if (size < 3 || track_size < 3) {
+                    ret = AVERROR_INVALIDDATA;
+                    goto leave;
+                }
                 // sign extension
                 int32_t cts = (avio_rb24(s->pb) + 0xff800000) ^ 0xff800000;
                 pts = av_sat_add64(dts, cts);
@@ -1775,6 +1817,7 @@ retry_duration:
             if (type == 0 && (!st->codecpar->extradata || st->codecpar->codec_id == AV_CODEC_ID_AAC ||
                 st->codecpar->codec_id == AV_CODEC_ID_OPUS || st->codecpar->codec_id == AV_CODEC_ID_FLAC ||
                 st->codecpar->codec_id == AV_CODEC_ID_H264 || st->codecpar->codec_id == AV_CODEC_ID_HEVC ||
+                st->codecpar->codec_id == AV_CODEC_ID_VVC ||
                 st->codecpar->codec_id == AV_CODEC_ID_AV1 || st->codecpar->codec_id == AV_CODEC_ID_VP9)) {
                 AVDictionaryEntry *t;
 

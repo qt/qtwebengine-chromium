@@ -520,6 +520,16 @@ static int query_formats(const AVFilterContext *ctx,
     if ((ret = ff_formats_ref(formats, &cfg_out[0]->color_ranges)) < 0)
         return ret;
 
+    if ((ret = ff_formats_ref(ff_all_chroma_locations(),
+                              &cfg_in[0]->chroma_locations)) < 0)
+        return ret;
+
+    formats = scale->out_chroma_loc != AVCHROMA_LOC_UNSPECIFIED
+                ? ff_make_formats_list_singleton(scale->out_chroma_loc)
+                : ff_all_chroma_locations();
+    if ((ret = ff_formats_ref(formats, &cfg_out[0]->chroma_locations)) < 0)
+        return ret;
+
     if (scale->sws->alpha_blend) {
         if ((ret = ff_formats_ref(ff_make_formats_list_singleton(AVALPHA_MODE_STRAIGHT),
                                   &cfg_in[0]->alpha_modes)) < 0)
@@ -649,8 +659,8 @@ static int config_props(AVFilterLink *outlink)
 
     if (outlink->w > INT_MAX ||
         outlink->h > INT_MAX ||
-        (outlink->h * inlink->w) > INT_MAX ||
-        (outlink->w * inlink->h) > INT_MAX)
+        (outlink->h * (uint64_t)inlink->w) > INT_MAX ||
+        (outlink->w * (uint64_t)inlink->h) > INT_MAX)
         av_log(ctx, AV_LOG_ERROR, "Rescaled value for width or height is too big.\n");
 
     /* TODO: make algorithm configurable */
@@ -658,7 +668,8 @@ static int config_props(AVFilterLink *outlink)
     if (scale->reset_sar)
         outlink->sample_aspect_ratio = (AVRational){1, 1};
     else if (inlink0->sample_aspect_ratio.num){
-        outlink->sample_aspect_ratio = av_mul_q((AVRational){outlink->h * inlink0->w, outlink->w * inlink0->h}, inlink0->sample_aspect_ratio);
+        AVRational q = av_div_q((AVRational){inlink0->w, inlink0->h}, (AVRational){outlink->w, outlink->h});
+        outlink->sample_aspect_ratio = av_mul_q(q, inlink0->sample_aspect_ratio);
     } else
         outlink->sample_aspect_ratio = inlink0->sample_aspect_ratio;
 
@@ -799,14 +810,12 @@ static int scale_frame(AVFilterLink *link, AVFrame **frame_in,
             scale->var_values[VAR_T] = TS2T(in->pts, link->time_base);
         }
 
-        link->dst->inputs[0]->format        = in->format;
-        link->dst->inputs[0]->w             = in->width;
-        link->dst->inputs[0]->h             = in->height;
-        link->dst->inputs[0]->colorspace    = in->colorspace;
-        link->dst->inputs[0]->color_range   = in->color_range;
-
-        link->dst->inputs[0]->sample_aspect_ratio.den = in->sample_aspect_ratio.den;
-        link->dst->inputs[0]->sample_aspect_ratio.num = in->sample_aspect_ratio.num;
+        link->format              = in->format;
+        link->w                   = in->width;
+        link->h                   = in->height;
+        link->colorspace          = in->colorspace;
+        link->color_range         = in->color_range;
+        link->sample_aspect_ratio = in->sample_aspect_ratio;
 
         if ((ret = config_props(outlink)) < 0)
             goto err;
@@ -830,7 +839,8 @@ scale:
         in->color_trc = scale->in_transfer;
     if (scale->in_range != AVCOL_RANGE_UNSPECIFIED)
         in->color_range = scale->in_range;
-    in->chroma_location = scale->in_chroma_loc;
+    if (scale->in_chroma_loc != AVCHROMA_LOC_UNSPECIFIED)
+        in->chroma_location = scale->in_chroma_loc;
 
     flags_orig = in->flags;
     if (scale->interlaced > 0)
@@ -844,6 +854,8 @@ scale:
     out->color_range = outlink->color_range;
     out->colorspace = outlink->colorspace;
     out->alpha_mode = outlink->alpha_mode;
+    if (outlink->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
+        out->chroma_location = outlink->chroma_location;
     if (scale->out_chroma_loc != AVCHROMA_LOC_UNSPECIFIED)
         out->chroma_location = scale->out_chroma_loc;
     if (scale->out_primaries != -1)
@@ -871,6 +883,7 @@ scale:
     }
 
     if (sws_is_noop(out, in)) {
+        in->chroma_location = out->chroma_location;
         av_frame_free(&out);
         in->flags = flags_orig;
         *frame_out = in;

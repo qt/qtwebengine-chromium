@@ -18,8 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <stdint.h>
-#include <string.h>
+#include <inttypes.h>
+#include <stddef.h>
 
 #include "avtextformat.h"
 #include "libavutil/bprint.h"
@@ -64,8 +64,8 @@ static av_cold int xml_init(AVTextFormatContext *wctx)
             return AVERROR(EINVAL);                                     \
         }
         ////CHECK_COMPLIANCE(show_private_data, "private");
-        CHECK_COMPLIANCE(wctx->show_value_unit,   "unit");
-        CHECK_COMPLIANCE(wctx->use_value_prefix,  "prefix");
+        CHECK_COMPLIANCE(wctx->opts.show_value_unit,   "unit");
+        CHECK_COMPLIANCE(wctx->opts.use_value_prefix,  "prefix");
     }
 
     return 0;

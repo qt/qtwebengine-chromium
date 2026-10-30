@@ -85,6 +85,7 @@ struct ogg_stream {
     int nsegs, segp;
     uint8_t segments[255];
     int incomplete; ///< whether we're expecting a continuation in the next page
+    int page_start; ///< current packet is the first one starting in the page
     int page_end;   ///< current packet is the last one completed in the page
     int keyframe_seek;
     int got_start;
@@ -123,7 +124,6 @@ struct ogg {
 
 #define OGG_NOGRANULE_VALUE (-1ull)
 
-extern const struct ogg_codec ff_celt_codec;
 extern const struct ogg_codec ff_dirac_codec;
 extern const struct ogg_codec ff_flac_codec;
 extern const struct ogg_codec ff_ogm_audio_codec;

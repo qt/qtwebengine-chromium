@@ -160,13 +160,18 @@ static int d3d12va_h264_end_frame(AVCodecContext *avctx)
     H264SliceContext          *sl      = &h->slice_ctx[0];
 
     int ret;
+    uint64_t bitstream_size;
 
     if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
         return -1;
 
+    bitstream_size = ctx_pic->bitstream_size +
+                     (uint64_t)ctx_pic->slice_count * START_CODE_SIZE;
+
     ret = ff_d3d12va_common_end_frame(avctx, h->cur_pic_ptr->f,
                                       &ctx_pic->pp, sizeof(ctx_pic->pp),
                                       &ctx_pic->qm, sizeof(ctx_pic->qm),
+                                      bitstream_size,
                                       update_input_arguments);
     if (!ret)
         ff_h264_draw_horiz_band(h, sl, 0, h->avctx->height);

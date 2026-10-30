@@ -1,6 +1,10 @@
 clean::
 	$(RM) $(CLEANSUFFIXES:%=libavcodec/bsf/%)
 
+OBJS +=                                      bsf/packetsync.o \
+                                             bsf/sink.o       \
+                                             bsf/source.o
+
 OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += bsf/aac_adtstoasc.o
 OBJS-$(CONFIG_AHX_TO_MP2_BSF)             += bsf/ahx_to_mp2.o
 OBJS-$(CONFIG_APV_METADATA_BSF)           += bsf/apv_metadata.o
@@ -23,8 +27,11 @@ OBJS-$(CONFIG_H264_REDUNDANT_PPS_BSF)     += bsf/h264_redundant_pps.o
 OBJS-$(CONFIG_HAPQA_EXTRACT_BSF)          += bsf/hapqa_extract.o
 OBJS-$(CONFIG_HEVC_METADATA_BSF)          += bsf/h265_metadata.o
 OBJS-$(CONFIG_DOVI_RPU_BSF)               += bsf/dovi_rpu.o
+OBJS-$(CONFIG_DOVI_SPLIT_BSF)             += bsf/dovi_split.o
 OBJS-$(CONFIG_HEVC_MP4TOANNEXB_BSF)       += bsf/hevc_mp4toannexb.o
 OBJS-$(CONFIG_IMX_DUMP_HEADER_BSF)        += bsf/imx_dump_header.o
+OBJS-$(CONFIG_LCEVC_MERGE_BSF)            += bsf/lcevc_merge.o
+OBJS-$(CONFIG_LCEVC_METADATA_BSF)         += bsf/lcevc_metadata.o
 OBJS-$(CONFIG_MEDIA100_TO_MJPEGB_BSF)     += bsf/media100_to_mjpegb.o
 OBJS-$(CONFIG_MJPEG2JPEG_BSF)             += bsf/mjpeg2jpeg.o
 OBJS-$(CONFIG_MJPEGA_DUMP_HEADER_BSF)     += bsf/mjpega_dump_header.o
@@ -43,6 +50,7 @@ OBJS-$(CONFIG_SHOWINFO_BSF)               += bsf/showinfo.o
 OBJS-$(CONFIG_SMPTE436M_TO_EIA608_BSF)    += bsf/smpte436m_to_eia608.o
 OBJS-$(CONFIG_TEXT2MOVSUB_BSF)            += bsf/movsub.o
 OBJS-$(CONFIG_TRACE_HEADERS_BSF)          += bsf/trace_headers.o
+OBJS-$(CONFIG_TRIM_BSF)                   += bsf/trim.o
 OBJS-$(CONFIG_TRUEHD_CORE_BSF)            += bsf/truehd_core.o
 OBJS-$(CONFIG_VP9_METADATA_BSF)           += bsf/vp9_metadata.o
 OBJS-$(CONFIG_VP9_RAW_REORDER_BSF)        += bsf/vp9_raw_reorder.o
@@ -50,5 +58,3 @@ OBJS-$(CONFIG_VP9_SUPERFRAME_BSF)         += bsf/vp9_superframe.o
 OBJS-$(CONFIG_VP9_SUPERFRAME_SPLIT_BSF)   += bsf/vp9_superframe_split.o
 OBJS-$(CONFIG_VVC_METADATA_BSF)           += bsf/h266_metadata.o
 OBJS-$(CONFIG_VVC_MP4TOANNEXB_BSF)        += bsf/vvc_mp4toannexb.o
-
-libavcodec/bsf/%.o: CPPFLAGS += -I$(SRC_PATH)/libavcodec/

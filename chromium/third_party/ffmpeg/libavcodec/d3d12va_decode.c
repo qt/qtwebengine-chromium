@@ -27,7 +27,6 @@
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
 #include "libavutil/time.h"
-#include "libavutil/imgutils.h"
 #include "libavutil/hwcontext_d3d12va_internal.h"
 #include "libavutil/hwcontext_d3d12va.h"
 #include "avcodec.h"
@@ -61,8 +60,20 @@ static ID3D12Resource *get_reference_only_resource(AVCodecContext *avctx, ID3D12
         return NULL;
     }
 
-    // find unused resource
-    for (i = 0; i < ctx->max_num_ref; i++) {
+    // Reuse the slot already mapped to this output resource. Output surfaces are
+    // recycled by the frame pool, so without this the same output_resource would
+    // be assigned a new slot every time it is reused, leaking slots until the
+    // pool is exhausted.
+    for (i = 0; i < ctx->max_num_ref + 1; i++) {
+        if (reference_only_map[i].resource != NULL &&
+            reference_only_map[i].output_resource == output_resource) {
+            reference_only_map[i].used = 1;
+            return reference_only_map[i].resource;
+        }
+    }
+
+    // Find an unused resource.
+    for (i = 0; i < ctx->max_num_ref + 1; i++) {
         if (!reference_only_map[i].used && reference_only_map[i].resource != NULL) {
             reference_only_map[i].used = 1;
             resource = reference_only_map[i].resource;
@@ -71,13 +82,13 @@ static ID3D12Resource *get_reference_only_resource(AVCodecContext *avctx, ID3D12
         }
     }
 
-    // find space to allocate
-    for (i = 0; i < ctx->max_num_ref; i++) {
+    // Find space to allocate.
+    for (i = 0; i < ctx->max_num_ref + 1; i++) {
         if (reference_only_map[i].resource == NULL)
             break;
     }
 
-    if (i == ctx->max_num_ref) {
+    if (i == ctx->max_num_ref + 1) {
         av_log(avctx, AV_LOG_ERROR, "No space for new Reference frame!\n");
         return NULL;
     }
@@ -105,7 +116,7 @@ static void free_reference_only_resources(AVCodecContext *avctx)
     int i;
     ReferenceFrame *reference_only_map = ctx->reference_only_map;
     if (reference_only_map != NULL) {
-        for (i = 0; i < ctx->max_num_ref; i++) {
+        for (i = 0; i < ctx->max_num_ref + 1; i++) {
             if (reference_only_map[i].resource != NULL) {
                 D3D12_OBJECT_RELEASE(reference_only_map[i].resource);
             }
@@ -123,7 +134,7 @@ static void prepare_reference_only_resources(AVCodecContext *avctx)
     if (reference_only_map == NULL)
         return;
     memset(ctx->ref_only_resources, 0, ctx->max_num_ref * sizeof(*(ctx->ref_only_resources)));
-    for (j = 0; j < ctx->max_num_ref; j++) {
+    for (j = 0; j < ctx->max_num_ref + 1; j++) {
         for (i = 0; i < ctx->max_num_ref; i++) {
             if (reference_only_map[j].used && reference_only_map[j].output_resource == ctx->ref_resources[i]) {
                 ctx->ref_only_resources[i] = reference_only_map[j].resource;
@@ -133,12 +144,6 @@ static void prepare_reference_only_resources(AVCodecContext *avctx)
         if (i == ctx->max_num_ref)
             reference_only_map[j].used = 0;
     }
-}
-
-int ff_d3d12va_get_suitable_max_bitstream_size(AVCodecContext *avctx)
-{
-    AVHWFramesContext *frames_ctx = D3D12VA_FRAMES_CONTEXT(avctx);
-    return av_image_get_buffer_size(frames_ctx->sw_format, avctx->coded_width, avctx->coded_height, 1);
 }
 
 unsigned ff_d3d12va_get_surface_index(const AVCodecContext *avctx,
@@ -178,26 +183,57 @@ fail:
     return 0;
 }
 
+static int d3d12va_resize_bitstream_buffer(AVCodecContext *avctx, ID3D12Resource **ppBuffer,
+                                           UINT64 bitstream_size)
+{
+    HRESULT hr;
+    D3D12VADecodeContext *ctx = D3D12VA_DECODE_CONTEXT(avctx);
+    D3D12_HEAP_PROPERTIES heap_props = { .Type = D3D12_HEAP_TYPE_UPLOAD };
+    ID3D12Resource *buffer = NULL;
+    D3D12_RESOURCE_DESC desc;
+
+    if (!bitstream_size)
+        return 0;
+
+    if (*ppBuffer) {
+        (*ppBuffer)->lpVtbl->GetDesc(*ppBuffer, &desc);
+        if (desc.Width >= bitstream_size)
+            return 0;
+    } else {
+        desc = (D3D12_RESOURCE_DESC) {
+            .Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER,
+            .Alignment        = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
+            .Height           = 1,
+            .DepthOrArraySize = 1,
+            .MipLevels        = 1,
+            .Format           = DXGI_FORMAT_UNKNOWN,
+            .SampleDesc       = { .Count = 1, .Quality = 0 },
+            .Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+            .Flags            = D3D12_RESOURCE_FLAG_NONE,
+        };
+    }
+    desc.Width = bitstream_size * 1.5;
+
+    hr = ID3D12Device_CreateCommittedResource(ctx->device_ctx->device, &heap_props, D3D12_HEAP_FLAG_NONE,
+                                              &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
+                                              &IID_ID3D12Resource, (void **)&buffer);
+    if (FAILED(hr)) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to create a new D3D12 bitstream buffer for uploading!\n");
+        return AVERROR(EINVAL);
+    }
+
+    D3D12_OBJECT_RELEASE(*ppBuffer);
+    *ppBuffer = buffer;
+
+    return 0;
+}
+
 static int d3d12va_get_valid_helper_objects(AVCodecContext *avctx, ID3D12CommandAllocator **ppAllocator,
-                                            ID3D12Resource **ppBuffer)
+                                            ID3D12Resource **ppBuffer, UINT64 bitstream_size)
 {
     HRESULT hr;
     D3D12VADecodeContext *ctx = D3D12VA_DECODE_CONTEXT(avctx);
     HelperObjects obj = { 0 };
-    D3D12_HEAP_PROPERTIES heap_props = { .Type = D3D12_HEAP_TYPE_UPLOAD };
-
-    D3D12_RESOURCE_DESC desc = {
-        .Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER,
-        .Alignment        = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
-        .Width            = ctx->bitstream_size,
-        .Height           = 1,
-        .DepthOrArraySize = 1,
-        .MipLevels        = 1,
-        .Format           = DXGI_FORMAT_UNKNOWN,
-        .SampleDesc       = { .Count = 1, .Quality = 0 },
-        .Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        .Flags            = D3D12_RESOURCE_FLAG_NONE,
-    };
 
     if (av_fifo_peek(ctx->objects_queue, &obj, 1, 0) >= 0) {
         uint64_t completion = ID3D12Fence_GetCompletedValue(ctx->sync_ctx.fence);
@@ -205,7 +241,7 @@ static int d3d12va_get_valid_helper_objects(AVCodecContext *avctx, ID3D12Command
             *ppAllocator = obj.command_allocator;
             *ppBuffer    = obj.buffer;
             av_fifo_read(ctx->objects_queue, &obj, 1);
-            return 0;
+            return d3d12va_resize_bitstream_buffer(avctx, ppBuffer, bitstream_size);
         }
     }
 
@@ -216,16 +252,7 @@ static int d3d12va_get_valid_helper_objects(AVCodecContext *avctx, ID3D12Command
         return AVERROR(EINVAL);
     }
 
-    hr = ID3D12Device_CreateCommittedResource(ctx->device_ctx->device, &heap_props, D3D12_HEAP_FLAG_NONE,
-                                              &desc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
-                                              &IID_ID3D12Resource, (void **)ppBuffer);
-
-    if (FAILED(hr)) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to create a new d3d12 buffer!\n");
-        return AVERROR(EINVAL);
-    }
-
-    return 0;
+    return d3d12va_resize_bitstream_buffer(avctx, ppBuffer, bitstream_size);
 }
 
 static int d3d12va_discard_helper_objects(AVCodecContext *avctx, ID3D12CommandAllocator *pAllocator,
@@ -379,9 +406,13 @@ int ff_d3d12va_common_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames
     AVHWFramesContext *frames_ctx = (AVHWFramesContext *)hw_frames_ctx->data;
 
     frames_ctx->format    = AV_PIX_FMT_D3D12;
-    frames_ctx->sw_format = avctx->sw_pix_fmt == AV_PIX_FMT_YUV420P10 ? AV_PIX_FMT_P010 : AV_PIX_FMT_NV12;
-    frames_ctx->width     = avctx->width;
-    frames_ctx->height    = avctx->height;
+    switch (avctx->sw_pix_fmt) {
+    case AV_PIX_FMT_YUV420P10: frames_ctx->sw_format = AV_PIX_FMT_P010; break;
+    case AV_PIX_FMT_YUV420P12: frames_ctx->sw_format = AV_PIX_FMT_P012; break;
+    default:                   frames_ctx->sw_format = AV_PIX_FMT_NV12; break;
+    }
+    frames_ctx->width     = avctx->coded_width;
+    frames_ctx->height    = avctx->coded_height;
 
     return 0;
 }
@@ -422,8 +453,6 @@ av_cold int ff_d3d12va_decode_init(AVCodecContext *avctx)
     if (ret < 0)
         goto fail;
 
-    ctx->bitstream_size = ff_d3d12va_get_suitable_max_bitstream_size(avctx);
-
     ctx->ref_resources = av_calloc(ctx->max_num_ref, sizeof(*ctx->ref_resources));
     if (!ctx->ref_resources)
         return AVERROR(ENOMEM);
@@ -444,7 +473,7 @@ av_cold int ff_d3d12va_decode_init(AVCodecContext *avctx)
     if (!ctx->sync_ctx.event)
         goto fail;
 
-    ret = d3d12va_get_valid_helper_objects(avctx, &command_allocator, &buffer);
+    ret = d3d12va_get_valid_helper_objects(avctx, &command_allocator, &buffer, 0);
     if (ret < 0)
         goto fail;
 
@@ -542,6 +571,7 @@ static inline int d3d12va_update_reference_frames_state(AVCodecContext *avctx, D
 int ff_d3d12va_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
                               const void *pp, unsigned pp_size,
                               const void *qm, unsigned qm_size,
+                              UINT64 bitstream_size,
                               int(*update_input_arguments)(AVCodecContext *, D3D12_VIDEO_DECODE_INPUT_STREAM_ARGUMENTS *, ID3D12Resource *))
 {
     int ret;
@@ -632,7 +662,7 @@ int ff_d3d12va_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
     if (!qm)
         input_args.NumFrameArguments = 1;
 
-    ret = d3d12va_get_valid_helper_objects(avctx, &command_allocator, &buffer);
+    ret = d3d12va_get_valid_helper_objects(avctx, &command_allocator, &buffer, bitstream_size);
     if (ret < 0)
         goto fail;
 

@@ -26,6 +26,7 @@
  */
 
 #include "avfilter.h"
+#include "libavutil/pixfmt.h"
 
 /**
  * Special return code when activate() did not do anything.
@@ -750,6 +751,21 @@ int ff_filter_process_command(AVFilterContext *ctx, const char *cmd,
 int ff_filter_get_nb_threads(AVFilterContext *ctx) av_pure;
 
 /**
+ * Compute the boundary index for a slice when work of size total is split
+ * into nb_jobs slices. Returns the first index of slice jobnr, so the slice
+ * jobnr covers [ff_slice_pos(total, jobnr, nb_jobs),
+ * ff_slice_pos(total, jobnr + 1, nb_jobs)).
+ *
+ * The multiplication is performed in 64bit to avoid signed overflow of the
+ * total * jobnr intermediate that would occur for large dimensions and many
+ * slice threads.
+ */
+static inline int ff_slice_pos(int total, int jobnr, int nb_jobs)
+{
+    return (int)((int64_t)total * jobnr / nb_jobs);
+}
+
+/**
  * Send a frame of data to the next filter.
  *
  * @param link   the output link over which the data is being sent
@@ -807,15 +823,13 @@ int ff_append_inpad_free_name (AVFilterContext *f, AVFilterPad *p);
 int ff_append_outpad_free_name(AVFilterContext *f, AVFilterPad *p);
 
 /**
- * Tell if an integer is contained in the provided -1-terminated list of integers.
- * This is useful for determining (for instance) if an AVPixelFormat is in an
- * array of supported formats.
+ * Tell if a pixel format is contained in the provided AV_PIX_FMT_NONE-terminated list.
  *
  * @param fmt provided format
- * @param fmts -1-terminated list of formats
+ * @param fmts AV_PIX_FMT_NONE-terminated list of pixel formats
  * @return 1 if present, 0 if absent
  */
-int ff_fmt_is_in(int fmt, const int *fmts);
+int ff_pixfmt_is_in(enum AVPixelFormat fmt, const enum AVPixelFormat *fmts);
 
 int ff_filter_execute(AVFilterContext *ctx, avfilter_action_func *func,
                       void *arg, int *ret, int nb_jobs);

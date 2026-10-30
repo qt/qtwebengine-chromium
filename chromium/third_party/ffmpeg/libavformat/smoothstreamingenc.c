@@ -31,6 +31,7 @@
 #include "avc.h"
 #include "url.h"
 
+#include "libavutil/attributes_internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/avstring.h"
@@ -141,7 +142,7 @@ static void get_private_data(OutputStream *os)
     AVCodecParameters *par = os->ctx->streams[0]->codecpar;
     uint8_t *ptr = par->extradata;
     int size = par->extradata_size;
-    int i;
+
     if (par->codec_id == AV_CODEC_ID_H264) {
         ff_avc_write_annexb_extradata(ptr, &ptr, &size);
         if (!ptr)
@@ -149,11 +150,10 @@ static void get_private_data(OutputStream *os)
     }
     if (!ptr)
         return;
-    os->private_str = av_mallocz(2*size + 1);
+    os->private_str = av_malloc(2U*size + 1);
     if (!os->private_str)
         goto fail;
-    for (i = 0; i < size; i++)
-        snprintf(&os->private_str[2*i], 3, "%02x", ptr[i]);
+    ff_data_to_hex(os->private_str, ptr, size, 1);
 fail:
     if (ptr != par->extradata)
         av_free(ptr);
@@ -283,17 +283,12 @@ static int ism_write_header(AVFormatContext *s)
 {
     SmoothStreamingContext *c = s->priv_data;
     int ret = 0, i;
-    const AVOutputFormat *oformat;
 
     if (mkdir(s->url, 0777) == -1 && errno != EEXIST) {
         av_log(s, AV_LOG_ERROR, "mkdir failed\n");
         return AVERROR(errno);
     }
 
-    oformat = av_guess_format("ismv", NULL, NULL);
-    if (!oformat) {
-        return AVERROR_MUXER_NOT_FOUND;
-    }
 
     c->streams = av_calloc(s->nb_streams, sizeof(*c->streams));
     if (!c->streams) {
@@ -325,7 +320,8 @@ static int ism_write_header(AVFormatContext *s)
         }
         if ((ret = ff_copy_whiteblacklists(ctx, s)) < 0)
             return ret;
-        ctx->oformat = oformat;
+        EXTERN const FFOutputFormat ff_ismv_muxer;
+        ctx->oformat = &ff_ismv_muxer.p;
         ctx->interrupt_callback = s->interrupt_callback;
 
         if (!(st = avformat_new_stream(ctx, NULL))) {

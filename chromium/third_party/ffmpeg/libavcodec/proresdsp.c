@@ -40,6 +40,14 @@
 #define BIT_DEPTH 12
 #include "simple_idct_template.c"
 #undef BIT_DEPTH
+#undef IN_IDCT_DEPTH
+
+/* 16-bit iDCT for ProRes RAW */
+#define IN_IDCT_DEPTH 32
+#define BIT_DEPTH 16
+#include "simple_idct_template.c"
+#undef BIT_DEPTH
+#undef IN_IDCT_DEPTH
 
 /**
  * Special version of ff_simple_idct_int16_10bit() which does dequantization
@@ -74,6 +82,21 @@ static void prores_idct_12(int16_t *restrict block, const int16_t *restrict qmat
     }
 }
 
+/*
+ * ProRes RAW iDCT: 16-bit coefficients to a 16-bit output centered on zero
+ */
+static void prores_idct_bayer_16(int32_t *restrict block, const int16_t *restrict qmat)
+{
+    for (int i = 0; i < 64; i++)
+        block[i] = av_clip_int16(block[i] * qmat[i]);
+
+    for (int i = 0; i < 8; i++)
+        idctRowCondDC_int32_16bit(block + i*8, 0);
+
+    for (int i = 0; i < 8; i++)
+        idctSparseCol_int32_16bit(block + i);
+}
+
 #define CLIP_MIN (1 << 2)                     ///< minimum value for clipping resulting pixels
 #define CLIP_MAX_10 (1 << 10) - CLIP_MIN - 1  ///< maximum value for clipping resulting pixels
 #define CLIP_MAX_12 (1 << 12) - CLIP_MIN - 1  ///< maximum value for clipping resulting pixels
@@ -99,12 +122,20 @@ static inline void put_pixel(uint16_t *dst, ptrdiff_t linesize, const int16_t *i
     }
 }
 
-static inline void put_pixel_bayer_12(uint16_t *dst, ptrdiff_t linesize,
-                                      const int16_t *in)
+/* Apply the 8-point combined linearization curve (inv. transfer fn + encoder shaping) */
+static inline void put_pixel_bayer_lin_curve_12(uint16_t *dst, ptrdiff_t linesize,
+                                                const int32_t *in, const uint16_t *lin_curve)
 {
     for (int y = 0; y < 8; y++, dst += linesize) {
-        for (int x = 0; x < 8; x++)
-            dst[x*2] = CLIP_12(in[(y << 3) + x]) << 4;
+        for (int x = 0; x < 8; x++) {
+            uint32_t u    = av_clip_uint16(in[(y << 3) + x] + 32768);
+            uint32_t seg  = u >> 13;
+            uint32_t frac = u & 0x1FFF;
+            uint32_t cp0  = lin_curve[seg];
+            uint32_t cp1  = seg < 7 ? lin_curve[seg + 1] : 0;
+            uint32_t o    = (cp0 * 8192 + ((cp1 - cp0) & 0xFFFF) * frac + 4096) >> 13;
+            dst[x*2]      = FFMIN(o, 0xFFFF);
+        }
     }
 }
 
@@ -131,10 +162,11 @@ static void prores_idct_put_12_c(uint16_t *out, ptrdiff_t linesize, int16_t *blo
 }
 
 static void prores_idct_put_bayer_12_c(uint16_t *out, ptrdiff_t linesize,
-                                       int16_t *block, const int16_t *qmat)
+                                       int32_t *block, const int16_t *qmat,
+                                       const uint16_t *lin_curve)
 {
-    prores_idct_12(block, qmat);
-    put_pixel_bayer_12(out, linesize << 1, block);
+    prores_idct_bayer_16(block, qmat);
+    put_pixel_bayer_lin_curve_12(out, linesize << 1, block, lin_curve);
 }
 
 av_cold void ff_proresdsp_init(ProresDSPContext *dsp, int bits_per_raw_sample)

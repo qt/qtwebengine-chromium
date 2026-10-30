@@ -25,6 +25,7 @@
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/samplefmt.h"
 
@@ -155,6 +156,8 @@ static int encode_make_refcounted(AVCodecContext *avctx, AVPacket *avpkt)
  */
 static int pad_last_frame(AVCodecContext *s, AVFrame *frame, const AVFrame *src, int out_samples)
 {
+    AVFrameSideData *sd;
+    int discard_padding;
     int ret;
 
     frame->format         = src->format;
@@ -178,6 +181,17 @@ static int pad_last_frame(AVCodecContext *s, AVFrame *frame, const AVFrame *src,
                                       frame->nb_samples - src->nb_samples,
                                       s->ch_layout.nb_channels, s->sample_fmt)) < 0)
         goto fail;
+
+    discard_padding = frame->nb_samples - src->nb_samples;
+    av_assert1(discard_padding > 0);
+    sd = av_frame_new_side_data(frame, AV_FRAME_DATA_SKIP_SAMPLES, 10);
+    if (!sd) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    AV_WL32A(sd->data, 0);
+    AV_WL32A(sd->data + 4, discard_padding);
+    AV_WL16A(sd->data + 8, 0);
 
     return 0;
 
@@ -216,6 +230,53 @@ int ff_encode_get_frame(AVCodecContext *avctx, AVFrame *frame)
     return 0;
 }
 
+static int encode_set_packet_props(AVCodecContext *avctx, AVPacket *avpkt, const AVFrame *frame)
+{
+    AVCodecInternal *avci = avctx->internal;
+    EncodeContext     *ec = encode_ctx(avci);
+
+    if (avpkt->pts == AV_NOPTS_VALUE) {
+        avpkt->pts = frame->pts;
+        if (avctx->codec->type == AVMEDIA_TYPE_AUDIO && avpkt->pts != AV_NOPTS_VALUE)
+            avpkt->pts -= ff_samples_to_time_base(avctx, avctx->initial_padding);
+    }
+
+    if (!avpkt->duration) {
+        if (frame->duration)
+            avpkt->duration = frame->duration;
+        else if (avctx->codec->type == AVMEDIA_TYPE_AUDIO) {
+            avpkt->duration = ff_samples_to_time_base(avctx,
+                                                      frame->nb_samples);
+        }
+        if (avctx->codec->type == AVMEDIA_TYPE_AUDIO) {
+            AVFrameSideData *frame_sd = av_frame_get_side_data(frame, AV_FRAME_DATA_SKIP_SAMPLES);
+
+            if (frame_sd && frame_sd->size >= 10) {
+                int skip_samples    = AV_RL32(frame_sd->data + 0);
+                int discard_padding = AV_RL32(frame_sd->data + 4);
+
+                if (discard_padding > 0 && avctx->frame_size && ec->last_audio_frame) {
+                    avpkt->duration = av_sat_add64(avpkt->duration, ff_samples_to_time_base(avctx, avctx->initial_padding));
+                    avpkt->duration = FFMIN(avpkt->duration, ff_samples_to_time_base(avctx, avctx->frame_size));
+                    discard_padding = avctx->frame_size - ff_samples_from_time_base(avctx, avpkt->duration);
+                }
+
+                if (skip_samples > 0 || discard_padding > 0) {
+                    uint8_t *packet_sd = av_packet_new_side_data(avpkt, AV_PKT_DATA_SKIP_SAMPLES, 10);
+                    if (!packet_sd)
+                         return AVERROR(ENOMEM);
+                    AV_WL32A(packet_sd + 0, skip_samples);
+                    AV_WL32A(packet_sd + 4, discard_padding);
+                    AV_WL8  (packet_sd + 8, AV_RB8(frame_sd->data + 8));
+                    AV_WL8  (packet_sd + 9, AV_RB8(frame_sd->data + 9));
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
 int ff_encode_reordered_opaque(AVCodecContext *avctx,
                                AVPacket *pkt, const AVFrame *frame)
 {
@@ -236,7 +297,7 @@ int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
     int ret;
 
     ret = codec->cb.encode(avctx, avpkt, frame, got_packet);
-    emms_c();
+    ff_assert1_fpu();
     av_assert0(ret <= 0);
 
     if (!ret && *got_packet) {
@@ -252,17 +313,9 @@ int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
         // encoders with delay have to set the timestamps themselves
         if (!(avctx->codec->capabilities & AV_CODEC_CAP_DELAY) ||
             (frame && (codec->caps_internal & FF_CODEC_CAP_EOF_FLUSH))) {
-            if (avpkt->pts == AV_NOPTS_VALUE)
-                avpkt->pts = frame->pts;
-
-            if (!avpkt->duration) {
-                if (frame->duration)
-                    avpkt->duration = frame->duration;
-                else if (avctx->codec->type == AVMEDIA_TYPE_AUDIO) {
-                    avpkt->duration = ff_samples_to_time_base(avctx,
-                                                              frame->nb_samples);
-                }
-            }
+            ret = encode_set_packet_props(avctx, avpkt, frame);
+            if (ret < 0)
+                goto unref;
 
             ret = ff_encode_reordered_opaque(avctx, avpkt, frame);
             if (ret < 0)
@@ -439,7 +492,7 @@ static int encode_send_frame_internal(AVCodecContext *avctx, const AVFrame *src)
             avctx->audio_service_type = *(enum AVAudioServiceType*)sd->data;
 
         /* check for valid frame size */
-        if (!(avctx->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE)) {
+        if (avctx->frame_size) {
             /* if we already got an undersized frame, that must have been the last */
             if (ec->last_audio_frame) {
                 av_log(avctx, AV_LOG_ERROR, "frame_size (%d) was not respected for a non-last frame\n", avctx->frame_size);
@@ -451,7 +504,8 @@ static int encode_send_frame_internal(AVCodecContext *avctx, const AVFrame *src)
             }
             if (src->nb_samples < avctx->frame_size) {
                 ec->last_audio_frame = 1;
-                if (!(avctx->codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME)) {
+                if (!(avctx->codec->capabilities & AV_CODEC_CAP_SMALL_LAST_FRAME) ||
+                    (avctx->flags2 & AV_CODEC_FLAG2_FIXED_FRAME_SIZE)) {
                     int pad_samples = avci->pad_samples ? avci->pad_samples : avctx->frame_size;
                     int out_samples = (src->nb_samples + pad_samples - 1) / pad_samples * pad_samples;
 
@@ -538,6 +592,103 @@ int attribute_align_arg avcodec_receive_packet(AVCodecContext *avctx, AVPacket *
         if (ret < 0)
             return ret;
     }
+
+    return 0;
+}
+
+av_cold int ff_encode_reconf_parse_dict(AVCodecContext *avctx, AVDictionary **dict)
+{
+    const AVCodec *codec = avctx->codec;
+    const FFCodec *codec2 = ffcodec(codec);
+    const AVDictionaryEntry *t = NULL;
+    AVDictionary *copy = NULL;
+    int ret;
+
+    av_assert0(av_codec_is_encoder(codec) && (codec->capabilities & AV_CODEC_CAP_ENCODER_RECONF));
+
+    ret = av_dict_copy(&copy, *dict, 0);
+    if (ret < 0)
+        goto end;
+
+    // Remove the dictionary entries that would be applied to the private codec context
+    if (codec->priv_class) {
+        while ((t = av_dict_iterate(*dict, t))) {
+            if (av_opt_find(avctx->priv_data, t->key, NULL,
+                            AV_OPT_FLAG_RUNTIME_PARAM, 0))
+                av_dict_set(dict, t->key, NULL, 0);
+        }
+    }
+
+    // Ditto for global options
+    if (codec2->defaults) {
+        const FFCodecDefault *d = codec2->defaults;
+        while (d->key) {
+            if (d->flags & AV_OPT_FLAG_RUNTIME_PARAM)
+                av_dict_set(dict, d->key, NULL, 0);
+            d++;
+        }
+    }
+
+    // If any entry remains, then the requested option/s don't exist or are not settable.
+    if (av_dict_count(*dict)) {
+        ret = AVERROR_OPTION_NOT_FOUND;
+        goto end;
+    }
+
+    ret = av_dict_copy(dict, copy, 0);
+    if (ret < 0)
+        goto end;
+
+    // Do a dry run of applying the options, to ensure the encoder is unchanged in case
+    // one of them has an invalid value.
+    // This is done twice, once for avctx and once for the AVCodec, because using the
+    // search children flag in combination with the fake obj flag will iterate through
+    // the options from all compiled in codecs if you pass the avctx class.
+    if (codec->priv_class) {
+        ret = av_opt_set_dict2((void *)&codec->priv_class, &copy, AV_OPT_SEARCH_FAKE_OBJ);
+        if (ret < 0)
+            goto end;
+    }
+    ret = av_opt_set_dict2((void *)&avctx->av_class, &copy, AV_OPT_SEARCH_FAKE_OBJ);
+    if (ret < 0)
+        goto end;
+
+    // The dictionary should be empty.
+    av_assert0(!av_dict_count(copy));
+
+    ret = av_opt_set_dict2(avctx, dict, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0)
+        goto end;
+
+    // The dictionary should be empty.
+    av_assert0(!av_dict_count(*dict));
+
+    ret = 0;
+end:
+    av_dict_free(&copy);
+
+    return ret;
+}
+
+av_cold int avcodec_encode_reconfigure(AVCodecContext *avctx, AVDictionary **dict)
+{
+    const FFCodec *codec = ffcodec(avctx->codec);
+    int ret = AVERROR_BUG;
+
+    if (!dict || !*dict || !avcodec_is_open(avctx) || !av_codec_is_encoder(avctx->codec))
+        return AVERROR(EINVAL);
+
+    if (!(avctx->codec->capabilities & AV_CODEC_CAP_ENCODER_RECONF)) {
+        av_log(avctx, AV_LOG_ERROR, "This encoder does not support reconfiguration\n");
+        return AVERROR(ENOSYS);
+    }
+
+    if (codec->reconf)
+        ret = codec->reconf(avctx, dict);
+    else
+        ret = ff_encode_reconf_parse_dict(avctx, dict);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }

@@ -227,10 +227,11 @@ static void free_buffers(CFHDContext *s)
             s->plane[i].l_h[j] = NULL;
 
         for (int j = 0; j < DWT_LEVELS_3D; j++)
-            p->band[j][0].read_ok =
-            p->band[j][1].read_ok =
-            p->band[j][2].read_ok =
-            p->band[j][3].read_ok = 0;
+            for (unsigned k = 0; k < FF_ARRAY_ELEMS(p->band[j]); k++) {
+                p->band[j][k].a_width  = 0;
+                p->band[j][k].a_height = 0;
+                p->band[j][k].read_ok  = 0;
+            }
     }
     s->a_height = 0;
     s->a_width  = 0;
@@ -433,11 +434,6 @@ static int cfhd_decode(AVCodecContext *avctx, AVFrame *pic,
         } else if (tag == ChannelNumber) {
             s->channel_num = data;
             av_log(avctx, AV_LOG_DEBUG, "Channel number %"PRIu16"\n", data);
-            if (s->channel_num >= s->planes) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid channel number\n");
-                ret = AVERROR(EINVAL);
-                goto end;
-            }
             init_plane_defaults(s);
         } else if (tag == SubbandNumber) {
             if (s->subband_num != 0 && data == 1 && (s->transform_type == 0 || s->transform_type == 2))  // hack
@@ -631,7 +627,19 @@ static int cfhd_decode(AVCodecContext *avctx, AVFrame *pic,
         } else
             av_log(avctx, AV_LOG_DEBUG,  "Unknown tag %i data %x\n", tag, data);
 
-        if (tag == BitstreamMarker && data == 0xf0f &&
+        if (s->channel_num >= s->planes) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid channel number\n");
+            ret = AVERROR(EINVAL);
+            goto end;
+        }
+
+        if (got_buffer && (s->coded_width || s->coded_height || s->coded_format != AV_PIX_FMT_NONE)) {
+            av_log(avctx, AV_LOG_ERROR, "Header tag after end of header\n");
+            ret = AVERROR(EINVAL);
+            goto end;
+        }
+
+        if (tag == BitstreamMarker && data == CoefficientSegment &&
             s->coded_format != AV_PIX_FMT_NONE) {
             int lowpass_height = s->plane[s->channel_num].band[0][0].height;
             int lowpass_width  = s->plane[s->channel_num].band[0][0].width;
@@ -698,10 +706,15 @@ static int cfhd_decode(AVCodecContext *avctx, AVFrame *pic,
 
         if (s->subband_num_actual == 255)
             goto finish;
+
+        if (tag == BitstreamMarker && data == CoefficientSegment || tag == BandHeader || tag == BandSecondPass || s->peak.level)
+            if (s->transform_type != s->a_transform_type)
+                return AVERROR_PATCHWELCOME;
+
         coeff_data = s->plane[s->channel_num].subband[s->subband_num_actual];
 
         /* Lowpass coefficients */
-        if (tag == BitstreamMarker && data == 0xf0f) {
+        if (tag == BitstreamMarker && data == CoefficientSegment) {
             int lowpass_height, lowpass_width, lowpass_a_height, lowpass_a_width;
 
             if (!s->a_width || !s->a_height) {
@@ -913,8 +926,7 @@ finish:
     ff_thread_finish_setup(avctx);
 
     if (!s->a_width || !s->a_height || s->a_format == AV_PIX_FMT_NONE ||
-        s->a_transform_type == INT_MIN ||
-        s->coded_width || s->coded_height || s->coded_format != AV_PIX_FMT_NONE) {
+        s->a_transform_type == INT_MIN) {
         av_log(avctx, AV_LOG_ERROR, "Invalid dimensions\n");
         ret = AVERROR(EINVAL);
         goto end;
@@ -1219,7 +1231,7 @@ finish:
 
             if (lowpass_height > s->plane[plane].band[4][1].a_height || lowpass_width > s->plane[plane].band[4][1].a_width ||
                 !highpass_stride || s->plane[plane].band[4][1].width > s->plane[plane].band[4][1].a_width ||
-                lowpass_width < 3 || lowpass_height < 3) {
+                lowpass_width < 3 || lowpass_height < 3 || lowpass_width * 2 > s->plane[plane].width) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid plane dimensions\n");
                 ret = AVERROR(EINVAL);
                 goto end;
@@ -1340,7 +1352,7 @@ finish:
 
             if (lowpass_height > s->plane[plane].band[4][1].a_height || lowpass_width > s->plane[plane].band[4][1].a_width ||
                 s->plane[plane].band[4][1].width > s->plane[plane].band[4][1].a_width ||
-                lowpass_width < 3 || lowpass_height < 3) {
+                lowpass_width < 3 || lowpass_height < 3 || lowpass_width * 2 > s->plane[plane].width) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid plane dimensions\n");
                 ret = AVERROR(EINVAL);
                 goto end;

@@ -3923,6 +3923,7 @@ static int mpeg4_update_thread_context(AVCodecContext *dst,
     s->cplx_estimation_trash_p   = s1->cplx_estimation_trash_p;
     s->cplx_estimation_trash_b   = s1->cplx_estimation_trash_b;
     s->rgb                       = s1->rgb;
+    s->h.c.studio_profile        = s1->h.c.studio_profile;
 
     s->h.skipped_last_frame      = s1->h.skipped_last_frame;
     s->h.padding_bug_score       = s1->h.padding_bug_score; // FIXME: racy
@@ -4100,6 +4101,9 @@ const FFCodec ff_mpeg4_decoder = {
     .hw_configs            = (const AVCodecHWConfigInternal *const []) {
 #if CONFIG_MPEG4_NVDEC_HWACCEL
                                HWACCEL_NVDEC(mpeg4),
+#endif
+#if CONFIG_MPEG4_NVDEC_CUARRAY_HWACCEL
+                               HWACCEL_NVDEC_CUARRAY(mpeg4),
 #endif
 #if CONFIG_MPEG4_VAAPI_HWACCEL
                                HWACCEL_VAAPI(mpeg4),

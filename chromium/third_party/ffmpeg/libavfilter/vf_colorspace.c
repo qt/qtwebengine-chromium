@@ -23,6 +23,7 @@
  * Convert between colorspaces.
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/csp.h"
 #include "libavutil/frame.h"
@@ -127,9 +128,12 @@ typedef struct ColorSpaceContext {
     enum AVColorPrimaries in_prm, out_prm, user_prm, user_iprm;
     enum AVPixelFormat in_format, user_format;
     int fast_mode;
-    enum DitherMode dither;
-    enum WhitepointAdaptation wp_adapt;
-    enum ClipGamutMode clip_gamut;
+    /* enum DitherMode */
+    int dither;
+    /* enum WhitepointAdaptation */
+    int wp_adapt;
+    /* enum ClipGamutMode */
+    int clip_gamut;
 
     int16_t *rgb[3];
     ptrdiff_t rgb_stride;
@@ -391,7 +395,7 @@ static int get_range_off(AVFilterContext *ctx, int *off,
             s->did_warn_range = 1;
         }
     }
-        // fall-through
+    av_fallthrough;
     case AVCOL_RANGE_MPEG:
         *off = 16 << (depth - 8);
         *y_rng = 219 << (depth - 8);

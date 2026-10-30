@@ -695,9 +695,9 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
     const int height = s->planeheight[plane];
     const int block_pos_bottom = FFMAX(0, height - s->block_size);
     const int block_pos_right  = FFMAX(0, width - s->block_size);
-    const int slice_start = (((height + block_step - 1) / block_step) * jobnr / nb_jobs) * block_step;
+    const int slice_start = ff_slice_pos((height + block_step - 1) / block_step, jobnr, nb_jobs) * block_step;
     const int slice_end = (jobnr == nb_jobs - 1) ? block_pos_bottom + block_step :
-                          (((height + block_step - 1) / block_step) * (jobnr + 1) / nb_jobs) * block_step;
+                          ff_slice_pos((height + block_step - 1) / block_step, jobnr + 1, nb_jobs) * block_step;
 
     memset(sc->num, 0, width * height * sizeof(float));
     memset(sc->den, 0, width * height * sizeof(float));
@@ -775,6 +775,15 @@ static int config_input(AVFilterLink *inlink)
     s->planewidth[0]  = s->planewidth[3]  = inlink->w;
     s->pblock_size = FFALIGN(s->block_size * 2, av_cpu_max_align());
     s->pgroup_size = FFALIGN(s->group_size * 2, av_cpu_max_align());
+
+    for (int p = 0; p < s->nb_planes; p++) {
+        if (!((1 << p) & s->planes))
+            continue;
+        if (s->planewidth[p] < s->block_size || s->planeheight[p] < s->block_size) {
+            av_log(ctx, AV_LOG_ERROR, "Plane %d is smaller than the block size\n", p);
+            return AVERROR(EINVAL);
+        }
+    }
 
     for (int i = 0; i < s->nb_threads; i++) {
         SliceContext *sc = &s->slices[i];

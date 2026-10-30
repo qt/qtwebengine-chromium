@@ -146,7 +146,8 @@ static int d3d12va_mpeg2_end_frame(AVCodecContext *avctx)
         return -1;
 
     ret = ff_d3d12va_common_end_frame(avctx, s->cur_pic.ptr->f, &ctx_pic->pp, sizeof(ctx_pic->pp),
-                                      &ctx_pic->qm, sizeof(ctx_pic->qm), update_input_arguments);
+                                      &ctx_pic->qm, sizeof(ctx_pic->qm), ctx_pic->bitstream_size,
+                                      update_input_arguments);
     if (!ret)
         ff_mpeg_draw_horiz_band(s, 0, avctx->height);
 

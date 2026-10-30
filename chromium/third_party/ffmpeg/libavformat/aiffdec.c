@@ -19,10 +19,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/dict.h"
 #include "libavutil/mem.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "demux.h"
 #include "internal.h"
 #include "pcm.h"
@@ -164,6 +166,7 @@ static int get_aiff_header(AVFormatContext *s, int64_t size,
             break;
         case AV_CODEC_ID_ADPCM_G726LE:
             par->bits_per_coded_sample = 5;
+            av_fallthrough;
         case AV_CODEC_ID_ADPCM_IMA_WS:
         case AV_CODEC_ID_ADPCM_G722:
         case AV_CODEC_ID_MACE6:
@@ -368,9 +371,10 @@ static int aiff_read_header(AVFormatContext *s)
                     if (len == 11 && size > 11) {
                         uint8_t chunk[11];
 
-                        ret = avio_read(pb, chunk, 11);
-                        if (ret > 0)
-                            size -= ret;
+                        ret = ffio_read_size(pb, chunk, 11);
+                        if (ret < 0)
+                            return ret;
+                        size -= ret;
                         if (!memcmp(chunk, "VADPCMCODES", sizeof(chunk))) {
                             if ((ret = ff_get_extradata(s, st->codecpar, pb, size)) < 0)
                                 return ret;
@@ -384,6 +388,7 @@ static int aiff_read_header(AVFormatContext *s)
         case 0:
             if (offset > 0 && st->codecpar->block_align) // COMM && SSND
                 goto got_sound;
+            av_fallthrough;
         default: /* Jump */
             avio_skip(pb, size);
         }

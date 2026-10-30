@@ -23,7 +23,7 @@
 
 #include <stdint.h>
 
-#include "libavcodec/packet_internal.h"
+#include "packet_internal.h"
 
 #include "avformat.h"
 
@@ -118,6 +118,13 @@ typedef struct FFFormatContext {
     AVDictionary *id3v2_meta;
 
     int missing_streams;
+
+    /**
+     * Shared libcurl event loop, created on demand on the first use. Freed on
+     * context free. This allows to share libcurl state across URLContexts,
+     * scoped to this context.
+     */
+    struct CurlLoop *curl_loop;
 } FFFormatContext;
 
 static av_always_inline FFFormatContext *ffformatcontext(AVFormatContext *s)
@@ -353,10 +360,6 @@ typedef struct FFStream {
     int64_t cur_dts;
 
     const struct AVCodecDescriptor *codec_desc;
-
-#if FF_API_INTERNAL_TIMING
-    AVRational transferred_mux_tb;
-#endif
 } FFStream;
 
 static av_always_inline FFStream *ffstream(AVStream *st)
@@ -424,16 +427,16 @@ uint64_t ff_ntp_time(void);
 /**
  * Get the NTP time stamp formatted as per the RFC-5905.
  *
- * @param ntp_time NTP time in micro seconds (since NTP epoch)
+ * @param ntp_time NTP time in microseconds (since NTP epoch)
  * @return the formatted NTP time stamp
  */
 uint64_t ff_get_formatted_ntp_time(uint64_t ntp_time_us);
 
 /**
- * Parse the NTP time in micro seconds (since NTP epoch).
+ * Parse the NTP time in microseconds (since NTP epoch).
  *
  * @param ntp_ts NTP time stamp formatted as per the RFC-5905.
- * @return the time in micro seconds (since NTP epoch)
+ * @return the time in microseconds (since NTP epoch)
  */
 uint64_t ff_parse_ntp_time(uint64_t ntp_ts);
 
@@ -610,6 +613,12 @@ int ff_copy_whiteblacklists(AVFormatContext *dst, const AVFormatContext *src);
 int ff_format_io_close(AVFormatContext *s, AVIOContext **pb);
 
 /**
+ * Release a libcurl event loop and set *loop to NULL.
+ * No-op when @p loop or *loop is NULL.
+ */
+void ff_curl_loop_free(struct CurlLoop **loop);
+
+/**
  * Utility function to check if the file uses http or https protocol
  *
  * @param s AVFormatContext
@@ -629,6 +638,16 @@ int ff_bprint_to_codecpar_extradata(AVCodecParameters *par, struct AVBPrint *buf
  * set the legacy filename field to the same string which was provided in url.
  */
 void ff_format_set_url(AVFormatContext *s, char *url);
+
+/**
+ * Set AVFormatContext url field to a av_strdup of the provided pointer. The pointer must
+ * point to a valid string. The existing url field is freed if necessary.
+ *
+ * Checks protocol_whitelist/blacklist
+ *
+ * @returns a AVERROR code or non negative on success
+ */
+int ff_format_check_set_url(AVFormatContext *s, const char *url);
 
 /**
  * Return a positive value if the given url has one of the given
@@ -674,7 +693,7 @@ int ff_dict_set_timestamp(AVDictionary **dict, const char *key, int64_t timestam
  *                      nested protocols are used.
  * @return <0 on error
  */
-int ff_parse_opts_from_query_string(void *obj, const char *str, int allow_unkown);
+int ff_parse_opts_from_query_string(void *obj, const char *str, int allow_unknown);
 
 /**
  * Make a RFC 4281/6381 like string describing a codec.
@@ -689,5 +708,17 @@ int ff_parse_opts_from_query_string(void *obj, const char *str, int allow_unkown
  */
 int ff_make_codec_str(void *logctx, const AVCodecParameters *par,
                       const AVRational *frame_rate, struct AVBPrint *out);
+
+/**
+ * Allocate copy of a structure and copy contents of an AVBPrint buffer to the
+ * flexible array member of the copied struct. AVBPrint buffer is freed.
+ *
+ * @param bp pointer to an AVBprint struct
+ * @param struct_ptr pointer to the struct to be copied
+ * @param fam_offset must be offsetof(StructType, flexible_array_member)
+ * @return pointer to the newly allocated struct, NULL on allocation error or
+ *         if the AVBPrint buffer is not complete
+ */
+void *ff_bprint_finalize_as_fam(struct AVBPrint *bp, const void *struct_ptr, size_t fam_offset);
 
 #endif /* AVFORMAT_INTERNAL_H */

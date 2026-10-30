@@ -315,6 +315,9 @@ int avfilter_insert_filter(AVFilterLink *link, AVFilterContext *filt,
     if (link->outcfg.alpha_modes)
         ff_formats_changeref(&link->outcfg.alpha_modes,
                              &filt->outputs[filt_dstpad_idx]->outcfg.alpha_modes);
+    if (link->outcfg.chroma_locations)
+        ff_formats_changeref(&link->outcfg.chroma_locations,
+                             &filt->outputs[filt_dstpad_idx]->outcfg.chroma_locations);
     if (link->outcfg.samplerates)
         ff_formats_changeref(&link->outcfg.samplerates,
                              &filt->outputs[filt_dstpad_idx]->outcfg.samplerates);
@@ -760,6 +763,7 @@ AVFilterContext *ff_filter_alloc(const AVFilter *filter, const char *inst_name)
 err:
     if (preinited)
         fi->uninit(ret);
+    av_freep(&ret->name);
     av_freep(&ret->inputs);
     av_freep(&ret->input_pads);
     ret->nb_inputs = 0;
@@ -789,6 +793,8 @@ static void free_link(AVFilterLink *link)
     ff_formats_unref(&link->outcfg.color_ranges);
     ff_formats_unref(&link->incfg.alpha_modes);
     ff_formats_unref(&link->outcfg.alpha_modes);
+    ff_formats_unref(&link->incfg.chroma_locations);
+    ff_formats_unref(&link->outcfg.chroma_locations);
     ff_formats_unref(&link->incfg.samplerates);
     ff_formats_unref(&link->outcfg.samplerates);
     ff_channel_layouts_unref(&link->incfg.channel_layouts);
@@ -1077,7 +1083,8 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             strcmp(link->dst->filter->name, "idet") &&
             strcmp(link->dst->filter->name, "null") &&
             strcmp(link->dst->filter->name, "scale") &&
-            strcmp(link->dst->filter->name, "libplacebo")) {
+            strcmp(link->dst->filter->name, "libplacebo") &&
+            strcmp(link->dst->filter->name, "hqdn3d")) {
             av_assert1(frame->format        == link->format);
             av_assert1(frame->width         == link->w);
             av_assert1(frame->height        == link->h);
@@ -1108,6 +1115,9 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
     filter_unblock(link->dst);
     ret = ff_framequeue_add(&li->fifo, frame);
     if (ret < 0) {
+        const FFFrameQueueGlobal *global = li->fifo.global;
+        if (ret == AVERROR(ENOMEM) && global->queued >= global->max_queued)
+            av_log(link->dst, AV_LOG_ERROR, "Exhausted frame queue capacity (%zu frames)\n", global->max_queued);
         av_frame_free(&frame);
         return ret;
     }

@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #define BITSTREAM_WRITER_LE
 
 #include "libavutil/channel_layout.h"
@@ -662,8 +663,9 @@ static uint32_t log2mono(int32_t *samples, int nb_samples, int limit)
 {
     uint32_t result = 0;
     while (nb_samples--) {
-        if (log2sample(abs(*samples++), limit, &result))
+        if (log2sample(FFABSU(samples[0]), limit, &result))
             return UINT32_MAX;
+        samples++;
     }
     return result;
 }
@@ -673,9 +675,11 @@ static uint32_t log2stereo(int32_t *samples_l, int32_t *samples_r,
 {
     uint32_t result = 0;
     while (nb_samples--) {
-        if (log2sample(abs(*samples_l++), limit, &result) ||
-            log2sample(abs(*samples_r++), limit, &result))
+        if (log2sample(FFABSU(samples_l[0]), limit, &result) ||
+            log2sample(FFABSU(samples_r[0]), limit, &result))
             return UINT32_MAX;
+        samples_l++;
+        samples_r++;
     }
     return result;
 }
@@ -991,7 +995,7 @@ static void scan_word(WavPackEncodeContext *s, WvChannel *c,
         samples += nb_samples - 1;
 
     while (nb_samples--) {
-        uint32_t low, value = labs(samples[0]);
+        uint32_t low, value = FFABSU(samples[0]);
 
         if (value < GET_MED(0)) {
             DEC_MED(0);
@@ -2844,6 +2848,7 @@ static void fill_buffer(WavPackEncodeContext *s,
             COPY_SAMPLES(int32_t, 0, 8);
             break;
         }
+        av_fallthrough;
     case AV_SAMPLE_FMT_FLTP:
         memcpy(dst, src, nb_samples * 4);
     }

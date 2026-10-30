@@ -28,25 +28,8 @@
 
 #include "libavutil/riscv/asm.S"
 
-.macro  lx rd, addr
-#if (__riscv_xlen == 32)
-        lw      \rd, \addr
-#elif (__riscv_xlen == 64)
-        ld      \rd, \addr
-#else
-        lq      \rd, \addr
-#endif
-.endm
-
-.macro  sx rd, addr
-#if (__riscv_xlen == 32)
-        sw      \rd, \addr
-#elif (__riscv_xlen == 64)
-        sd      \rd, \addr
-#else
-        sq      \rd, \addr
-#endif
-.endm
+#define XSZ            (__riscv_xlen / 8)
+#define STACK_ALIGN(x) (((x) + 15) & ~15)
 
 #define XSZ            (__riscv_xlen / 8)
 #define STACK_ALIGN(x) (((x) + 15) & ~15)

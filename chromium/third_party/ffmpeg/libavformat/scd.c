@@ -122,7 +122,7 @@ static int scd_read_offsets(AVFormatContext *s)
     SCDDemuxContext  *ctx = s->priv_data;
     uint8_t buf[SCD_OFFSET_HEADER_SIZE];
 
-    if ((ret = avio_read(s->pb, buf, SCD_OFFSET_HEADER_SIZE)) < 0)
+    if ((ret = ffio_read_size(s->pb, buf, SCD_OFFSET_HEADER_SIZE)) < 0)
         return ret;
 
     ctx->hdr.table0.count  = AV_RB16(buf +  0);
@@ -182,7 +182,8 @@ static int scd_read_track(AVFormatContext *s, SCDTrackHeader *track, int index)
     track->aux_count    = AV_RB32(buf + 28);
 
     /* Sanity checks */
-    if (track->num_channels > 8 || track->sample_rate >= 192000 ||
+    if (!track->num_channels || track->num_channels > 8 ||
+        track->sample_rate >= 192000 ||
         track->loop_start > track->loop_end)
         return AVERROR_INVALIDDATA;
 

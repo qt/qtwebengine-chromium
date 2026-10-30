@@ -702,7 +702,7 @@ static int init_profile(AVCodecContext *avctx,
         AV_PROFILE_H264_CONSTRAINED_BASELINE,
         AV_PROFILE_H264_MAIN,
         AV_PROFILE_H264_HIGH,
-        AV_PROFILE_H264_HIGH_10,
+        AV_PROFILE_H264_HIGH_444_PREDICTIVE,
     };
     int nb_profiles = FF_ARRAY_ELEMS(known_profiles);
 
@@ -834,12 +834,16 @@ static av_cold int init_sequence_headers(AVCodecContext *avctx)
     if (err < 0)
         return err;
 
-    units->raw_sps.seq_scaling_matrix_present_flag =
-        !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_SCALING_MATRIX_PRESENT_FLAG_SET_BIT_KHR);
-    units->raw_pps.pic_scaling_matrix_present_flag =
-        !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_SCALING_MATRIX_PRESENT_FLAG_SET_BIT_KHR);
-    units->raw_pps.transform_8x8_mode_flag =
-        !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_TRANSFORM_8X8_MODE_FLAG_SET_BIT_KHR);
+    /* High profile syntax: the capabilities only signal implementation
+     * support, lesser profiles prohibit these outright */
+    if (units->raw_pps.more_rbsp_data) {
+        units->raw_sps.seq_scaling_matrix_present_flag =
+            !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_SCALING_MATRIX_PRESENT_FLAG_SET_BIT_KHR);
+        units->raw_pps.pic_scaling_matrix_present_flag =
+            !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_SCALING_MATRIX_PRESENT_FLAG_SET_BIT_KHR);
+        units->raw_pps.transform_8x8_mode_flag =
+            !!(enc->caps.stdSyntaxFlags & VK_VIDEO_ENCODE_H264_STD_TRANSFORM_8X8_MODE_FLAG_SET_BIT_KHR);
+    }
 
     return 0;
 }
@@ -1148,7 +1152,7 @@ static int init_base_units(AVCodecContext *avctx)
             return AVERROR(ENOMEM);
     } else {
         av_log(avctx, AV_LOG_ERROR, "Unable to get feedback for H.264 units = %zu\n", data_size);
-        return err;
+        return AVERROR_EXTERNAL;
     }
 
     ret = vk->GetEncodedVideoSessionParametersKHR(s->hwctx->act_dev, &params_info,
@@ -1156,7 +1160,8 @@ static int init_base_units(AVCodecContext *avctx)
                                                   &data_size, data);
     if (ret != VK_SUCCESS) {
         av_log(avctx, AV_LOG_ERROR, "Error writing feedback units\n");
-        return err;
+        err = AVERROR_EXTERNAL;
+        goto end;
     }
 
     av_log(avctx, AV_LOG_VERBOSE, "Feedback units written, overrides: %i (SPS: %i PPS: %i)\n",
@@ -1168,22 +1173,23 @@ static int init_base_units(AVCodecContext *avctx)
     h264_params_feedback.hasStdPPSOverrides = 1;
 
     /* No need to sync any overrides */
+    err = 0;
     if (!params_feedback.hasOverrides)
-        return 0;
+        goto end;
 
     /* Parse back tne units and override */
     err = parse_feedback_units(avctx, data, data_size,
                                h264_params_feedback.hasStdSPSOverrides,
                                h264_params_feedback.hasStdPPSOverrides);
     if (err < 0)
-        return err;
+        goto end;
 
     /* Create final session parameters */
     err = create_session_params(avctx);
-    if (err < 0)
-        return err;
 
-    return 0;
+end:
+    av_free(data);
+    return err;
 }
 
 static int vulkan_encode_h264_add_nal(AVCodecContext *avctx,
@@ -1474,6 +1480,12 @@ static av_cold int vulkan_encode_h264_init(AVCodecContext *avctx)
         return err;
 
     flags = ctx->codec->flags;
+
+    /* Baseline profiles have no B-slices */
+    if (avctx->profile == AV_PROFILE_H264_BASELINE ||
+        avctx->profile == AV_PROFILE_H264_CONSTRAINED_BASELINE)
+        flags &= ~(FF_HW_FLAG_B_PICTURES | FF_HW_FLAG_B_PICTURE_REFERENCES);
+
     if (!enc->caps.maxPPictureL0ReferenceCount &&
         !enc->caps.maxBPictureL0ReferenceCount &&
         !enc->caps.maxL1ReferenceCount) {
@@ -1561,6 +1573,13 @@ static av_cold int vulkan_encode_h264_init(AVCodecContext *avctx)
 static av_cold int vulkan_encode_h264_close(AVCodecContext *avctx)
 {
     VulkanEncodeH264Context *enc = avctx->priv_data;
+
+    ff_cbs_fragment_free(&enc->current_access_unit);
+    ff_cbs_close(&enc->cbs);
+
+    av_freep(&enc->sei_a53cc_data);
+    av_freep(&enc->sei_identifier_string);
+
     ff_vulkan_encode_uninit(&enc->common);
     return 0;
 }
@@ -1580,7 +1599,7 @@ static const AVOption vulkan_encode_h264_options[] = {
     { PROFILE("constrained_baseline", AV_PROFILE_H264_CONSTRAINED_BASELINE) },
     { PROFILE("main",                 AV_PROFILE_H264_MAIN) },
     { PROFILE("high",                 AV_PROFILE_H264_HIGH) },
-    { PROFILE("high444p",             AV_PROFILE_H264_HIGH_10) },
+    { PROFILE("high444p",             AV_PROFILE_H264_HIGH_444_PREDICTIVE) },
 #undef PROFILE
 
     { "level", "Set level (level_idc)",

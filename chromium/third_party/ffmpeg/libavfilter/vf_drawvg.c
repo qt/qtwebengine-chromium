@@ -28,6 +28,7 @@
 #include <cairo.h>
 #include <stdbool.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bswap.h"
@@ -244,6 +245,8 @@ struct VGSParameter {
 // for the arguments.
 #define MAX_PROC_ARGS (MAX_COMMAND_PARAMS - 2)
 
+#define VGS_MAX_RECURSION_DEPTH 100
+
 // Definition of each command.
 
 struct VGSCommandSpec {
@@ -453,6 +456,7 @@ struct VGSParser {
 
     const char **proc_names;
     int proc_names_count;
+    int depth;
 
     // Store the variable names for the default ones (from `vgs_default_vars`)
     // and the variables created with `setvar`.
@@ -630,7 +634,7 @@ next_token:
             goto next_token;
         }
 
-        /* fallthrough */
+        av_fallthrough;
 
     default:
         token->type = TOKEN_WORD;
@@ -856,7 +860,7 @@ static int vgs_parse_numeric_argument(
         if (ret == 0)
             break;
 
-        /* fallthrough */
+        av_fallthrough;
 
     default:
         vgs_log_invalid_token(log_ctx, parser, &token, "Expected numeric argument.");
@@ -1098,7 +1102,7 @@ static int vgs_parse_statement(
                 FAIL(EINVAL);
             }
 
-            /* fallthrough */
+            av_fallthrough;
 
         case PARAM_NUMERIC:
         case PARAM_NUMERIC_COLOR:
@@ -1214,7 +1218,7 @@ static int vgs_parse_statement(
                 continue;
             }
 
-            /* fallthrough */
+            av_fallthrough;
 
         case PARAM_VAR_NAME: {
             int var_idx = -1;
@@ -1297,6 +1301,7 @@ static void vgs_parser_init(struct VGSParser *parser, const char *source) {
 
     parser->proc_names = NULL;
     parser->proc_names_count = 0;
+    parser->depth = 0;
 
     memset(parser->var_names, 0, sizeof(parser->var_names));
     for (int i = 0; i < VAR_U0; i++)
@@ -1329,11 +1334,19 @@ static int vgs_parse(
     int subprogram
 ) {
     struct VGSParserToken token;
+    int ret = 0;
 
     memset(program, 0, sizeof(*program));
 
+    parser->depth++;
+    if (parser->depth > VGS_MAX_RECURSION_DEPTH) {
+        av_log(log_ctx, AV_LOG_ERROR,
+               "Exceeded maximum drawvg block nesting depth (%d)\n",
+               VGS_MAX_RECURSION_DEPTH);
+        goto fail;
+    }
+
     for (;;) {
-        int ret;
         const struct VGSCommandSpec *cmd;
 
         ret = vgs_parser_next_token(log_ctx, parser, &token, 1);
@@ -1351,7 +1364,7 @@ static int vgs_parse(
                 FFSWAP(int, program->proc_names_count, parser->proc_names_count);
             }
 
-            return 0;
+            goto out;
 
         case TOKEN_WORD:
             // The token must be a valid command.
@@ -1369,21 +1382,26 @@ static int vgs_parse(
             if (!subprogram)
                 goto invalid_token;
 
-            return 0;
+            goto out;
 
         default:
             goto invalid_token;
         }
     }
 
-    return AVERROR_BUG; /* unreachable */
+    ret = AVERROR_BUG; /* unreachable */
+    goto out;
 
 invalid_token:
     vgs_log_invalid_token(log_ctx, parser, &token, "Expected command.");
 
 fail:
     vgs_free(program);
-    return AVERROR(EINVAL);
+    ret = AVERROR(EINVAL);
+
+out:
+    parser->depth--;
+    return ret;
 }
 
 /*
@@ -1882,8 +1900,14 @@ static void hsl2rgb(
 /// the subprogram allocated to the block.
 static int vgs_eval(
     struct VGSEvalState *state,
-    const struct VGSProgram *program
+    const struct VGSProgram *program,
+    int stack_level
 ) {
+
+    if (stack_level >= VGS_MAX_RECURSION_DEPTH) {
+        av_log(state->log_ctx, AV_LOG_ERROR, "maximum recursion depth exceeded\n");
+        return AVERROR(EINVAL);
+    }
 
     #define ASSERT_ARGS(n) av_assert0(statement->args_count == n)
 
@@ -2135,7 +2159,8 @@ static int vgs_eval(
             ASSERT_ARGS(2);
 
             if (isfinite(numerics[0]) && numerics[0] != 0.0) {
-                int ret = vgs_eval(state, statement->args[1].subprogram);
+                const int ret = vgs_eval(state, statement->args[1].subprogram, stack_level + 1);
+
                 if (ret != 0 || state->interrupted != 0)
                     return ret;
             }
@@ -2275,7 +2300,7 @@ static int vgs_eval(
                     color_copy(&state->color_vars[color_var], &colors[i + 1]);
                 }
 
-                const int ret = vgs_eval(state, proc->program);
+                const int ret = vgs_eval(state, proc->program, stack_level + 1);
 
                 // Restore variable values.
                 for (int i = 0; i < proc_args; i++) {
@@ -2360,7 +2385,7 @@ static int vgs_eval(
             for (int i = 0, count = (int)numerics[0]; i < count; i++) {
                 state->vars[VAR_I] = i;
 
-                const int ret = vgs_eval(state, statement->args[1].subprogram);
+                const int ret = vgs_eval(state, statement->args[1].subprogram, stack_level + 1);
                 if (ret != 0)
                     return ret;
 
@@ -2726,7 +2751,7 @@ static int drawvg_filter_frame(AVFilterLink *inlink, AVFrame *frame) {
 
     eval_state.metadata = frame->metadata;
 
-    ret = vgs_eval(&eval_state, &drawvg_ctx->program);
+    ret = vgs_eval(&eval_state, &drawvg_ctx->program, 0);
 
     cairo_destroy(eval_state.cairo_ctx);
     cairo_surface_destroy(surface);

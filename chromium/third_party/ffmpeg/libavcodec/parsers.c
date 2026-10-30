@@ -21,22 +21,6 @@
 #include "avcodec.h"
 #include "parser_internal.h"
 
-#if FF_API_PARSER_PRIVATE
-#include "libavutil/internal.h"
-#include <assert.h>
-#include <stddef.h>
-
-FF_DISABLE_DEPRECATION_WARNINGS
-#define CHECK_OFFSET(field, public_prefix) static_assert(offsetof(FFCodecParser, field) == offsetof(FFCodecParser, p.public_prefix ## field), "Wrong offsets")
-CHECK_OFFSET(codec_ids,);
-CHECK_OFFSET(priv_data_size,);
-CHECK_OFFSET(init, parser_);
-CHECK_OFFSET(parse, parser_);
-CHECK_OFFSET(close, parser_);
-CHECK_OFFSET(split,);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
 extern const FFCodecParser ff_aac_parser;
 extern const FFCodecParser ff_aac_latm_parser;
 extern const FFCodecParser ff_ac3_parser;
@@ -78,6 +62,7 @@ extern const FFCodecParser ff_ipu_parser;
 extern const FFCodecParser ff_jpeg2000_parser;
 extern const FFCodecParser ff_jpegxl_parser;
 extern const FFCodecParser ff_jpegxs_parser;
+extern const FFCodecParser ff_lcevc_parser;
 extern const FFCodecParser ff_misc4_parser;
 extern const FFCodecParser ff_mjpeg_parser;
 extern const FFCodecParser ff_mlp_parser;

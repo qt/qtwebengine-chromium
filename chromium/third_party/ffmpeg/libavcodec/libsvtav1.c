@@ -21,13 +21,16 @@
  */
 
 #include <stdint.h>
+#include <inttypes.h>
 #include <EbSvtAv1ErrorCodes.h>
 #include <EbSvtAv1Enc.h>
 #include <EbSvtAv1Metadata.h>
 
+#include "libavutil/attributes.h"
 #include "libavutil/common.h"
 #include "libavutil/frame.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/base64.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/mem.h"
@@ -64,6 +67,8 @@ typedef struct SvtContext {
     EOS_STATUS eos_flag;
 
     DOVIContext dovi;
+
+    uint8_t *stats_buf;
 
     // User options.
     AVDictionary *svtav1_opts;
@@ -211,6 +216,23 @@ static int config_enc_params(EbSvtAv1EncConfiguration *param,
     const AVPixFmtDescriptor *desc;
     av_unused const AVDictionaryEntry *en = NULL;
 
+#if !SVT_AV1_CHECK_VERSION(3, 0, 0)
+    // SVT-AV1 < 3.0.0 requires input dimensions of at least 64x64. Reject
+    // smaller inputs explicitly here to produce a clear error rather than
+    // relying on the library's internal validation, which may silently fail
+    // to produce output and cause the caller to hang.
+    // Sub-64px inputs were enabled upstream in MR !2356 (first released in
+    // v3.0.0); for those versions the library validates the dimensions
+    // itself.
+    if (avctx->width < 64 || avctx->height < 64) {
+        av_log(avctx, AV_LOG_ERROR,
+               "Input dimensions %dx%d are smaller than the minimum 64x64 "
+               "supported by SVT-AV1 < 3.0.0.\n",
+               avctx->width, avctx->height);
+        return AVERROR(EINVAL);
+    }
+#endif
+
     // Update param from options
     if (svt_enc->enc_mode >= -1)
         param->enc_mode             = svt_enc->enc_mode;
@@ -341,6 +363,42 @@ static int config_enc_params(EbSvtAv1EncConfiguration *param,
             return AVERROR(ENOSYS);
     }
 #endif
+    if (avctx->flags & AV_CODEC_FLAG_PASS2) {
+        int stats_sz;
+
+        if (!avctx->stats_in) {
+            av_log(avctx, AV_LOG_ERROR, "No stats file for second pass\n");
+            return AVERROR(EINVAL);
+        }
+
+        stats_sz = AV_BASE64_DECODE_SIZE(strlen(avctx->stats_in));
+        if (stats_sz <= 0) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid stats file size\n");
+            return AVERROR(EINVAL);
+        }
+
+        svt_enc->stats_buf = av_malloc(stats_sz);
+        if (!svt_enc->stats_buf) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to allocate stats buffer\n");
+            return AVERROR(ENOMEM);
+        }
+
+        stats_sz = av_base64_decode(svt_enc->stats_buf, avctx->stats_in, stats_sz);
+        if (stats_sz < 0) {
+            av_log(avctx, AV_LOG_ERROR, "Failed to decode stats file\n");
+            av_freep(&svt_enc->stats_buf);
+            return AVERROR(EINVAL);
+        }
+
+        param->rc_stats_buffer.buf = svt_enc->stats_buf;
+        param->rc_stats_buffer.sz  = stats_sz;
+        param->pass = 2;
+
+        av_log(avctx, AV_LOG_VERBOSE, "Using %d bytes of 2-pass stats\n", stats_sz);
+    } else if (avctx->flags & AV_CODEC_FLAG_PASS1) {
+        param->pass = 1;
+        av_log(avctx, AV_LOG_VERBOSE, "Starting first pass\n");
+    }
 
     param->source_width     = avctx->width;
     param->source_height    = avctx->height;
@@ -618,9 +676,45 @@ static int eb_receive_packet(AVCodecContext *avctx, AVPacket *pkt)
 
 #if SVT_AV1_CHECK_VERSION(2, 0, 0)
     if (headerPtr->flags & EB_BUFFERFLAG_EOS) {
-         svt_enc->eos_flag = EOS_RECEIVED;
-         svt_av1_enc_release_out_buffer(&headerPtr);
-         return AVERROR_EOF;
+        if (avctx->flags & AV_CODEC_FLAG_PASS1) {
+            SvtAv1FixedBuf first_pass_stats = { 0 };
+            EbErrorType svt_ret_stats;
+            int b64_size;
+
+            svt_ret_stats = svt_av1_enc_get_stream_info(
+                svt_enc->svt_handle,
+                SVT_AV1_STREAM_INFO_FIRST_PASS_STATS_OUT,
+                &first_pass_stats);
+
+            if (svt_ret_stats != EB_ErrorNone) {
+                av_log(avctx, AV_LOG_ERROR,
+                       "Failed to get first pass stats\n");
+                svt_av1_enc_release_out_buffer(&headerPtr);
+                return AVERROR_EXTERNAL;
+            }
+
+            if (first_pass_stats.sz > 0 && first_pass_stats.buf) {
+                b64_size = AV_BASE64_SIZE(first_pass_stats.sz);
+                avctx->stats_out = av_malloc(b64_size);
+                if (!avctx->stats_out) {
+                    av_log(avctx, AV_LOG_ERROR,
+                           "Failed to allocate stats output buffer\n");
+                    svt_av1_enc_release_out_buffer(&headerPtr);
+                    return AVERROR(ENOMEM);
+                }
+
+                av_base64_encode(avctx->stats_out, b64_size,
+                                 first_pass_stats.buf, first_pass_stats.sz);
+
+                av_log(avctx, AV_LOG_VERBOSE,
+                       "First pass stats: %"PRIu64" bytes, encoded to %d bytes\n",
+                       first_pass_stats.sz, b64_size);
+            }
+        }
+
+        svt_enc->eos_flag = EOS_RECEIVED;
+        svt_av1_enc_release_out_buffer(&headerPtr);
+        return AVERROR_EOF;
     }
 #endif
 
@@ -644,7 +738,7 @@ static int eb_receive_packet(AVCodecContext *avctx, AVPacket *pkt)
     switch (headerPtr->pic_type) {
     case EB_AV1_KEY_PICTURE:
         pkt->flags |= AV_PKT_FLAG_KEY;
-        // fall-through
+        av_fallthrough;
     case EB_AV1_INTRA_ONLY_PICTURE:
         pict_type = AV_PICTURE_TYPE_I;
         break;
@@ -688,6 +782,7 @@ static av_cold int eb_enc_close(AVCodecContext *avctx)
     av_buffer_pool_uninit(&svt_enc->pool);
     av_frame_free(&svt_enc->frame);
     ff_dovi_ctx_unref(&svt_enc->dovi);
+    av_freep(&svt_enc->stats_buf);
 
     return 0;
 }

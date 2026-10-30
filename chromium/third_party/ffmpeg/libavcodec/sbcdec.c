@@ -45,7 +45,6 @@ struct sbc_decoder_state {
 };
 
 typedef struct SBCDecContext {
-    AVClass *class;
     DECLARE_ALIGNED(SBC_ALIGN, struct sbc_frame, frame);
     DECLARE_ALIGNED(SBC_ALIGN, struct sbc_decoder_state, dsp);
 } SBCDecContext;
@@ -371,7 +370,4 @@ const FFCodec ff_sbc_decoder = {
     .init                  = sbc_decode_init,
     FF_CODEC_DECODE_CB(sbc_decode_frame),
     .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
-    CODEC_CH_LAYOUTS(AV_CHANNEL_LAYOUT_MONO, AV_CHANNEL_LAYOUT_STEREO),
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16P),
-    CODEC_SAMPLERATES(16000, 32000, 44100, 48000),
 };

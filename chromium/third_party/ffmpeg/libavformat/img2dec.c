@@ -21,6 +21,7 @@
  */
 
 #include "config_components.h"
+#include "libavutil/attributes.h"
 
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
@@ -367,7 +368,6 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     int i, res;
     int ret[3] = { 0 };
     int64_t size[3] = { 0 };
-    int64_t total_size;
     AVIOContext *f[3] = { NULL };
     AVCodecParameters *par = s1->streams[0]->codecpar;
 
@@ -458,15 +458,13 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
         }
     }
 
-    total_size = size[0];
-    if (total_size > INT64_MAX - size[1])
-        return AVERROR_INVALIDDATA;
-    total_size += size[1];
-    if (total_size > INT64_MAX - size[2])
-        return AVERROR_INVALIDDATA;
-    total_size += size[2];
-    if (total_size > INT_MAX)
-        return AVERROR_INVALIDDATA;
+    int total_size = 0;
+    for (int i = 0; i < 3; i++) {
+        if ((uint64_t)size[i] > INT_MAX - total_size)
+            return AVERROR_INVALIDDATA;
+
+        total_size += size[i];
+    }
 
     res = av_new_packet(pkt, total_size);
     if (res < 0) {
@@ -604,7 +602,7 @@ const AVOption ff_img_options[] = {
     { "ts_from_file", "set frame timestamp from file's one", OFFSET(ts_from_file), AV_OPT_TYPE_INT,    {.i64 = 0   }, 0, 2,       DEC, .unit = "ts_type" },
     { "none", "none",                   0, AV_OPT_TYPE_CONST,    {.i64 = 0   }, 0, 2,       DEC, .unit = "ts_type" },
     { "sec",  "second precision",       0, AV_OPT_TYPE_CONST,    {.i64 = 1   }, 0, 2,       DEC, .unit = "ts_type" },
-    { "ns",   "nano second precision",  0, AV_OPT_TYPE_CONST,    {.i64 = 2   }, 0, 2,       DEC, .unit = "ts_type" },
+    { "ns",   "nanosecond precision",   0, AV_OPT_TYPE_CONST,    {.i64 = 2   }, 0, 2,       DEC, .unit = "ts_type" },
     { "export_path_metadata", "enable metadata containing input path information", OFFSET(export_path_metadata), AV_OPT_TYPE_BOOL,   {.i64 = 0   }, 0, 1,       DEC }, \
     COMMON_OPTIONS
 };
@@ -772,11 +770,11 @@ static int jpeg_probe(const AVProbeData *p)
         case APP0:
             if (c == APP0 && AV_RL32(&b[i + 4]) == MKTAG('J','F','I','F'))
                 got_header = 1;
-            /* fallthrough */
+            av_fallthrough;
         case APP1:
             if (c == APP1 && AV_RL32(&b[i + 4]) == MKTAG('E','x','i','f'))
                 got_header = 1;
-            /* fallthrough */
+            av_fallthrough;
         case APP2:
         case APP3:
         case APP4:
@@ -1066,7 +1064,7 @@ static int pam_probe(const AVProbeData *p)
 
 static int hdr_probe(const AVProbeData *p)
 {
-    if (!memcmp(p->buf, "#?RADIANCE\n", 11))
+    if (!memcmp(p->buf, "#?RADIANCE\n", 11) || !memcmp(p->buf, "#?RGBE\n", 7))
         return AVPROBE_SCORE_MAX;
     return 0;
 }

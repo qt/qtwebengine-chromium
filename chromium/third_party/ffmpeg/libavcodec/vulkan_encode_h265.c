@@ -793,14 +793,21 @@ static av_cold int init_sequence_headers(AVCodecContext *avctx)
     else if (enc->caps.transformBlockSizes & VK_VIDEO_ENCODE_H265_TRANSFORM_BLOCK_SIZE_4_BIT_KHR)
         max_tb_size = 4;
 
-    units->raw_sps.log2_min_luma_coding_block_size_minus3 = 0;
-    units->raw_sps.log2_diff_max_min_luma_coding_block_size = av_log2(max_ctb_size) - 3;
+    /* Prefer 16x16 min CU when the CTB is at least 32; 8x8 min CU is much
+     * more expensive on some implementations for the common quality levels. */
+    if (max_ctb_size >= 32) {
+        units->raw_sps.log2_min_luma_coding_block_size_minus3 = 1;
+        units->raw_sps.log2_diff_max_min_luma_coding_block_size = av_log2(max_ctb_size) - 4;
+    } else {
+        units->raw_sps.log2_min_luma_coding_block_size_minus3 = 0;
+        units->raw_sps.log2_diff_max_min_luma_coding_block_size = av_log2(max_ctb_size) - 3;
+    }
     units->raw_sps.log2_min_luma_transform_block_size_minus2 = av_log2(min_tb_size) - 2;
     units->raw_sps.log2_diff_max_min_luma_transform_block_size = av_log2(max_tb_size) - av_log2(min_tb_size);
 
     max_transform_hierarchy = av_log2(max_ctb_size) - av_log2(min_tb_size);
     units->raw_sps.max_transform_hierarchy_depth_intra = max_transform_hierarchy;
-    units->raw_sps.max_transform_hierarchy_depth_intra = max_transform_hierarchy;
+    units->raw_sps.max_transform_hierarchy_depth_inter = max_transform_hierarchy;
 
     units->raw_sps.vui.bitstream_restriction_flag = 0;
     units->raw_sps.vui.max_bytes_per_pic_denom = 2;
@@ -1227,7 +1234,19 @@ static int parse_feedback_units(AVCodecContext *avctx,
                 H265RawSPS *sps = au.units[i].content;
                 enc->units.raw_sps.pic_width_in_luma_samples = sps->pic_width_in_luma_samples;
                 enc->units.raw_sps.pic_height_in_luma_samples = sps->pic_height_in_luma_samples;
-                enc->units.raw_sps.log2_diff_max_min_luma_coding_block_size = sps->log2_diff_max_min_luma_coding_block_size;
+                enc->units.raw_sps.conformance_window_flag = sps->conformance_window_flag;
+                enc->units.raw_sps.conf_win_left_offset = sps->conf_win_left_offset;
+                enc->units.raw_sps.conf_win_right_offset = sps->conf_win_right_offset;
+                enc->units.raw_sps.conf_win_top_offset = sps->conf_win_top_offset;
+                enc->units.raw_sps.conf_win_bottom_offset = sps->conf_win_bottom_offset;
+                enc->units.raw_sps.log2_min_luma_coding_block_size_minus3 =
+                    sps->log2_min_luma_coding_block_size_minus3;
+                enc->units.raw_sps.log2_diff_max_min_luma_coding_block_size =
+                    sps->log2_diff_max_min_luma_coding_block_size;
+                enc->units.raw_sps.log2_min_luma_transform_block_size_minus2 =
+                    sps->log2_min_luma_transform_block_size_minus2;
+                enc->units.raw_sps.log2_diff_max_min_luma_transform_block_size =
+                    sps->log2_diff_max_min_luma_transform_block_size;
                 enc->units.raw_sps.max_transform_hierarchy_depth_inter = sps->max_transform_hierarchy_depth_inter;
                 enc->units.raw_sps.max_transform_hierarchy_depth_intra = sps->max_transform_hierarchy_depth_intra;
             }
@@ -1317,7 +1336,7 @@ static int init_base_units(AVCodecContext *avctx)
             return AVERROR(ENOMEM);
     } else {
         av_log(avctx, AV_LOG_ERROR, "Unable to get feedback for H.265 units = %zu\n", data_size);
-        return err;
+        return AVERROR_EXTERNAL;
     }
 
     ret = vk->GetEncodedVideoSessionParametersKHR(s->hwctx->act_dev, &params_info,
@@ -1325,7 +1344,8 @@ static int init_base_units(AVCodecContext *avctx)
                                                   &data_size, data);
     if (ret != VK_SUCCESS) {
         av_log(avctx, AV_LOG_ERROR, "Error writing feedback units\n");
-        return err;
+        err = AVERROR_EXTERNAL;
+        goto end;
     }
 
     av_log(avctx, AV_LOG_VERBOSE, "Feedback units written, overrides: %i (SPS: %i PPS: %i VPS: %i)\n",
@@ -1339,22 +1359,23 @@ static int init_base_units(AVCodecContext *avctx)
     h265_params_feedback.hasStdPPSOverrides = 1;
 
     /* No need to sync any overrides */
+    err = 0;
     if (!params_feedback.hasOverrides)
-        return 0;
+        goto end;
 
     /* Parse back tne units and override */
     err = parse_feedback_units(avctx, data, data_size,
                                h265_params_feedback.hasStdSPSOverrides,
                                h265_params_feedback.hasStdPPSOverrides);
     if (err < 0)
-        return err;
+        goto end;
 
     /* Create final session parameters */
     err = create_session_params(avctx);
-    if (err < 0)
-        return err;
 
-    return 0;
+end:
+    av_free(data);
+    return err;
 }
 
 static int vulkan_encode_h265_add_nal(AVCodecContext *avctx,
@@ -1595,23 +1616,21 @@ static av_cold int vulkan_encode_h265_init(AVCodecContext *avctx)
 
     av_log(avctx, AV_LOG_VERBOSE, "    Capability flags:\n");
     av_log(avctx, AV_LOG_VERBOSE, "        hdr_compliance: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_HRD_COMPLIANCE_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_HRD_COMPLIANCE_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        pred_weight_table_generated: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_PREDICTION_WEIGHT_TABLE_GENERATED_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_PREDICTION_WEIGHT_TABLE_GENERATED_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        row_unaligned_slice: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_ROW_UNALIGNED_SLICE_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_ROW_UNALIGNED_SLICE_SEGMENT_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        different_slice_type: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_DIFFERENT_SLICE_TYPE_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_DIFFERENT_SLICE_SEGMENT_TYPE_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        b_frame_in_l0_list: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_B_FRAME_IN_L0_LIST_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_B_FRAME_IN_L0_LIST_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        b_frame_in_l1_list: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_B_FRAME_IN_L1_LIST_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_B_FRAME_IN_L1_LIST_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        per_pict_type_min_max_qp: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_PER_PICTURE_TYPE_MIN_MAX_QP_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_PER_PICTURE_TYPE_MIN_MAX_QP_BIT_KHR));
     av_log(avctx, AV_LOG_VERBOSE, "        per_slice_constant_qp: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_PER_SLICE_CONSTANT_QP_BIT_KHR));
-    av_log(avctx, AV_LOG_VERBOSE, "        generate_prefix_nalu: %i\n",
-           !!(enc->caps.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_GENERATE_PREFIX_NALU_BIT_KHR));
+           !!(enc->caps.flags & VK_VIDEO_ENCODE_H265_CAPABILITY_PER_SLICE_SEGMENT_CONSTANT_QP_BIT_KHR));
 
     av_log(avctx, AV_LOG_VERBOSE, "    Capabilities:\n");
     av_log(avctx, AV_LOG_VERBOSE, "        maxLevelIdc: %i\n",
@@ -1698,6 +1717,12 @@ static av_cold int vulkan_encode_h265_init(AVCodecContext *avctx)
 static av_cold int vulkan_encode_h265_close(AVCodecContext *avctx)
 {
     VulkanEncodeH265Context *enc = avctx->priv_data;
+
+    ff_cbs_fragment_free(&enc->current_access_unit);
+    ff_cbs_close(&enc->cbs);
+
+    av_freep(&enc->sei_a53cc_data);
+
     ff_vulkan_encode_uninit(&enc->common);
     return 0;
 }

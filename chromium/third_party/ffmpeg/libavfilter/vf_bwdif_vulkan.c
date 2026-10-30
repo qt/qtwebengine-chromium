@@ -51,7 +51,6 @@ static av_cold int init_filter(AVFilterContext *ctx)
     BWDIFVulkanContext *s = ctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
     const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
-    FFVulkanDescriptorSetBinding *desc;
 
     s->qf = ff_vk_qf_find(vkctx, VK_QUEUE_COMPUTE_BIT, 0);
     if (!s->qf) {
@@ -60,39 +59,34 @@ static av_cold int init_filter(AVFilterContext *ctx)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
     ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT, NULL,
                       (uint32_t [3]) { 1, 64, planes }, 0);
 
-    desc = (FFVulkanDescriptorSetBinding []) {
-        {
-            .name       = "prev",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .elems      = planes,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+    const FFVulkanDescriptorSetBinding desc_set[] = {
+        { /* dst */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = planes,
         },
-        {
-            .name       = "cur",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .elems      = planes,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* prev */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = planes,
         },
-        {
-            .name       = "next",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .elems      = planes,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* cur */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = planes,
         },
-        {
-            .name       = "dst",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .elems      = planes,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* next */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = planes,
         },
     };
-
-    ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 4, 0, 0);
+    ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc_set, 4, 0);
 
     ff_vk_shader_add_push_const(&s->shd, 0, sizeof(BWDIFParameters),
                                 VK_SHADER_STAGE_COMPUTE_BIT);
@@ -121,7 +115,7 @@ static void bwdif_vulkan_filter_frame(AVFilterContext *ctx, AVFrame *dst,
 
     ff_vk_filter_process_Nin(&s->vkctx, &s->e, &s->shd, dst,
                              (AVFrame *[]){ y->prev, y->cur, y->next }, 3,
-                             VK_NULL_HANDLE, &params, sizeof(params));
+                             VK_NULL_HANDLE, 1, &params, sizeof(params));
 
     if (y->current_field == YADIF_FIELD_END)
         y->current_field = YADIF_FIELD_NORMAL;

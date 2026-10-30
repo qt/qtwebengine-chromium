@@ -169,6 +169,7 @@ Read angle 2 of playlist 4 from BluRay mounted to /mnt/bluray, start from chapte
 -playlist 4 -angle 2 -chapter 2 bluray:/mnt/bluray
 @end example
 
+@anchor{cache}
 @section cache
 
 Caching wrapper for input stream.
@@ -343,7 +344,8 @@ time, which is valuable for files on slow medium.
 If set to 1, the protocol will retry reading at the end of the file, allowing
 reading files that still are being written. In order for this to terminate,
 you either need to use the rw_timeout option, or use the interrupt callback
-(for API users).
+(for API users). Setting this option also ignores the file size reported by
+the file system.
 
 @item seekable
 Controls if seekability is advertised on the file. 0 means non-seekable, -1
@@ -417,26 +419,6 @@ Gophers protocol.
 
 The Gopher protocol with TLS encapsulation.
 
-@section hls
-
-Read Apple HTTP Live Streaming compliant segmented stream as
-a uniform one. The M3U8 playlists describing the segments can be
-remote HTTP resources or local files, accessed using the standard
-file protocol.
-The nested protocol is declared by specifying
-"+@var{proto}" after the hls URI scheme name, where @var{proto}
-is either "file" or "http".
-
-@example
-hls+http://host/path/to/remote/resource.m3u8
-hls+file://path/to/local/resource.m3u8
-@end example
-
-Using this protocol is discouraged - the hls demuxer should work
-just as well (if not, please report the issues) and is more complete.
-To use the hls demuxer instead, simply use the direct URLs to the
-m3u8 files.
-
 @section http
 
 HTTP (Hyper Text Transfer Protocol).
@@ -471,7 +453,30 @@ string describing the libavformat build. ("Lavf/<version>")
 Set the Referer header. Include 'Referer: URL' header in HTTP request.
 
 @item multiple_requests
-Use persistent connections if set to 1, default is 0.
+Force persistent connections if set to 1, or disable if 0. Default is -1,
+which means auto (implies keep-alive when using -request_size or
+-initial_request_size).
+
+@item request_size
+Limit the size of requests made. This is useful for some pathological servers
+that throttle unbounded range requests, as well as when expecting to seek
+frequently. Disabled (set to 0) by default.
+
+Note that if enabling this option, it's strongly recommended to also set
+@option{short_seek_size} to the same value or higher. Doing so allows FFmpeg
+to reuse a single HTTP connection wherever possible.
+
+@item initial_request_size
+Limit the size of initial requests. Similar to @code{request_size}, but only
+used during initial format parsing. Useful for formats like MXF or MOV that
+require frequent seeks during header parsing. Lasts until the demuxer makes a
+read request larger than this size (without a seek in between), after which
+the implementation will continue using requests as usual. Disabled (set to 0)
+by default.
+
+Note that if enabling this option, it's strongly recommended to also enable
+the @option{multiple_requests} option, as well as setting
+@option{short_seek_size} to the same value or higher.
 
 @item post_data
 Set custom HTTP post data.
@@ -1056,6 +1061,158 @@ The Real-Time Messaging Protocol tunneled through HTTPS (RTMPTS) is used
 for streaming multimedia content within HTTPS requests to traverse
 firewalls.
 
+@section libcurl
+
+HTTP and HTTPS access through the libcurl library, available as an alternative to
+the native @code{http} protocol when FFmpeg is built with @code{--enable-libcurl}.
+It runs transfers on a dedicated event-loop thread shared per
+@code{AVFormatContext}, so all of a demuxer's connections (for example HLS
+segments) reuse libcurl's connection cache and HTTP/2 and HTTP/3 multiplexing.
+
+The native @code{http} protocol stays the default. There are two ways to use
+libcurl instead:
+
+@itemize @bullet
+@item
+Prefix the URL with @code{libcurl:} to force it explicitly, for example
+@code{libcurl:https://example.com/video.mp4}.
+
+@item
+Set the @option{prefer_libcurl} option to route @code{http://} and
+@code{https://} URLs through libcurl transparently.
+@end itemize
+
+@table @option
+@item prefer_libcurl
+When set to @code{1}, open @code{http(s)} URLs with the libcurl protocol instead
+of the native one. This is a generic IO option rather than a libcurl-specific
+one, so it also applies on builds without libcurl (where it has no effect).
+Default is @code{0}.
+@end table
+
+The libcurl protocol accepts the following options.
+
+@table @option
+@item user_agent
+Override the @code{User-Agent} header. Defaults to @code{Lavf/<version>}.
+
+@item referer
+Set the @code{Referer} header.
+
+@item headers
+Set custom HTTP headers, overriding internal defaults. Multiple headers are
+separated by newlines.
+
+@item http_proxy
+Set the HTTP proxy to tunnel through.
+
+@item cookies
+Cookies to be sent in future requests, given as newline-delimited
+@code{Set-Cookie}-style values.
+
+@item location
+The actual location of the data after following redirects. This is an output
+option, read with @command{av_opt_get}; demuxers use it to resolve relative URLs.
+
+@item offset
+Initial byte offset of the request. Default is @code{0}.
+
+@item end_offset
+If greater than @code{0}, limit the request to the bytes preceding this offset.
+Together with @option{offset} this requests a sub-range of the resource, as used
+for HLS byte-range segments.
+
+@item seekable
+Control seekability of the connection. If set to @code{0} the stream is treated
+as non-seekable, @code{1} forces seekable, and @code{-1} (the default) lets it be
+detected from the server response.
+
+@item tls_verify
+Verify the peer certificate and host name. Enabled by default.
+
+@item ca_file
+Path to a certificate authority bundle that overrides the system store.
+
+@item cert_file
+@item key_file
+Client certificate and private key files for mutual TLS.
+
+@item connect_timeout
+Connection timeout in seconds. @code{0} (the default) uses libcurl's own timeout.
+
+@item max_redirects
+Maximum number of redirects to follow. Default is @code{16}.
+
+@item multiple_requests
+Reuse the connection across requests (HTTP keep-alive). Enabled by default;
+setting it to @code{0} uses a fresh connection per transfer.
+
+@item http_version
+HTTP version to use: @code{auto} (default), @code{1.0}, @code{1.1}, @code{2},
+@code{2tls}, @code{2-prior-knowledge}, @code{3} or @code{3only}.
+
+@item buffer_size
+Size in bytes of the receive buffer. Default is 4 MiB.
+
+@item request_size
+If greater than @code{0}, split a seekable transfer into ranged requests of at
+most this many bytes each. Default is @code{0} (a single request).
+
+@item initial_request_size
+Limit the size of initial requests. Similar to @code{request_size}, but only
+used during initial format parsing. Useful for formats like MXF or MOV that
+require frequent seeks during header parsing. Lasts until the demuxer makes a
+read request larger than this size (without a seek in between), after which
+the implementation will continue using requests as usual. Disabled (set to 0)
+by default.
+
+Note that if enabling this option, it's strongly recommended to also set
+@option{short_seek_size} to the same value or higher, otherwise the HTTP
+connection may be closed and recreated for each subsequent initial request.
+
+@item max_retries
+Maximum number of retries after a recoverable error on a seekable transfer.
+Default is @code{5}.
+
+@item short_seek_size
+Set the threshold, in bytes, for when a readahead should be preferred over a seek and
+new HTTP request. This is useful, for example, to make sure the same connection
+is used for reading large video packets with small audio packets in between.
+
+@item icy
+If set to 1 request ICY (SHOUTcast) metadata from the server. If the server
+supports this, the metadata has to be retrieved by the application by reading
+the @option{icy_metadata_headers} and @option{icy_metadata_packet} options.
+The default is 1.
+
+@item icy_status
+If set to 1 accept the legacy Shoutcast v1 @code{ICY 200 OK} status line in
+place of an HTTP one. Any reply whose status line starts with @code{ICY 200}
+is then treated as a successful HTTP 200.
+The default is 1.
+
+@item icy_metadata_headers
+If the server supports ICY metadata, this contains the ICY-specific HTTP reply
+headers, separated by newline characters.
+
+@item icy_metadata_packet
+If the server supports ICY metadata, and @option{icy} was set to 1, this
+contains the last non-empty metadata packet sent by the server. It should be
+polled in regular intervals by applications interested in mid-stream metadata
+updates.
+
+@item metadata
+Set an exported dictionary containing Icecast metadata from the bitstream, if present.
+Only useful with the C API.
+@end table
+
+A stream carrying in-band ICY metadata is always treated as non-seekable, since
+its byte offsets do not address the payload. @option{seekable},
+@option{request_size} and @option{max_retries} therefore have no effect on such
+a stream.
+
+For more information see: @url{https://curl.se/libcurl/}.
+
 @section libsmbclient
 
 libsmbclient permits one to manipulate CIFS/SMB network resources.
@@ -1112,6 +1269,11 @@ truncating. Default value is 1.
 @item private_key
 Specify the path of the file containing private key to use during authorization.
 By default libssh searches for keys in the @file{~/.ssh/} directory.
+
+@item verify
+Verify the server host key against the known_hosts file before
+authenticating, if set to 1. Servers that are not in the file, or whose
+key differs from the one recorded there, are refused. Default value is 1.
 
 @end table
 
@@ -1567,6 +1729,92 @@ If set to any value, listen for an incoming connection. Outgoing connection is d
 Set the maximum number of streams. By default no limit is set.
 @end table
 
+@section shared
+
+Thread-safe, persistent, cross-process cache wrapper for input streams. Caches
+the input stream to a file in the specified directory. This is similar to
+@ref{cache}, but with a persistent cache on disk that may be shared between
+multiple processes or demuxers, even concurrently.
+
+The filename of the cache is obtained by hashing the input URL, so there is
+some risk of collision if the same URL is used for different content (e.g.
+as a result of extra POST data being used to select the stream ID). To avoid
+this, make sure to only use this protocol for URLs that uniquely identify
+the content; otherwise you may get a garbled mix of sources.
+
+The accepted options are:
+@table @option
+
+@item cache_dir
+Path to the directory where cache files are stored. This option is required.
+
+@item metadata_dir
+Path to the directory where metadata files are stored. Optional. If not
+specified, metadata is stored in the same directory as the cache file.
+
+@item block_shift
+Shift factor (log2) of the block size used for internal reads/writes. Defaults
+to 15, i.e. 32KB blocks. If this does not match the value that was specified
+when an existing cache file was created, the previously specified value will
+be used instead.
+
+@item read_only
+If true, use the shared cache for reads but don't write any new blocks to it.
+Default is false. Note that even with this option enabled, the cache file will
+be initialized if it does not already exist.
+
+@item cache_verify
+If true, verify any data read from the cache against the underlying input
+stream, and error out on any mismatches. Note that this will make the cache
+layer effectively useless. This is purely a debug option.
+
+@item cache_timeout
+If set to a nonzero value, specifies the maximum time (in microseconds) to wait
+for data to become available, if another process is currently trying to fetch
+and cache the same block at the same time. If this timeout elapses, it's
+assumed that the other process may have gotten stuck or died in the meantime.
+
+If set to zero, no waiting is done and all processes will immediately race
+to try and fetch the same missing blocks themselves. Defaults to 10000 (10 ms).
+
+@item ignore_errors
+If true, failures of the underlying input stream are not treated as fatal, and
+playback continues using only the data already present in the cache file.
+Default is false. Any attempt to read into uncached data will result in an
+unrecoverable IO error.
+
+@item retry_errors
+If true (the default), transient read errors from the underlying input stream
+are ignored and retried again. If false, any blocks that previously failed
+being read from will be treated as permanently inaccessible.
+
+@item retry_corrupt
+If true (the default), blocks whose contents fail the CRC integrity check are
+re-fetched from the underlying input stream, overwriting the corrupt cached
+data. If false, cache corruption is treated as a fatal read error.
+
+@item cache_size_max
+Maximum amount of data to cache, in bytes, rounded down to a multiple of the
+chosen block size. Accepts the usual size suffixes, e.g. @code{10G} for
+10*10^9 bytes, or @code{10Gi} for 10*2^30 bytes. Defaults to 0, meaning no
+limit.
+
+Once this limit is reached, the protocol switches to read-only mode (see
+@option{read_only}). Already cached data is never evicted, so once this limit
+is reached, no new data will ever be cached until the cache file is deleted.
+
+Note that this option is best-effort only, and may over-write up to N-1
+blocks, where N is the number of concurrent processes using the same cache
+file. Note also that the underlying file system may reserve more space than
+written, if the underlying allocation granularity is larger than the block
+size.
+@end table
+
+URL Syntax is
+@example
+shared:@var{URL}
+@end example
+
 @section srt
 
 Haivision Secure Reliable Transport Protocol via libsrt.
@@ -1855,6 +2103,10 @@ When true, use Timestamp-based Packet Delivery mode. The default behavior
 depends on the transmission type: enabled in live mode, disabled in file
 mode.
 
+@item ipv6only=@var{1|0}
+Accept IPv4 or not while using the IPv6 wildcard address. This should be set
+when listening on a IPv6 wildcard address.
+
 @end table
 
 For more information see: @url{https://github.com/Haivision/srt}.
@@ -2021,8 +2273,8 @@ database, but it does not validate that the certificate actually
 matches the host name we are trying to connect to. (With other backends,
 the host name is validated as well.)
 
-This is disabled by default since it requires a CA database to be
-provided by the caller in many cases.
+This is enabled by default. Verifying the peer requires a CA database,
+which in some cases has to be provided by the caller.
 
 @item cert_file, cert=@var{filename}
 A file containing a certificate to use in the handshake with the peer.
@@ -2093,8 +2345,8 @@ peer certificate is signed by one of the root certificates in the CA
 database, but it does not validate that the certificate actually
 matches the host name we are trying to connect to.
 
-This is disabled by default since it requires a CA database to be
-provided by the caller in many cases.
+This is enabled by default. Verifying the peer requires a CA database,
+which in some cases has to be provided by the caller.
 
 @item cert_file, cert=@var{filename}
 A file containing a certificate to use in the handshake with the peer.
@@ -2282,6 +2534,13 @@ The following parameters can be set via command line options
 Timeout in ms.
 @item listen
 Create the Unix socket in listening mode.
+@item type
+Select socket type.
+@table @samp
+@item stream Corresponds to SOCK_STREAM (reliable stream-oriented)
+@item datagram Corresponds to SOCK_DGRAM (unreliable packet-oriented)
+@item seqpacket Corresponds to SOCK_SEQPACKET (reliable packet-oriented)
+@end table
 @item pkt_size
 Maximum packet size for packet-oriented sockets (SOCK_DGRAM and
 SOCK_SEQPACKET). If greater than zero, this value is used as

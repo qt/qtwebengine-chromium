@@ -67,12 +67,21 @@ SECTION .text
 %endmacro
 
 %macro HADAMARD8 0
+%if ARCH_X86_64
+    SUMSUB_BADC       w, 0, 1, 2, 3, 8
+    SUMSUB_BADC       w, 4, 5, 6, 7, 8
+    SUMSUB_BADC       w, 0, 2, 1, 3, 8
+    SUMSUB_BADC       w, 4, 6, 5, 7, 8
+    SUMSUB_BADC       w, 0, 4, 1, 5, 8
+    SUMSUB_BADC       w, 2, 6, 3, 7, 8
+%else
     SUMSUB_BADC       w, 0, 1, 2, 3
     SUMSUB_BADC       w, 4, 5, 6, 7
     SUMSUB_BADC       w, 0, 2, 1, 3
     SUMSUB_BADC       w, 4, 6, 5, 7
     SUMSUB_BADC       w, 0, 4, 1, 5
     SUMSUB_BADC       w, 2, 6, 3, 7
+%endif
 %endmacro
 
 %macro ABS1_SUM 3
@@ -381,6 +390,13 @@ cglobal sad%1u, 5, 5, 5, v, pix1, pix2, stride, h
 %else
 cglobal sad%1,  5, 5, 3, v, pix1, pix2, stride, h
 %endif
+%if %1 < mmsize
+    movh      m2, [pix2q]
+    movhps    m2, [pix2q+strideq]
+    movh      m0, [pix1q]
+    movhps    m0, [pix1q+strideq]
+    psadbw    m2, m0
+%else
     movu      m2, [pix2q]
     movu      m1, [pix2q+strideq]
 %ifidn %2, u
@@ -393,12 +409,22 @@ cglobal sad%1,  5, 5, 3, v, pix1, pix2, stride, h
     psadbw    m1, [pix1q+strideq]
 %endif
     paddw     m2, m1
+%endif
+    paddw     m2, m1
     sub       hd, 2
 
 align 16
 .loop:
     lea    pix1q, [pix1q+strideq*2]
     lea    pix2q, [pix2q+strideq*2]
+%if %1 < mmsize
+    movh      m0, [pix2q]
+    movhps    m0, [pix2q+strideq]
+    movh      m1, [pix1q]
+    movhps    m1, [pix1q+strideq]
+    psadbw    m0, m1
+    paddw     m2, m0
+%else
     movu      m0, [pix2q]
     movu      m1, [pix2q+strideq]
 %ifidn %2, u
@@ -412,19 +438,19 @@ align 16
 %endif
     paddw     m2, m0
     paddw     m2, m1
+%endif
+    paddw     m2, m0
+    paddw     m2, m1
     sub       hd, 2
     jg .loop
-%if mmsize == 16
     movhlps   m0, m2
     paddw     m2, m0
-%endif
     movd     eax, m2
     RET
 %endmacro
 
-INIT_MMX mmxext
-SAD 8
 INIT_XMM sse2
+SAD 8
 SAD 16
 SAD 16, u
 
@@ -434,54 +460,64 @@ SAD 16, u
 ;%1 = 8/16
 %macro SAD_X2 1
 cglobal sad%1_x2, 5, 5, 5, v, pix1, pix2, stride, h
+%if %1 < mmsize
+    movh      m0, [pix2q]
+    movhps    m0, [pix2q+strideq]
+    movh      m3, [pix2q+1]
+    movhps    m3, [pix2q+strideq+1]
+    pavgb     m0, m3
+    movh      m1, [pix1q]
+    movhps    m1, [pix1q+strideq]
+    psadbw    m0, m1
+%else
     movu      m0, [pix2q]
     movu      m2, [pix2q+strideq]
-%if mmsize == 16
     movu      m3, [pix2q+1]
     movu      m4, [pix2q+strideq+1]
     pavgb     m0, m3
     pavgb     m2, m4
-%else
-    pavgb     m0, [pix2q+1]
-    pavgb     m2, [pix2q+strideq+1]
-%endif
     psadbw    m0, [pix1q]
     psadbw    m2, [pix1q+strideq]
     paddw     m0, m2
+%endif
     sub       hd, 2
 
 align 16
 .loop:
     lea    pix1q, [pix1q+2*strideq]
     lea    pix2q, [pix2q+2*strideq]
+%if %1 < mmsize
+    movh      m1, [pix2q]
+    movhps    m1, [pix2q+strideq]
+    movh      m3, [pix2q+1]
+    movhps    m3, [pix2q+strideq+1]
+    pavgb     m1, m3
+    movh      m2, [pix1q]
+    movhps    m2, [pix1q+strideq]
+    psadbw    m1, m2
+    paddw     m0, m1
+%else
     movu      m1, [pix2q]
     movu      m2, [pix2q+strideq]
-%if mmsize == 16
     movu      m3, [pix2q+1]
     movu      m4, [pix2q+strideq+1]
     pavgb     m1, m3
     pavgb     m2, m4
-%else
-    pavgb     m1, [pix2q+1]
-    pavgb     m2, [pix2q+strideq+1]
-%endif
     psadbw    m1, [pix1q]
     psadbw    m2, [pix1q+strideq]
     paddw     m0, m1
     paddw     m0, m2
+%endif
     sub       hd, 2
     jg .loop
-%if mmsize == 16
     movhlps   m1, m0
     paddw     m0, m1
-%endif
     movd     eax, m0
     RET
 %endmacro
 
-INIT_MMX mmxext
-SAD_X2 8
 INIT_XMM sse2
+SAD_X2 8
 SAD_X2 16
 
 ;------------------------------------------------------------------------------------------
@@ -490,6 +526,19 @@ SAD_X2 16
 ;%1 = 8/16
 %macro SAD_Y2 1
 cglobal sad%1_y2, 5, 5, 4, v, pix1, pix2, stride, h
+%if %1 < mmsize
+    movh      m1, [pix2q]
+    movh      m2, [pix2q+strideq]
+    movh      m3, [pix2q+2*strideq]
+    punpcklqdq m1, m2
+    punpcklqdq m2, m3
+    pavgb     m1, m2
+    movh      m2, [pix1q]
+    movhps    m2, [pix1q+strideq]
+    psadbw    m1, m2
+    mova      m0, m1
+    mova      m1, m3
+%else
     movu      m1, [pix2q]
     movu      m0, [pix2q+strideq]
     movu      m3, [pix2q+2*strideq]
@@ -499,6 +548,7 @@ cglobal sad%1_y2, 5, 5, 4, v, pix1, pix2, stride, h
     psadbw    m0, [pix1q+strideq]
     paddw     m0, m1
     mova      m1, m3
+%endif
     add    pix2q, strideq
     sub       hd, 2
 
@@ -506,6 +556,18 @@ align 16
 .loop:
     lea    pix1q, [pix1q+2*strideq]
     lea    pix2q, [pix2q+2*strideq]
+%if %1 < mmsize
+    movh      m2, [pix2q]
+    movh      m3, [pix2q+strideq]
+    punpcklqdq m1, m2
+    punpcklqdq m2, m3
+    pavgb     m1, m2
+    movh      m2, [pix1q]
+    movhps    m2, [pix1q+strideq]
+    psadbw    m1, m2
+    paddw     m0, m1
+    mova      m1, m3
+%else
     movu      m2, [pix2q]
     movu      m3, [pix2q+strideq]
     pavgb     m1, m2
@@ -515,9 +577,104 @@ align 16
     paddw     m0, m1
     paddw     m0, m2
     mova      m1, m3
+%endif
     sub       hd, 2
     jg .loop
-%if mmsize == 16
+    movhlps   m1, m0
+    paddw     m0, m1
+    movd     eax, m0
+    RET
+%endmacro
+
+INIT_XMM sse2
+SAD_Y2 8
+SAD_Y2 16
+
+;------------------------------------------------------------------------------------------
+;int ff_sad_xy2_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
+;------------------------------------------------------------------------------------------
+
+;%1 = 8/16, %2 = aligned mov, %3 = unaligned mov
+%macro SAD_XY2 3
+cglobal sad%1_xy2, 5, 5, mmsize == 16 ? 8 + ARCH_X86_64 : 7, v, pix1, pix2, stride, h
+    mov%3     m2, [pix2q]
+    mov%3     m3, [pix2q+1]
+%if %1 == mmsize
+%if ARCH_X86_64
+    mova      m8, [pw_2]
+    %define PW_2 m8
+%else
+    %define PW_2 [pw_2]
+%endif
+%else ; %1 != mmsize
+    mova      m6, [pw_2]
+    %define PW_2 m6
+%endif
+    pxor      m1, m1
+    add    pix2q, strideq
+%if %1 != mmsize/2
+    mova      m6, m2
+    mova      m7, m3
+    punpckhbw m6, m1
+    punpckhbw m7, m1
+    paddw     m6, m7
+%endif
+    punpcklbw m2, m1
+    punpcklbw m3, m1
+    paddw     m2, m3
+    mova      m0, m1
+
+.loop:
+    mov%3     m3, [pix2q]
+    mov%3     m4, [pix2q+1]
+%if %1 != mmsize/2
+    mova      m5, m3
+    mova      m7, m4
+    punpckhbw m5, m1
+    punpckhbw m7, m1
+    paddw     m7, m5
+    paddw     m7, PW_2
+    paddw     m6, m7
+    psraw     m6, 2
+%endif
+    mov%2     m5, [pix1q]
+    punpcklbw m3, m1
+    punpcklbw m4, m1
+    paddw     m3, m4
+    paddw     m3, PW_2
+    paddw     m2, m3
+    psraw     m2, 2
+    packuswb  m2, m6
+    psadbw    m2, m5
+    paddw     m0, m2
+
+    mov%3     m2, [pix2q+strideq]
+    mov%3     m4, [pix2q+strideq+1]
+%if %1 != mmsize/2
+    mova      m5, m2
+    mova      m6, m4
+    punpckhbw m5, m1
+    punpckhbw m6, m1
+    paddw     m6, m5
+    paddw     m7, m6
+    psraw     m7, 2
+%endif
+    mov%2     m5, [pix1q+strideq]
+    punpcklbw m2, m1
+    punpcklbw m4, m1
+    paddw     m2, m4
+    paddw     m3, m2
+    psraw     m3, 2
+    packuswb  m3, m7
+    psadbw    m3, m5
+    paddw     m0, m3
+
+    sub       hd, 2
+    lea    pix1q, [pix1q+2*strideq]
+    lea    pix2q, [pix2q+2*strideq]
+    jnz    .loop
+
+%if %1 == 16
     movhlps   m1, m0
     paddw     m0, m1
 %endif
@@ -525,10 +682,9 @@ align 16
     RET
 %endmacro
 
-INIT_MMX mmxext
-SAD_Y2 8
 INIT_XMM sse2
-SAD_Y2 16
+SAD_XY2  8, h, h
+SAD_XY2 16, a, u
 
 ;------------------------------------------------------------------------------------------
 ;int ff_sad_xy2_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
@@ -633,27 +789,40 @@ SAD_XY2 16, a, u
 %macro SAD_APPROX_XY2 1
 cglobal sad%1_approx_xy2, 5, 5, 7, v, pix1, pix2, stride, h
     mova      m4, [pb_1]
+%if %1 < mmsize
+    movh      m1, [pix2q]
+    movh      m5, [pix2q+1]
+    pavgb     m1, m5
+    movh      m0, [pix2q+strideq]
+    movh      m5, [pix2q+strideq+1]
+    pavgb     m0, m5
+    psubusb   m0, m4
+    movh      m3, [pix2q+2*strideq]
+    movh      m5, [pix2q+2*strideq+1]
+    pavgb     m3, m5
+    punpcklqdq m1, m0
+    punpcklqdq m0, m3
+    pavgb     m0, m1
+    movh      m2, [pix1q]
+    movhps    m2, [pix1q+strideq]
+    psadbw    m0, m2
+%else
     movu      m1, [pix2q]
     movu      m0, [pix2q+strideq]
     movu      m3, [pix2q+2*strideq]
-%if mmsize == 16
     movu      m5, [pix2q+1]
     movu      m6, [pix2q+strideq+1]
     movu      m2, [pix2q+2*strideq+1]
     pavgb     m1, m5
     pavgb     m0, m6
     pavgb     m3, m2
-%else
-    pavgb     m1, [pix2q+1]
-    pavgb     m0, [pix2q+strideq+1]
-    pavgb     m3, [pix2q+2*strideq+1]
-%endif
     psubusb   m0, m4
     pavgb     m1, m0
     pavgb     m0, m3
     psadbw    m1, [pix1q]
     psadbw    m0, [pix1q+strideq]
     paddw     m0, m1
+%endif
     mova      m1, m3
     add    pix2q, strideq
     sub       hd, 2
@@ -662,17 +831,29 @@ align 16
 .loop:
     lea    pix1q, [pix1q+2*strideq]
     lea    pix2q, [pix2q+2*strideq]
+%if %1 < mmsize
+    movh      m2, [pix2q]
+    movh      m5, [pix2q+1]
+    pavgb     m2, m5
+    psubusb   m2, m4
+    movh      m3, [pix2q+strideq]
+    movh      m5, [pix2q+strideq+1]
+    pavgb     m3, m5
+    punpcklqdq m1, m2
+    punpcklqdq m2, m3
+    pavgb     m1, m2
+    movh      m5, [pix1q]
+    movhps    m5, [pix1q+strideq]
+    psadbw    m1, m5
+    paddw     m0, m1
+    mova      m1, m3
+%else
     movu      m2, [pix2q]
     movu      m3, [pix2q+strideq]
-%if mmsize == 16
     movu      m5, [pix2q+1]
     movu      m6, [pix2q+strideq+1]
     pavgb     m2, m5
     pavgb     m3, m6
-%else
-    pavgb     m2, [pix2q+1]
-    pavgb     m3, [pix2q+strideq+1]
-%endif
     psubusb   m2, m4
     pavgb     m1, m2
     pavgb     m2, m3
@@ -681,19 +862,17 @@ align 16
     paddw     m0, m1
     paddw     m0, m2
     mova      m1, m3
+%endif
     sub       hd, 2
     jg .loop
-%if mmsize == 16
     movhlps   m1, m0
     paddw     m0, m1
-%endif
     movd     eax, m0
     RET
 %endmacro
 
-INIT_MMX mmxext
-SAD_APPROX_XY2 8
 INIT_XMM sse2
+SAD_APPROX_XY2 8
 SAD_APPROX_XY2 16
 
 ;--------------------------------------------------------------------
@@ -723,7 +902,7 @@ cglobal vsad_intra%1,  5, 5, 3, v, pix1, pix2, lsize, h
     sub       hd, 2
     jg     .loop
 
-%if mmsize == 16
+%if %1 >= mmsize
     pshufd m1, m0, 0xe
     paddd  m0, m1
 %endif
@@ -731,9 +910,8 @@ cglobal vsad_intra%1,  5, 5, 3, v, pix1, pix2, lsize, h
     RET
 %endmacro
 
-INIT_MMX mmxext
-VSAD_INTRA  8, a
 INIT_XMM sse2
+VSAD_INTRA  8, h
 VSAD_INTRA 16, a
 VSAD_INTRA 16, u
 
@@ -751,15 +929,15 @@ cglobal vsad%1_approx,  5, 5, 5, v, pix1, pix2, lsize, h
     mova   m1, [pb_80]
     mov%2  m0, [pix1q]
     mov%2  m4, [pix1q+lsizeq]
-%if mmsize == 16
+%if %1 < mmsize
+    movh   m3, [pix2q]
+    movh   m2, [pix2q+lsizeq]
+%else
     movu   m3, [pix2q]
     movu   m2, [pix2q+lsizeq]
+%endif
     psubb  m0, m3
     psubb  m4, m2
-%else
-    psubb  m0, [pix2q]
-    psubb  m4, [pix2q+lsizeq]
-%endif
     pxor   m0, m1
     pxor   m4, m1
     psadbw m0, m4
@@ -769,17 +947,21 @@ cglobal vsad%1_approx,  5, 5, 5, v, pix1, pix2, lsize, h
     lea pix1q, [pix1q + 2*lsizeq]
     lea pix2q, [pix2q + 2*lsizeq]
     mov%2  m2, [pix1q]
-%if mmsize == 16
-    movu   m3, [pix2q]
-    psubb  m2, m3
+%if %1 < mmsize
+    movh   m3, [pix2q]
 %else
-    psubb  m2, [pix2q]
+    movu   m3, [pix2q]
 %endif
+    psubb  m2, m3
     pxor   m2, m1
     psadbw m4, m2
     paddw  m0, m4
     mov%2  m4, [pix1q+lsizeq]
+%if %1 < mmsize
+    movh   m3, [pix2q+lsizeq]
+%else
     movu   m3, [pix2q+lsizeq]
+%endif
     psubb  m4, m3
     pxor   m4, m1
     psadbw m2, m4
@@ -787,7 +969,7 @@ cglobal vsad%1_approx,  5, 5, 5, v, pix1, pix2, lsize, h
     sub    hd, 2
     jg  .loop
 
-%if mmsize == 16
+%if %1 >= mmsize
     pshufd m1, m0, 0xe
     paddd  m0, m1
 %endif
@@ -795,8 +977,179 @@ cglobal vsad%1_approx,  5, 5, 5, v, pix1, pix2, lsize, h
     RET
 %endmacro
 
-INIT_MMX mmxext
-VSAD_APPROX 8,  a
 INIT_XMM sse2
+VSAD_APPROX 8,  h
 VSAD_APPROX 16, a
 VSAD_APPROX 16, u
+
+;---------------------------------------------------------------------
+;int ff_median_sad_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+;                        ptrdiff_t stride, int h);
+;---------------------------------------------------------------------
+
+; Load one row of 16 pixels from pix1/pix2 and compute V = pix1 - pix2 as
+; int16 words.  No zero register is needed: both byte vectors are unpacked
+; against the same scratch register %5, so its garbage high bytes cancel in
+; the subtraction.  The shifted columns are derived from the unshifted word
+; vectors, so no out-of-bounds loads are made.
+; %1: V columns 0-7,  %2: V columns 8-15
+; %3: 0w followed by V columns 0-6,  %4: V columns 7-15
+; %5: scratch register, its contents are irrelevant
+%macro LOAD_V16 5
+    movu      %1, [pix1q]
+    movu      %3, [pix2q]
+    punpckhbw %2, %1, %5
+    punpcklbw %1, %5
+    punpckhbw %4, %3, %5
+    punpcklbw %3, %5
+    psubw     %1, %3            ; V columns 0-7
+    psubw     %2, %4            ; V columns 8-15
+    pslldq    %3, %1, 2         ; 0w followed by V columns 0-6
+    palignr   %4, %2, %1, 14    ; V columns 7-14
+%endmacro
+
+; Same as LOAD_V16 for one row of 8 pixels.
+; %1: V columns 0-7, %2: 0w followed by V columns 0-6, %3: scratch register
+%macro LOAD_V8 3
+    movq      %1, [pix1q]
+    movq      %2, [pix2q]
+    punpcklbw %1, %3
+    punpcklbw %2, %3
+    psubw     %1, %2            ; V columns 0-7
+    pslldq    %2, %1, 2         ; 0w, V columns 0-6
+%endmacro
+
+; Accumulate abs(%5 - mid_pred(%2, %3, %2 + %3 - %4)) into %1, using
+; mid_pred(a, b, c) == max(min(a, b), min(max(a, b), c)).
+; %1: accumulator, %2: top (clobbered), %3: left, %4: topleft (clobbered),
+; %5: values being predicted, %6 scratch register
+%macro MEDIAN_ABS_ACC 6
+    paddw     %6, %2, %3        ; top + left
+    psubw     %6, %4            ; top + left - topleft
+    pminsw    %4, %2, %3        ; min(top, left)
+    pmaxsw    %2, %3            ; max(top, left)
+    pminsw    %2, %6
+    pmaxsw    %4, %2            ; mid_pred(top, left, top + left - topleft)
+    psubw     %4, %5
+    pabsw     %4, %4
+    paddw     %1, %4
+%endmacro
+
+%if ARCH_X86_64
+; Accumulate one row's cost from the previous and current row vectors.
+; %1-%4: previous row V (columns 0-7, 8-15, 0-6, 7-14)
+; %5-%8: current  row V (columns 0-7, 8-15, 0-6, 7-14), loaded here
+; m0 is the accumulator, m11/m12 temporaries, m14 scratch.  The top
+; predictors %3/%4 are consumed by MEDIAN_ABS_ACC, but they belong to the
+; previous row and are reloaded before being needed again.
+%macro PROCESS_ROW16 8
+    LOAD_V16  %5, %6, %7, %8, m10
+    add       pix1q, strideq
+    add       pix2q, strideq
+    ; columns 0-7; no special case for the first element lacking
+    ; left and top-left predictors is needed here: The left vectors
+    ; have 0 as first element which leads to the desired result.
+    MEDIAN_ABS_ACC m0, %1, %7, %3, %5, m9
+    ; columns 8-15
+    MEDIAN_ABS_ACC m0, %2, %8, %4, %6, m9
+%endmacro
+
+; Register layout:
+;   m0  accumulator
+;   m1-m4   one row's V (columns 0-7, 8-15, 0-6, 7-14)
+;   m5-m8  the other row's V (columns 0-7, 8-15, 0-6, 7-14)
+;   m9 scratch register
+;   m10 dummy register (unclobbered)
+; The loop is unrolled by two so the two register sets alternate the roles of
+; previous and current row, which removes the per-row register copies.
+%macro MEDIAN_SAD16 0
+cglobal median_sad16, 5, 5, 10, v, pix1, pix2, stride, h
+    LOAD_V16  m1, m2, m3, m4, m10
+    add       pix1q, strideq
+    add       pix2q, strideq
+
+    ; first row: abs(V(0)) + sum of abs(V(j) - V(j-1))
+    psubw     m0, m3, m1
+    psubw     m5, m4, m2
+    pabsw     m0, m0
+    pabsw     m5, m5
+    paddw     m0, m5
+
+    sub       hd, 1
+    jle       .end
+.loop:
+    PROCESS_ROW16 m1, m2, m3, m4, m5, m6, m7, m8
+    sub       hd, 1
+    jle       .end
+    PROCESS_ROW16 m5, m6, m7, m8, m1, m2, m3, m4
+    sub       hd, 1
+    jg        .loop
+.end:
+    ; the per-word sums are at most 2 * 16 * 510, but their total may need
+    ; more than 16 bits: widen to dwords before the horizontal sum
+    pxor      m1, m1
+    punpckhwd m2, m0, m1
+    punpcklwd m0, m1
+    paddd     m0, m2
+    HADDD     m0, m2
+    movd      eax, m0
+    RET
+%endmacro
+
+INIT_XMM ssse3
+MEDIAN_SAD16
+%endif ; ARCH_X86_64
+
+; Accumulate one row's cost from the previous and current row vectors.
+; %1: previous row V columns 0-7, %2: previous row V columns 0-6
+; %3: current  row V columns 0-7, %4: current  row V columns 0-6 (loaded here)
+; m0 is the accumulator, m5 scratch register, m6 unclobbered dummy.
+%macro PROCESS_ROW8 4
+    LOAD_V8   %3, %4, m7
+    add       pix1q, strideq
+    add       pix2q, strideq
+    ; No special case for the first element lacking left and top-left
+    ; predictors is needed here: The left vectors have 0 as first element
+    ; which leads to the desired result.
+    MEDIAN_ABS_ACC m0, %1, %4, %2, %3, m5
+%endmacro
+
+; Register layout:
+;   m0  accumulator for columns 0-7
+;   m1, m2  one row's V (columns 0-7, 0-6)
+;   m3, m4  the other row's V (columns 0-7, 0-6)
+;   m5  scratch register
+;   m7  dummy register, unclobbered
+; As in median_sad16 the loop is unrolled by two so the two register sets
+; alternate the roles of previous and current row.
+%macro MEDIAN_SAD8 0
+cglobal median_sad8, 5, 5, 6, v, pix1, pix2, stride, h
+    LOAD_V8   m1, m2, m7
+    add       pix1q, strideq
+    add       pix2q, strideq
+
+    ; first row: abs(V(0)) + sum of abs(V(j) - V(j-1))
+    psubw     m0, m1, m2
+    pabsw     m0, m0
+
+    sub       hd, 1
+    jle       .end
+.loop:
+    PROCESS_ROW8 m1, m2, m3, m4
+    sub       hd, 1
+    jle       .end
+    PROCESS_ROW8 m3, m4, m1, m2
+    sub       hd, 1
+    jg        .loop
+.end:
+    pxor      m4, m4
+    punpckhwd m1, m0, m4
+    punpcklwd m0, m4
+    paddd     m0, m1
+    HADDD     m0, m1
+    movd      eax, m0
+    RET
+%endmacro
+
+INIT_XMM ssse3
+MEDIAN_SAD8

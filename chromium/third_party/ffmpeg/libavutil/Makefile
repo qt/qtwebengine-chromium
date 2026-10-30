@@ -37,6 +37,7 @@ HEADERS = adler32.h                                                     \
           file.h                                                        \
           film_grain_params.h                                           \
           frame.h                                                       \
+          gain_map.h                                                    \
           hash.h                                                        \
           hdr_dynamic_metadata.h                                        \
           hdr_dynamic_vivid_metadata.h                                  \
@@ -76,6 +77,7 @@ HEADERS = adler32.h                                                     \
           pixelutils.h                                                  \
           pixfmt.h                                                      \
           random_seed.h                                                 \
+          raw_color_params.h                                            \
           rc4.h                                                         \
           rational.h                                                    \
           refstruct.h                                                   \
@@ -145,6 +147,7 @@ OBJS = adler32.o                                                        \
        film_grain_params.o                                              \
        fixed_dsp.o                                                      \
        frame.o                                                          \
+       gain_map.o                                                       \
        hash.o                                                           \
        hdr_dynamic_metadata.o                                           \
        hdr_dynamic_vivid_metadata.o                                     \
@@ -169,6 +172,7 @@ OBJS = adler32.o                                                        \
        pixdesc.o                                                        \
        pixelutils.o                                                     \
        random_seed.o                                                    \
+       raw_color_params.o                                               \
        rational.o                                                       \
        refstruct.o                                                      \
        reverse.o                                                        \
@@ -251,33 +255,41 @@ SKIPHEADERS-$(CONFIG_VDPAU)            += hwcontext_vdpau.h
 SKIPHEADERS-$(CONFIG_VULKAN)           += hwcontext_vulkan.h vulkan.h   \
                                           vulkan_functions.h            \
                                           vulkan_loader.h
-SKIPHEADERS-$(CONFIG_LIBSHADERC)       += vulkan_spirv.h
-SKIPHEADERS-$(CONFIG_LIBGLSLANG)       += vulkan_spirv.h
 SKIPHEADERS-$(CONFIG_SHADER_COMPRESSION) += zlib_utils.h
 
 TESTPROGS = adler32                                                     \
             aes                                                         \
             aes_ctr                                                     \
+            ambient_viewing_environment                                 \
+            atomic                                                      \
             audio_fifo                                                  \
             avstring                                                    \
             base64                                                      \
             blowfish                                                    \
             bprint                                                      \
+            buffer                                                      \
             cast5                                                       \
             camellia                                                    \
             channel_layout                                              \
             color_utils                                                 \
             cpu                                                         \
             crc                                                         \
+            csp                                                         \
             des                                                         \
+            detection_bbox                                              \
             dict                                                        \
             display                                                     \
+            dovi_meta                                                   \
+            downmix_info                                                \
             encryption_info                                             \
             error                                                       \
             eval                                                        \
             file                                                        \
             fifo                                                        \
+            film_grain_params                                           \
             hash                                                        \
+            hdr_dynamic_metadata                                        \
+            hdr_dynamic_vivid_metadata                                  \
             hmac                                                        \
             hwdevice                                                    \
             integer                                                     \
@@ -285,6 +297,8 @@ TESTPROGS = adler32                                                     \
             lfg                                                         \
             lls                                                         \
             log                                                         \
+            mastering_display_metadata                                  \
+            mathematics                                                 \
             md5                                                         \
             murmur3                                                     \
             opt                                                         \
@@ -295,18 +309,29 @@ TESTPROGS = adler32                                                     \
             pixfmt_best                                                 \
             random_seed                                                 \
             rational                                                    \
+            rc4                                                         \
             ripemd                                                      \
             sha                                                         \
             sha512                                                      \
+            samplefmt                                                   \
+            side_data                                                   \
             side_data_array                                             \
             softfloat                                                   \
+            spherical                                                   \
+            stereo3d                                                    \
+            tdrdi                                                       \
+            timecode                                                    \
+            timestamp                                                   \
             tree                                                        \
             twofish                                                     \
             utf8                                                        \
             uuid                                                        \
+            video_enc_params                                            \
+            video_hint                                                  \
             xtea                                                        \
             tea                                                         \
 
+TESTPROGS-$(CONFIG_CUDA)             += hwcontext_cuda
 TESTPROGS-$(HAVE_THREADS)            += cpu_init
 TESTPROGS-$(HAVE_LZO1X_999_COMPRESS) += lzo
 

@@ -104,13 +104,6 @@ static av_cold int libcodec2_init_encoder(AVCodecContext *avctx)
 {
     LibCodec2Context *c2 = avctx->priv_data;
 
-    //will need to be smarter once we get wideband support
-    if (avctx->sample_rate != 8000 ||
-        avctx->sample_fmt != AV_SAMPLE_FMT_S16) {
-        av_log(avctx, AV_LOG_ERROR, "only 8 kHz 16-bit mono allowed\n");
-        return AVERROR(EINVAL);
-    }
-
     avctx->extradata = av_mallocz(CODEC2_EXTRADATA_SIZE + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata) {
         return AVERROR(ENOMEM);
@@ -139,6 +132,8 @@ static int libcodec2_decode(AVCodecContext *avctx, AVFrame *frame,
     int16_t *output;
 
     nframes           = pkt->size / avctx->block_align;
+    if (nframes > INT_MAX / avctx->frame_size)
+        return AVERROR_INVALIDDATA;
     frame->nb_samples = avctx->frame_size * nframes;
 
     ret = ff_get_buffer(avctx, frame, 0);
@@ -182,9 +177,6 @@ const FFCodec ff_libcodec2_decoder = {
     .p.type                 = AVMEDIA_TYPE_AUDIO,
     .p.id                   = AV_CODEC_ID_CODEC2,
     .p.capabilities         = AV_CODEC_CAP_CHANNEL_CONF,
-    CODEC_SAMPLERATES(8000),
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
-    CODEC_CH_LAYOUTS(AV_CHANNEL_LAYOUT_MONO),
     .caps_internal          = FF_CODEC_CAP_NOT_INIT_THREADSAFE,
     .priv_data_size         = sizeof(LibCodec2Context),
     .init                   = libcodec2_init_decoder,

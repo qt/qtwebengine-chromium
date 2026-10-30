@@ -1,0 +1,1033 @@
+/*
+ * Shared file cache protocol.
+ * Copyright (c) 2026 Niklas Haas
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ * Based on cache.c by Michael Niedermayer
+ */
+
+#include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
+#include "libavutil/crc.h"
+#include "libavutil/error.h"
+#include "libavutil/file.h"
+#include "libavutil/hash.h"
+#include "libavutil/file_open.h"
+#include "libavutil/mem.h"
+#include "libavutil/opt.h"
+#include "libavutil/time.h"
+
+#include "internal.h"
+#include "os_support.h"
+#include "url.h"
+
+#include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdatomic.h>
+#include <string.h>
+#include <sys/stat.h>
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#ifndef _WIN32
+#include <sys/file.h>
+#endif
+
+/**
+ * This hash should be resistant against collision attacks, so that an
+ * attacker could not generate e.g. two different URIs that map to the same
+ * cache file. This requires at least 64 bits of collision resistance in
+ * practice (i.e. 128 bits = 16 bytes of hash size). However, we can be
+ * conservative by computing e.g. a 256 bit hash and storing it inside the
+ * file header for verification.
+ *
+ * Note that due to the way we use atomics, we should avoid zero bytes in
+ * the resulting hash; hence we tweak the input slightly to avoid this.
+ * The resulting loss in hash strength is negligible, since 32 bytes is
+ * already much more than needed.
+ */
+#define HASH_METHOD    "SHA512/256"
+#define HASH_SIZE      32
+#define HEADER_MAGIC   MKTAG(u'\xFF', 'S', 'h', '$')
+#define HEADER_VERSION 3
+
+/**
+ * Hard watershed of consecutive failed blocks before we give up on the cache
+ * file altogether and assume it's entirely lost to us.
+ **/
+#define MAX_CORRUPT_BLOCKS 10
+
+static int hash_uri(uint8_t hash[HASH_SIZE], const char *uri)
+{
+    struct AVHashContext *ctx = NULL;
+    int ret = av_hash_alloc(&ctx, HASH_METHOD);
+    if (ret < 0)
+        return ret;
+
+    const int16_t version = HEADER_VERSION;
+    av_assert0(av_hash_get_size(ctx) == HASH_SIZE);
+    av_hash_init(ctx);
+    av_hash_update(ctx, (const uint8_t *) &version, sizeof(version));
+    av_hash_update(ctx, (const uint8_t *) uri, strlen(uri));
+    av_hash_final(ctx, hash);
+    av_hash_freep(&ctx);
+
+    for (int i = 0; i < HASH_SIZE; i++)
+        hash[i] = hash[i] ? hash[i] : ~hash[i]; /* prevent zero bytes */
+    return 0;
+}
+
+enum BlockState {
+    /* Reserved block state values */
+    BLOCK_NONE = 0, ///< block is not cached
+    BLOCK_PENDING,  ///< a thread is currently trying to write this block
+    BLOCK_FAILED,   ///< the underlying I/O source failed to read this block
+
+    /**
+     * All other block states represent valid cached blocks, with the value
+     * being the CRC of the block data.
+     */
+};
+
+static uint32_t get_block_crc(const uint8_t *block, size_t block_size)
+{
+    uint32_t crc = av_crc(av_crc_get_table(AV_CRC_32_IEEE), 0, block, block_size);
+    switch (crc) {
+    case BLOCK_NONE:
+    case BLOCK_FAILED:
+    case BLOCK_PENDING:
+        return ~crc; /* avoid reserved block states */
+    default:
+        return crc;
+    }
+}
+
+typedef struct Block {
+    atomic_uint state; /* enum BlockState */
+} Block;
+
+typedef struct Spacemap {
+    atomic_uint header_magic;
+    atomic_ushort version;
+    atomic_ushort block_shift;
+    atomic_ullong filesize; /* byte offset of true EOF, or 0 if unknown */
+    atomic_uchar hash[HASH_SIZE]; /* hash of resource URI / filename */
+    atomic_ullong blocks_cached; /* (lower bound on) the number of blocks cached */
+    char reserved[72];
+
+    Block blocks[];
+} Spacemap;
+
+static_assert(offsetof(Spacemap, blocks) == 128, "Spacemap header layout mismatch");
+
+/* Set to value iff the current value is unset (zero) */
+#define DEF_SET_ONCE(ctype, atype)                                              \
+    static int set_once_##atype(atomic_##atype *const ptr, const ctype value)   \
+    {                                                                           \
+        ctype prev = 0;                                                         \
+        av_assert1(value != 0);                                                 \
+        if (atomic_compare_exchange_strong_explicit(                            \
+                ptr, &prev, value, memory_order_release, memory_order_relaxed)) \
+            return 1;                                                           \
+        else if (prev == value)                                                 \
+            return 0;                                                           \
+        else                                                                    \
+            return AVERROR(EINVAL);                                             \
+    }
+
+DEF_SET_ONCE(unsigned char,      uchar)
+DEF_SET_ONCE(unsigned int,       uint)
+DEF_SET_ONCE(unsigned short,     ushort)
+DEF_SET_ONCE(unsigned long long, ullong)
+
+typedef struct SharedContext {
+    AVClass *class;
+    URLContext *inner;
+    int64_t inner_pos;
+
+    /* options */
+    char *cache_dir;
+    char *metadata_dir;
+    int block_shift; ///< requested shift; updated on init if it disagrees
+    int read_only;
+    int64_t timeout;
+    int ignore_errors;
+    int retry_errors;
+    int retry_corrupt;
+    int verify;
+    int64_t cache_size_max;
+
+    /* misc state */
+    int64_t pos; ///< current logical position
+    uint8_t *tmp_buf;
+    int block_size;
+    int write_err; ///< write error occurred
+    int num_corrupt;
+    int64_t filesize; ///< once known
+    int64_t blocks_max; ///< maximum number of blocks to cache
+
+    /* cache file */
+    uint8_t *cache_data; ///< optional mapping of the cache file
+    char *cache_path;
+    off_t cache_size; ///< size of mapped memory region (for unmapping)
+    int fd;
+
+    /* space map */
+    Spacemap *spacemap;
+    char *map_path;
+    off_t map_size;
+    int mapfd;
+
+    /* statistics */
+    int64_t nb_hit;
+    int64_t nb_miss;
+} SharedContext;
+
+static int shared_close(URLContext *h)
+{
+    SharedContext *s = h->priv_data;
+
+    ffurl_close(s->inner);
+    av_file_unmap_shared(s->cache_data, s->cache_size);
+    av_file_unmap_shared(s->spacemap, s->map_size);
+    if (s->fd != -1)
+        close(s->fd);
+    if (s->mapfd != -1)
+        close(s->mapfd);
+    av_freep(&s->cache_path);
+    av_freep(&s->map_path);
+    av_freep(&s->tmp_buf);
+
+    av_log(h, AV_LOG_DEBUG, "Cache statistics: %"PRId64" hits, %"PRId64" misses\n",
+           s->nb_hit, s->nb_miss);
+    return 0;
+}
+
+static int cache_map(URLContext *h, int64_t filesize);
+static int spacemap_init(URLContext *h, const uint8_t hash[HASH_SIZE]);
+static int spacemap_grow(URLContext *h, int64_t block);
+
+static int64_t get_filesize(URLContext *h)
+{
+    SharedContext *s = h->priv_data;
+    if (!s->filesize) {
+        uint64_t size = atomic_load_explicit(&s->spacemap->filesize, memory_order_relaxed);
+        if (size > INT64_MAX)
+            return AVERROR(EINVAL);
+        else if (size)
+            s->filesize = size;
+    }
+
+    return s->filesize;
+}
+
+static int set_filesize(URLContext *h, int64_t new_size)
+{
+    SharedContext *s = h->priv_data;
+    int ret;
+
+    if (!new_size)
+        return 0;
+
+    ret = set_once_ullong(&s->spacemap->filesize, new_size);
+    if (ret < 0) {
+        av_log(h, AV_LOG_ERROR, "Cached file size mismatch, expected: "
+                "%"PRId64", got: %"PRIu64"!\n", new_size,
+                (uint64_t) atomic_load(&s->spacemap->filesize));
+        return ret;
+    } else if (ret) {
+        /* Opportunistically map the file; this also sets the correct filesize.
+         * Ignore errors as this is not critical to the cache logic. */
+        cache_map(h, new_size);
+    }
+
+    return ret;
+}
+
+static int is_ignorable_error(int64_t err)
+{
+    switch (err) {
+    case AVERROR_EXIT:
+    case AVERROR_EOF:
+    case AVERROR_BUG:
+    case AVERROR(EAGAIN):
+    case AVERROR(ENOSYS):
+    case AVERROR(EINVAL):
+        return 0;
+    default:
+        return err < 0;
+    }
+}
+
+static int shared_open(URLContext *h, const char *arg, int flags, AVDictionary **options)
+{
+    SharedContext *s = h->priv_data;
+    int ret;
+
+    if (!s->cache_dir || !s->cache_dir[0]) {
+        av_log(h, AV_LOG_ERROR, "Missing path for shared cache! Specify a "
+               "directory using the -cache_dir option.\n");
+        return AVERROR(EINVAL);
+    }
+
+    const char *spacemap_dir = s->cache_dir;
+    if (s->metadata_dir && s->metadata_dir[0])
+        spacemap_dir = s->metadata_dir;
+
+    s->fd = s->mapfd = -1; /* Set these early for shared_close() failure path */
+
+    /* Open underlying protocol */
+    av_strstart(arg, "shared:", &arg);
+    ret = ffurl_open_whitelist(&s->inner, arg, flags, &h->interrupt_callback,
+                               options, h->protocol_whitelist, h->protocol_blacklist, h);
+    if (is_ignorable_error(ret) && s->ignore_errors) {
+        av_log(h, AV_LOG_WARNING, "Underlying URL failed to open: %s. "
+               "Continuing with cache file only.\n", av_err2str(ret));
+    } else if (ret < 0)
+        goto fail;
+
+    uint8_t hash[HASH_SIZE];
+    ret = hash_uri(hash, arg);
+    if (ret < 0)
+        goto fail;
+
+    /* 128 bits is enough for collision resistance; we already store the full
+     * hash inside the header for verification */
+    char filename[2 * 16 + 1];
+    ff_data_to_hex(filename, hash, sizeof(filename)/2, 0);
+    s->cache_path = av_asprintf("%s/%s.cache",    s->cache_dir, filename);
+    s->map_path   = av_asprintf("%s/%s.spacemap", spacemap_dir, filename);
+    if (!s->cache_path || !s->map_path) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    av_log(h, AV_LOG_VERBOSE, "Opening cache file '%s' for URI: '%s'\n",
+           s->cache_path, s->inner ? s->inner->filename : arg);
+
+    const int mode = O_RDWR | O_BINARY | (s->inner ? O_CREAT : 0);
+    s->fd    = avpriv_open(s->cache_path, mode, 0660);
+    s->mapfd = s->fd >= 0 ? avpriv_open(s->map_path, mode, 0660) : -1;
+    if (s->fd < 0 || s->mapfd < 0) {
+        ret = AVERROR(errno);
+        av_log(h, AV_LOG_ERROR, "Failed to open '%s': %s\n",
+               s->fd < 0 ? s->cache_path : s->map_path, av_err2str(ret));
+        goto fail;
+    }
+
+    ret = spacemap_init(h, hash);
+    if (ret < 0)
+        goto fail;
+
+    /* s->block_shift is fully settled after spacemap_init() */
+    s->block_size = 1 << s->block_shift;
+    s->blocks_max = s->cache_size_max >> s->block_shift;
+
+    int64_t filesize = get_filesize(h);
+    if (filesize < 0) {
+        ret = (int) filesize;
+        goto fail;
+    } else if (!filesize) {
+        /* Filesize is not yet known, try to get it from the underlying URL;
+         * go through our own seek function to handle errors and updates */
+        filesize = ffurl_size(h);
+        if (filesize < 0 && filesize != AVERROR(ENOSYS)) {
+            ret = (int) filesize;
+            goto fail;
+        }
+    }
+
+    if (filesize > 0) {
+        int64_t last_pos = filesize - 1;
+        int64_t last_block = last_pos >> s->block_shift;
+        ret = spacemap_grow(h, last_block);
+        if (ret < 0)
+            goto fail;
+
+        /* If filesize is known, we can directly map the cache file */
+        ret = cache_map(h, filesize);
+        if (ret < 0) {
+            av_log(h, AV_LOG_WARNING, "Failed to map cache file: %s. Falling "
+                   "back to normal read/write\n", av_err2str(ret));
+            ret = 0;
+        }
+    }
+
+    /* Temporary buffer needed for pread/pwrite() fallback */
+    s->tmp_buf = av_malloc(s->block_size);
+    if (!s->tmp_buf) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    h->max_packet_size = s->block_size;
+    h->min_packet_size = s->block_size;
+    ret = 0;
+
+fail:
+    if (ret < 0)
+        shared_close(h);
+    return ret;
+}
+
+static int cache_map(URLContext *h, int64_t filesize)
+{
+    SharedContext *s = h->priv_data;
+    if (s->cache_size >= filesize || filesize > SIZE_MAX)
+        return 0;
+
+    if (s->cache_data) {
+        av_file_unmap_shared(s->cache_data, s->cache_size);
+        s->cache_data = NULL;
+        s->cache_size = 0;
+    }
+
+    /* The mapping extends the file to the file size; it can be shorter if
+     * another process wrote the correct filesize to the header but crashed
+     * right before actually successfully resizing the file. */
+    void *map;
+    int ret = av_file_map_shared(s->fd, filesize, &map);
+    if (ret < 0)
+        return ret;
+
+    s->cache_data = map;
+    s->cache_size = filesize;
+    return 0;
+}
+
+static int spacemap_remap(URLContext *h, size_t map_size)
+{
+    SharedContext *s = h->priv_data;
+    int ret, did_grow = 0, locked = 0;
+    if (map_size <= s->map_size)
+        return 0;
+
+    /* Opportunistically get current filesize before attempting to lock */
+    struct stat st;
+    ret = fstat(s->mapfd, &st);
+    if (ret < 0) {
+        ret = AVERROR(errno);
+        goto fail;
+    }
+
+    if (st.st_size >= map_size)
+        goto skip_resize;
+
+    /* Lock the spacemap to ensure nobody else is currently resizing it */
+    ret = flock(s->mapfd, LOCK_EX);
+    if (ret < 0) {
+        ret = AVERROR(errno);
+        goto fail;
+    }
+    locked = 1;
+
+    /* Refresh filesize after acquiring the lock */
+    ret = fstat(s->mapfd, &st);
+    if (ret < 0) {
+        ret = AVERROR(errno);
+        goto fail;
+    }
+
+    if (st.st_size >= map_size)
+        goto skip_resize;
+
+    /* The new mapping extends the file */
+    st.st_size = map_size;
+    did_grow = 1;
+
+skip_resize:
+    av_file_unmap_shared(s->spacemap, s->map_size);
+    s->spacemap = NULL;
+    s->map_size = st.st_size;
+
+    void *map;
+    ret = av_file_map_shared(s->mapfd, s->map_size, &map);
+    if (ret < 0) {
+        s->map_size = 0;
+        goto fail;
+    }
+    s->spacemap = map;
+
+    if (locked) {
+        flock(s->mapfd, LOCK_UN);
+        locked = 0;
+    }
+
+    return did_grow;
+
+fail:
+    if (locked)
+        flock(s->mapfd, LOCK_UN);
+    av_log(h, AV_LOG_ERROR, "Failed to resize space map: %s\n", av_err2str(ret));
+    return ret;
+}
+
+static int spacemap_grow(URLContext *h, int64_t block)
+{
+    SharedContext *s = h->priv_data;
+    int64_t num_blocks = block + 1;
+    size_t map_bytes = sizeof(Spacemap) + num_blocks * sizeof(Block);
+
+    /* When streaming files without known size, round up the number of blocks
+     * to the nearest multiple of the block size to reduce the rate of resizes */
+    int64_t filesize = get_filesize(h);
+    if (filesize < 0)
+        return (int) filesize;
+    else if (!filesize) {
+        av_assert0(s->block_size > 0);
+        map_bytes = FFALIGN(map_bytes, (int64_t) s->block_size);
+    }
+
+    if (map_bytes < num_blocks)
+        return AVERROR(EINVAL); /* overflow */
+
+    const off_t old_size = s->map_size;
+    int ret = spacemap_remap(h, map_bytes);
+    if (ret < 0)
+        return ret;
+
+    /* Report new size after successful grow */
+    if (s->map_size > old_size) {
+        num_blocks = (s->map_size - sizeof(Spacemap)) / sizeof(Block);
+        av_log(h, AV_LOG_DEBUG,
+               "%s %zu bytes, capacity: %"PRId64" blocks = %"PRId64" MB\n",
+               ret ? "Resized spacemap to" : "Mapped spacemap with",
+               (size_t) s->map_size, num_blocks,
+               (num_blocks * (int64_t) s->block_size) >> 20);
+    }
+    return 0;
+}
+
+static int spacemap_init(URLContext *h, const uint8_t hash[HASH_SIZE])
+{
+    SharedContext *s = h->priv_data;
+    int ret;
+
+    ret = spacemap_remap(h, sizeof(Spacemap));
+    if (ret < 0)
+        return ret;
+
+    if ((ret = set_once_uint(&s->spacemap->header_magic, HEADER_MAGIC)) < 0 ||
+        (ret = set_once_ushort(&s->spacemap->version, HEADER_VERSION)) < 0)
+    {
+        av_log(h, AV_LOG_ERROR, "Shared cache spacemap header mismatch!\n");
+        av_log(h, AV_LOG_ERROR, "  Expected magic: 0x%X, version: %d\n",
+               HEADER_MAGIC, HEADER_VERSION);
+        av_log(h, AV_LOG_ERROR, "  Got      magic: 0x%X, version: %d\n",
+               atomic_load(&s->spacemap->header_magic),
+               atomic_load(&s->spacemap->version));
+        return ret;
+    }
+
+    ret = set_once_ushort(&s->spacemap->block_shift, s->block_shift);
+    if (ret < 0) {
+        const int shift = atomic_load(&s->spacemap->block_shift);
+        av_log(h, AV_LOG_WARNING, "Shared cache uses block shift %d, "
+               "but requested block shift is %d.\n", shift, s->block_shift);
+        if (shift < 9 || shift > 30) {
+            av_log(h, AV_LOG_ERROR, "Invalid block shift %d in cache file!\n", shift);
+            return AVERROR(EINVAL);
+        }
+        s->block_shift = shift;
+    }
+
+    for (int i = 0; i < HASH_SIZE; i++) {
+        ret = set_once_uchar(&s->spacemap->hash[i], hash[i]);
+        if (ret < 0) {
+            av_log(h, AV_LOG_ERROR, "Shared cache spacemap hash mismatch!\n");
+            char hash_hex[2 * HASH_SIZE + 1];
+            ff_data_to_hex(hash_hex, hash, HASH_SIZE, 0);
+            av_log(h, AV_LOG_ERROR, "  Expected hash: %s\n", hash_hex);
+            uint8_t hash2[HASH_SIZE];
+            for (int j = 0; j < HASH_SIZE; ++j)
+                hash2[j] = atomic_load_explicit(&s->spacemap->hash[j], memory_order_relaxed);
+            ff_data_to_hex(hash_hex, hash2, HASH_SIZE, 0);
+            av_log(h, AV_LOG_ERROR, "  Got      hash: %s\n", hash_hex);
+            return ret;
+        }
+    }
+
+    if (ret) /* set_once() return 1 if this is the first time setting the value */
+        av_log(h, AV_LOG_DEBUG, "Initialized new cache spacemap.\n");
+
+    return ret;
+}
+
+static int read_cache(SharedContext *s, uint8_t *buf, size_t size, off_t offset)
+{
+    if (s->cache_data) {
+        av_assert1(offset + size <= s->cache_size);
+        memcpy(buf, s->cache_data + offset, size);
+        return 0;
+    }
+
+    while (size) {
+        ssize_t ret = pread(s->fd, buf, size, offset);
+        if (ret <= 0)
+            return ret ? AVERROR(errno) : AVERROR_EOF;
+        buf    += ret;
+        offset += ret;
+        size   -= ret;
+    }
+
+    return 0;
+}
+
+static int write_cache(SharedContext *s, const uint8_t *buf, size_t size, off_t offset)
+{
+    if (s->cache_data) {
+        av_assert1(offset + size <= s->cache_size);
+        memcpy(s->cache_data + offset, buf, size);
+        return 0;
+    }
+
+    while (size) {
+        ssize_t ret = pwrite(s->fd, buf, size, offset);
+        if (ret <= 0)
+            return ret ? AVERROR(errno) : AVERROR(EIO);
+        buf    += ret;
+        offset += ret;
+        size   -= ret;
+    }
+
+    return 0;
+}
+
+static int clamp_size(URLContext *h, int size, int64_t pos, int64_t filesize)
+{
+    if (!filesize)
+        return size;
+    else if (pos > filesize)
+        return 0;
+    else
+        return FFMIN(filesize - pos, size);
+}
+
+static int shared_read(URLContext *h, unsigned char *buf, int size)
+{
+    SharedContext *s = h->priv_data;
+    uint8_t *tmp;
+    int ret;
+    if (!s->spacemap)
+        return AVERROR(EIO);
+
+    if (size <= 0)
+        return 0;
+
+    int64_t filesize = get_filesize(h);
+    if (filesize < 0)
+        return (int) filesize;
+
+    size = clamp_size(h, size, s->pos, filesize);
+    if (size <= 0)
+        return AVERROR_EOF;
+
+    const int64_t block_id = s->pos >> s->block_shift;
+    const int64_t offset = s->pos & (s->block_size - 1);
+    const int64_t block_pos = block_id * s->block_size;
+    int block_size = clamp_size(h, s->block_size, block_pos, filesize);
+    ret = spacemap_grow(h, block_id);
+    if (ret < 0)
+        return ret;
+
+    Block *const block = &s->spacemap->blocks[block_id];
+    unsigned state = atomic_load_explicit(&block->state, memory_order_acquire);
+    int64_t pending_since = 0;
+    int verify_read = 0, acquired = 0, allocated = 0;
+
+retry:
+    switch (state) {
+    default:
+        if (s->num_corrupt >= MAX_CORRUPT_BLOCKS)
+            goto read_block; /* assume broken cache file */
+
+        /* filesize may have become known in the meantime */
+        filesize = get_filesize(h);
+        if (filesize < 0)
+            return (int) filesize;
+
+        /* We always need to read the entire block to verify integrity */
+        block_size = clamp_size(h, block_size, block_pos, filesize);
+        if (s->cache_data) {
+            av_assert1(block_pos + block_size <= s->cache_size);
+            tmp = s->cache_data + block_pos;
+        } else {
+            tmp = s->tmp_buf;
+            ret = read_cache(s, tmp, block_size, block_pos);
+            if (ret < 0) {
+                av_log(h, AV_LOG_ERROR, "Failed to read from cache file: %s\n", av_err2str(ret));
+                if (ret == AVERROR_EOF) { /* e.g. cache appears truncated? */
+                    if (s->retry_corrupt) {
+                        s->num_corrupt++;
+                        goto read_block;
+                    }
+                    ret = AVERROR(EIO); /* don't propagate EOF to caller */
+                }
+                return ret;
+            }
+        }
+
+        uint32_t crc = get_block_crc(tmp, block_size);
+        if (crc != state) {
+            av_log(h, AV_LOG_ERROR, "Cache corruption detected for block 0x%"PRIx64" at "
+                   "offset 0x%"PRIx64": expected CRC: 0x%08X, got: 0x%08X\n",
+                   block_id, block_pos, state, crc);
+            if (s->retry_corrupt) {
+                s->num_corrupt++;
+                goto read_block;
+            }
+            return AVERROR(EIO);
+        } else
+            s->num_corrupt = 0; /* reset corrupt block count on success */
+
+        tmp += (ptrdiff_t) offset;
+        size = FFMIN(size, block_size - offset);
+        if (size <= 0)
+            return AVERROR_EOF;
+        if (s->verify) {
+            verify_read = 1;
+            break; /* fall through to the cache miss logic */
+        }
+
+        memcpy(buf, tmp, size);
+        s->nb_hit++;
+        s->pos += size;
+        return size;
+
+    case BLOCK_FAILED:
+        if (s->retry_errors)
+            goto read_block;
+        return AVERROR(EIO);
+
+read_block:
+        if (s->num_corrupt == MAX_CORRUPT_BLOCKS) {
+            av_log(h, AV_LOG_ERROR, "Too many consecutive corrupt blocks; "
+                   "assuming cache file is completely broken.\n");
+            s->num_corrupt++; /* silence this log on subsequent reads */
+        }
+        av_fallthrough;
+
+    case BLOCK_NONE:
+        if (s->read_only || s->write_err || !s->inner)
+            break; /* don't mark block as pending */
+        else if (s->cache_size_max) {
+            int64_t cached = atomic_load_explicit(&s->spacemap->blocks_cached,
+                                                  memory_order_relaxed);
+            if (cached >= s->blocks_max) {
+                av_log(h, AV_LOG_WARNING, "Cache size limit reached (%"PRId64" "
+                       "blocks = %"PRId64" bytes), switching to read-only mode.\n",
+                       s->blocks_max, s->blocks_max << s->block_shift);
+                s->read_only = 1;
+                break;
+            }
+        }
+
+        if (atomic_compare_exchange_strong_explicit(&block->state, &state,
+                                                    BLOCK_PENDING,
+                                                    memory_order_acquire,
+                                                    memory_order_acquire))
+        {
+            /* Acquired pending state, proceed to fetch the block */
+            acquired = 1;
+            allocated = (state == BLOCK_NONE || state == BLOCK_FAILED);
+            state = BLOCK_PENDING;
+            break;
+        }
+        /* CAS failed, another thread changed the state; reload it */
+        goto retry;
+
+    case BLOCK_PENDING:
+        /* Another thread is busy fetching this block, wait for it to finish */
+        if (!s->timeout) {
+            break; /* no timeout requested, immediately race to fetch block */
+        } else if (pending_since) {
+            int64_t new = av_gettime_relative();
+            if (new - pending_since >= s->timeout)
+                break; /* timeout expired, try to fetch the block ourselves */
+        } else {
+            pending_since = av_gettime_relative();
+        }
+
+        if (h->flags & AVIO_FLAG_NONBLOCK)
+            return AVERROR(EAGAIN);
+
+        /* Make sure we try a few times before giving up */
+        av_usleep(FFMIN(s->timeout >> 4, 10000));
+        if (ff_check_interrupt(&h->interrupt_callback))
+            return AVERROR_EXIT;
+
+        state = atomic_load_explicit(&block->state, memory_order_acquire);
+        goto retry;
+    }
+
+    /* Release pending state on failure to avoid stalling other threads */
+#define RELEASE_PENDING(block, state)                                          \
+    do {                                                                       \
+        if (acquired) {                                                        \
+            av_assert1(state == BLOCK_PENDING);                                \
+            atomic_compare_exchange_strong_explicit(                           \
+                &block->state, &state, BLOCK_NONE, memory_order_relaxed,       \
+                memory_order_relaxed);                                         \
+        }                                                                      \
+    } while (0)
+
+    /* Cache miss, fetch this block from underlying protocol */
+    s->nb_miss++;
+
+    if (!s->inner) {
+        av_log(h, AV_LOG_ERROR, "Cache miss for block 0x%"PRIx64" at offset "
+               "0x%"PRIx64", but underlying protocol is not available!\n",
+               block_id, block_pos);
+        av_assert0(!acquired);
+        return AVERROR(EIO);
+    }
+
+    const int read_only = s->read_only || s->write_err || verify_read;
+    int64_t inner_pos = read_only ? s->pos : block_pos;
+    if (s->inner_pos != inner_pos) {
+        inner_pos = ffurl_seek(s->inner, inner_pos, SEEK_SET);
+        if (inner_pos < 0) {
+            av_log(h, AV_LOG_ERROR, "Failed to seek underlying protocol: %s\n",
+                   av_err2str(inner_pos));
+            RELEASE_PENDING(block, state);
+            return inner_pos;
+        }
+
+        av_log(h, AV_LOG_DEBUG, "Inner seek to 0x%"PRIx64"\n", inner_pos);
+        s->inner_pos = inner_pos;
+    }
+
+    if (read_only) {
+        /* Directly defer to the underlying protocol */
+        ret = ffurl_read(s->inner, buf, size);
+        if (ret < 0) {
+            av_assert1(!acquired);
+            return ret;
+        } else {
+            s->inner_pos = inner_pos + ret;
+        }
+
+        /* Verify the read data against the cached data if requested */
+        if (verify_read && memcmp(buf, tmp, ret)) {
+            av_log(h, AV_LOG_ERROR, "Cache verification failed for %d bytes "
+                   "in block 0x%"PRIx64" at offset 0x%"PRIx64" + %"PRId64"!\n",
+                   ret, block_id, block_pos, offset);
+            return AVERROR(EIO);
+        }
+
+        s->pos = s->inner_pos;
+        return ret;
+    }
+
+    int write_back = 1;
+    if (s->cache_data && acquired) {
+        /* Read directly into memory mapped cache file */
+        tmp = s->cache_data + block_pos;
+        write_back = 0;
+    } else if (size >= block_size && !offset) {
+        /* Read directly into output buffer if aligned and large enough */
+        tmp = buf;
+    } else {
+        /* Read into temporary buffer and copy later */
+        tmp = s->tmp_buf;
+    }
+
+    /* Try and fetch the entire block */
+    av_assert0(inner_pos == block_pos);
+    int bytes_read = 0;
+    while (bytes_read < block_size) {
+        ret = ffurl_read(s->inner, &tmp[bytes_read], block_size - bytes_read);
+        if (!ret || ret == AVERROR_EOF)
+            break;
+        else if (ret < 0) {
+            av_log(h, AV_LOG_ERROR, "Failed to read block 0x%"PRIx64": %s\n",
+                   block_id, av_err2str(ret));
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EXIT) {
+                RELEASE_PENDING(block, state);
+                return ret; /* transient error, allow retries */
+            }
+
+            /* Try to mark block as failed; ignore errors - any mismatch
+             * here will mean that either another thread already marked it
+             * as failed, or successfully cached it in the meantime */
+            atomic_compare_exchange_strong_explicit(&block->state, &state,
+                                                    BLOCK_FAILED,
+                                                    memory_order_relaxed,
+                                                    memory_order_relaxed);
+            return ret;
+        }
+
+        bytes_read += ret;
+        s->inner_pos += ret;
+    }
+
+    if (bytes_read < block_size) {
+        /* Learned location of true EOF, update filesize */
+        ret = set_filesize(h, inner_pos + bytes_read);
+        if (ret < 0) {
+            RELEASE_PENDING(block, state);
+            return ret;
+        }
+    }
+
+    if (bytes_read > 0) {
+        ret = write_back ? write_cache(s, tmp, bytes_read, block_pos) : 0;
+        if (ret < 0) {
+            if (ret != AVERROR(EINTR)) {
+                av_log(h, AV_LOG_ERROR, "Failed to write to cache file: %s\n",
+                    av_err2str(ret));
+                s->write_err = 1;
+            }
+            RELEASE_PENDING(block, state);
+        } else {
+            uint32_t crc = get_block_crc(tmp, bytes_read);
+            av_log(h, AV_LOG_TRACE, "Cached %d bytes to block 0x%"PRIx64" at "
+                   "offset 0x%"PRIx64", CRC 0x%08X\n", bytes_read, block_id,
+                   block_pos, crc);
+            atomic_store_explicit(&block->state, crc, memory_order_release);
+            if (allocated)
+                atomic_fetch_add_explicit(&s->spacemap->blocks_cached, 1, memory_order_release);
+        }
+    } else {
+        RELEASE_PENDING(block, state);
+        return AVERROR_EOF;
+    }
+
+    size = FFMIN(bytes_read - offset, size);
+    if (size <= 0)
+        return AVERROR_EOF;
+    if (tmp != buf)
+        memcpy(buf, &tmp[offset], size);
+    s->pos += size;
+    return size;
+}
+
+static int64_t shared_seek(URLContext *h, int64_t pos, int whence)
+{
+    SharedContext *s = h->priv_data;
+    int64_t res;
+    if (!s->spacemap)
+        return AVERROR(EIO);
+
+    const int64_t filesize = get_filesize(h);
+    if (filesize < 0)
+        return filesize;
+
+    switch (whence) {
+    case AVSEEK_SIZE:
+        if (filesize)
+            return filesize;
+        res = s->inner ? ffurl_seek(s->inner, pos, whence) : AVERROR(ENOSYS);
+        if (res > 0) {
+            if (set_filesize(h, res) < 0)
+                return AVERROR(EINVAL);
+        } else if (is_ignorable_error(res) && s->ignore_errors) {
+            av_log(h, AV_LOG_WARNING, "Underlying URL failed to get size: %s. "
+                   "Continuing with cache file only.\n", av_err2str(res));
+            ffurl_closep(&s->inner);
+            res = AVERROR(ENOSYS);
+        }
+        return res;
+    case SEEK_SET:
+        break;
+    case SEEK_CUR:
+        pos += s->pos;
+        break;
+    case SEEK_END:
+        if (filesize) {
+            pos += filesize;
+            break;
+        }
+
+        /* Defer to underlying protocol if filesize is unknown */
+        res = s->inner ? ffurl_seek(s->inner, pos, whence) : AVERROR(ENOSYS);
+        if (is_ignorable_error(res) && s->ignore_errors) {
+            av_log(h, AV_LOG_WARNING, "Underlying URL failed to seek: %s. "
+                   "Continuing with cache file only.\n", av_err2str(res));
+            ffurl_closep(&s->inner);
+            return AVERROR(ENOSYS);
+        } else if (res < 0)
+            return res;
+
+        /* Opportunistically update known filesize */
+        if (set_filesize(h, res - pos) < 0)
+            return AVERROR(EINVAL);
+        av_log(h, AV_LOG_DEBUG, "Inner seek to 0x%"PRIx64"\n", res);
+        return s->pos = s->inner_pos = res;
+    default:
+        return AVERROR(EINVAL);
+    }
+
+    if (pos < 0)
+        return AVERROR(EINVAL);
+
+    av_log(h, AV_LOG_DEBUG, "Virtual seek to 0x%"PRIx64"\n", pos);
+    return s->pos = pos;
+}
+
+static int shared_get_file_handle(URLContext *h)
+{
+    SharedContext *s = h->priv_data;
+    return s->inner ? ffurl_get_file_handle(s->inner) : -1;
+}
+
+static int shared_get_short_seek(URLContext *h)
+{
+    SharedContext *s = h->priv_data;
+    int ret = s->inner ? ffurl_get_short_seek(s->inner) : 0;
+    return ret > 0 ? FFMAX(ret, s->block_size) : s->block_size;
+}
+
+#define OFFSET(x) offsetof(SharedContext, x)
+#define D AV_OPT_FLAG_DECODING_PARAM
+
+static const AVOption options[] = {
+    { "cache_dir",      "Directory path for shared file cache",             OFFSET(cache_dir),      AV_OPT_TYPE_STRING, {.str = NULL}, .flags = D },
+    { "metadata_dir",   "Directory path for shared file cache metadata",    OFFSET(metadata_dir),   AV_OPT_TYPE_STRING, {.str = NULL}, .flags = D },
+    { "block_shift",    "Set the base 2 logarithm of the block size",       OFFSET(block_shift),    AV_OPT_TYPE_INT, {.i64 = 15}, 9, 30, .flags = D },
+    { "read_only",      "Don't write data to the cache, only read from it", OFFSET(read_only),      AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, .flags = D },
+    { "cache_verify",   "Verify correctness of the cache against the source",   OFFSET(verify),     AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, .flags = D },
+    { "cache_timeout",  "Time in us to wait before re-fetching pending blocks", OFFSET(timeout),    AV_OPT_TYPE_INT64, {.i64 = 10000}, 0, INT64_MAX, .flags = D },
+    { "ignore_errors",  "Continue even if the inner URL failed",            OFFSET(ignore_errors),  AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, .flags = D },
+    { "retry_errors",   "Re-request blocks even if they previously failed", OFFSET(retry_errors),   AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, .flags = D },
+    { "retry_corrupt",  "Re-request blocks that fail the CRC check",        OFFSET(retry_corrupt),  AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, .flags = D },
+    { "cache_size_max", "Limit the maximum amount of data cached",          OFFSET(cache_size_max), AV_OPT_TYPE_INT64, {.i64 = 0}, 0, INT64_MAX, .flags = D },
+    {0},
+};
+
+static const AVClass shared_context_class = {
+    .class_name = "shared",
+    .item_name  = av_default_item_name,
+    .option     = options,
+    .version    = LIBAVUTIL_VERSION_INT,
+};
+
+const URLProtocol ff_shared_protocol = {
+    .name                = "shared",
+    .url_open2           = shared_open,
+    .url_read            = shared_read,
+    .url_seek            = shared_seek,
+    .url_close           = shared_close,
+    .url_get_file_handle = shared_get_file_handle,
+    .url_get_short_seek  = shared_get_short_seek,
+    .priv_data_size      = sizeof(SharedContext),
+    .priv_data_class     = &shared_context_class,
+};

@@ -20,6 +20,7 @@
 #define AVCODEC_VULKAN_VIDEO_H
 
 #include "avcodec.h"
+#include "libavutil/refstruct.h"
 #include "libavutil/vulkan.h"
 
 #include <vk_video/vulkan_video_codecs_common.h>
@@ -29,14 +30,44 @@
 #define CODEC_VER_PAT(ver) (ver & ((1 << 12) - 1))
 #define CODEC_VER(ver) CODEC_VER_MAJ(ver), CODEC_VER_MIN(ver), CODEC_VER_PAT(ver)
 
+/* DEDICATED-mode queue-exclusive DPB image */
+typedef struct FFVkVideoDPBImage {
+    VkImage img;
+    VkDeviceMemory mem;
+    VkImageView view;
+    VkImageAspectFlags aspect;
+    VkImageLayout layout;
+} FFVkVideoDPBImage;
+
+/* Internal DPB image pool; av_refstruct_pool_get()/av_refstruct_unref() */
+typedef struct FFVkVideoDPB {
+    /* Creation only; destruction uses the stashed handles below, as the
+     * pool may outlive the context */
+    FFVulkanContext *s;
+
+    AVRefStructPool *img_pool; /* FFVkVideoDPBImage entries */
+
+    VkDevice dev;
+    const VkAllocationCallbacks *alloc;
+    PFN_vkDestroyImageView destroy_image_view;
+    PFN_vkDestroyImage destroy_image;
+    PFN_vkFreeMemory free_memory;
+
+    VkFormat format;
+    VkImageUsageFlags usage;
+    VkImageTiling tiling;
+    void *create_pnext;
+    int width, height, nb_layers;
+} FFVkVideoDPB;
+
 typedef struct FFVkVideoSession {
     VkVideoSessionKHR session;
     VkDeviceMemory *mem;
     uint32_t nb_mem;
 
-    AVBufferRef *dpb_hwfc_ref;
+    FFVkVideoDPB *dpb;
     int layered_dpb;
-    AVFrame *layered_frame;
+    FFVkVideoDPBImage *layered_img;
     VkImageView layered_view;
     VkImageAspectFlags layered_aspect;
 } FFVkVideoCommon;
@@ -81,9 +112,17 @@ StdVideoAV1Profile     ff_vk_av1_profile_to_vk(int profile);
 /**
  * Creates image views for video frames.
  */
-int ff_vk_create_view(FFVulkanContext *s, FFVkVideoCommon *common,
-                      VkImageView *view, VkImageAspectFlags *aspect,
-                      AVVkFrame *src, VkFormat vkf, VkImageUsageFlags flags);
+int ff_vk_create_view(FFVulkanContext *s, VkImageView *view,
+                      VkImageAspectFlags *aspect, VkImage img,
+                      VkFormat vkf, VkImageUsageFlags usage, int layered);
+
+/**
+ * Initialize the internal DPB image pool.
+ */
+int ff_vk_video_dpb_init(FFVulkanContext *s, FFVkVideoCommon *common,
+                         VkFormat format, VkImageUsageFlags usage,
+                         VkImageTiling tiling, void *create_pnext,
+                         int width, int height, int nb_layers);
 
 /**
  * Initialize video session, allocating and binding necessary memory.
@@ -96,5 +135,65 @@ int ff_vk_video_common_init(AVCodecContext *avctx, FFVulkanContext *s,
  * Free video session and required resources.
  */
 void ff_vk_video_common_uninit(FFVulkanContext *s, FFVkVideoCommon *common);
+
+/**
+ * Packs fixed-stride segment slots back to back into a contiguous buffer.
+ */
+int ff_vk_seg_gather_init(FFVulkanContext *s, FFVkExecPool *pool,
+                          FFVulkanShader *shd);
+
+/**
+ * Gathers nb_segs slots of slot_size bytes from sparse into compacted, with
+ * the segment sizes given as nb_segs uint32_t in sizes at sizes_offset,
+ * followed by one more that receives the packed size. Both are made visible
+ * to the host. If offset_addr is non-zero, the uint32_t it points to is added
+ * to compacted_offset.
+ */
+int ff_vk_seg_gather(FFVulkanContext *s, FFVkExecContext *exec, FFVulkanShader *shd,
+                     FFVkBuffer *sizes, size_t sizes_offset, uint32_t nb_segs,
+                     FFVkBuffer *sparse, uint32_t slot_size,
+                     FFVkBuffer *compacted, size_t compacted_offset,
+                     VkDeviceAddress offset_addr);
+
+/**
+ * Frame loop for compute encoders. Keeps up to pool_size frames in flight,
+ * submitting each into its own execution context, and returns their packets
+ * in order as soon as they complete, or once the pool is full.
+ */
+typedef struct FFVkEncodeLoop {
+    FFVulkanContext *s;
+    FFVkExecPool *pool;
+    int (*submit_frame)(AVCodecContext *avctx, FFVkExecContext *exec, AVFrame *frame);
+    int (*get_packet)(AVCodecContext *avctx, FFVkExecContext *exec, AVPacket *pkt);
+
+    AVFrame *frame;
+    AVPacket *pkt;
+    struct {
+        int64_t pts;
+        int64_t duration;
+        void *opaque;
+        AVBufferRef *opaque_ref;
+    } *frames;
+    int head;
+    int in_flight;
+} FFVkEncodeLoop;
+
+int ff_vk_encode_loop_init(FFVulkanContext *s, FFVkExecPool *pool, FFVkEncodeLoop *l,
+                           int (*submit_frame)(AVCodecContext *avctx, FFVkExecContext *exec, AVFrame *frame),
+                           int (*get_packet)(AVCodecContext *avctx, FFVkExecContext *exec, AVPacket *pkt));
+
+/**
+ * Call from FFCodec.cb.receive_packet; the packet metadata is carried from
+ * the submitted frame to its packet.
+ */
+int ff_vk_encode_loop_receive_packet(AVCodecContext *avctx, FFVkEncodeLoop *l,
+                                     AVPacket *pkt);
+
+/**
+ * Waits for and discards every frame in flight.
+ */
+void ff_vk_encode_loop_flush(AVCodecContext *avctx, FFVkEncodeLoop *l);
+
+void ff_vk_encode_loop_uninit(FFVkEncodeLoop *l);
 
 #endif /* AVCODEC_VULKAN_VIDEO_H */

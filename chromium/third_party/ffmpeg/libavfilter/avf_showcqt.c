@@ -19,6 +19,7 @@
  */
 
 #include "config.h"
+#include "libavutil/attributes.h"
 #include "libavutil/mem.h"
 #include "libavutil/tx.h"
 #include "libavutil/channel_layout.h"
@@ -404,33 +405,31 @@ static int init_axis_empty(ShowCQTContext *s)
 
 static int init_axis_from_file(ShowCQTContext *s)
 {
-    uint8_t *tmp_data[4] = { NULL };
-    int tmp_linesize[4];
-    enum AVPixelFormat tmp_format;
-    int tmp_w, tmp_h, ret;
-
-    if ((ret = ff_load_image(tmp_data, tmp_linesize, &tmp_w, &tmp_h, &tmp_format,
-                             s->axisfile, s->ctx)) < 0)
-        goto error;
+    AVFrame *tmp_frame;
+    int ret = ff_load_image(&tmp_frame, s->axisfile, s->ctx);
+    if (ret < 0)
+        return ret;
 
     ret = AVERROR(ENOMEM);
     if (!(s->axis_frame = av_frame_alloc()))
         goto error;
 
-    if ((ret = ff_scale_image(s->axis_frame->data, s->axis_frame->linesize, s->width, s->axis_h,
-                              convert_axis_pixel_format(s->format), tmp_data, tmp_linesize, tmp_w, tmp_h,
-                              tmp_format, s->ctx)) < 0)
+    ret = ff_scale_image(s->axis_frame->data, s->axis_frame->linesize, s->width, s->axis_h,
+                         convert_axis_pixel_format(s->format),
+                         tmp_frame->data, tmp_frame->linesize, tmp_frame->width, tmp_frame->height,
+                         tmp_frame->format, s->ctx);
+    if (ret < 0) {
+        av_frame_free(&s->axis_frame);
         goto error;
+    }
 
     s->axis_frame->width = s->width;
     s->axis_frame->height = s->axis_h;
     s->axis_frame->format = convert_axis_pixel_format(s->format);
-    av_freep(tmp_data);
-    return 0;
 
+    ret = 0;
 error:
-    av_frame_free(&s->axis_frame);
-    av_freep(tmp_data);
+    av_frame_free(&tmp_frame);
     return ret;
 }
 
@@ -1205,6 +1204,7 @@ static void init_colormatrix(ShowCQTContext *s)
     default:
         av_log(s->ctx, AV_LOG_WARNING, "unsupported colorspace, setting it to unspecified.\n");
         s->csp = AVCOL_SPC_UNSPECIFIED;
+        av_fallthrough;
     case AVCOL_SPC_UNSPECIFIED:
     case AVCOL_SPC_BT470BG:
     case AVCOL_SPC_SMPTE170M:

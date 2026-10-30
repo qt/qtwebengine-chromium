@@ -27,6 +27,7 @@
 #include "libavfilter/buffersink.h"
 #include "libavfilter/buffersrc.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -50,8 +51,6 @@ typedef struct FilterGraphPriv {
     // true when the filtergraph contains only meta filters
     // that do not modify the frame data
     int              is_meta;
-    // source filters are present in the graph
-    int              have_sources;
     int              disable_conversions;
 
     unsigned         nb_outputs_done;
@@ -126,6 +125,7 @@ typedef struct InputFilterPriv {
     enum AVColorSpace   color_space;
     enum AVColorRange   color_range;
     enum AVAlphaMode    alpha_mode;
+    enum AVChromaLocation chroma_location;
 
     int                 sample_rate;
     AVChannelLayout     ch_layout;
@@ -145,6 +145,10 @@ typedef struct InputFilterPriv {
 
     int                 downmixinfo_present;
     AVDownmixInfo       downmixinfo;
+
+    AVBufferRef        *downmixmatrix;
+    size_t              downmixmatrix_size;
+    int                 downmixmatrix_present;
 
     struct {
         AVFrame *frame;
@@ -184,6 +188,11 @@ typedef struct FPSConvContext {
     int               framerate_clip;
 } FPSConvContext;
 
+typedef struct ReinitOpts {
+    int64_t pts;
+    AVDictionary *dict;
+} ReinitOpts;
+
 typedef struct OutputFilterPriv {
     OutputFilter            ofilter;
 
@@ -200,6 +209,7 @@ typedef struct OutputFilterPriv {
     enum AVColorSpace       color_space;
     enum AVColorRange       color_range;
     enum AVAlphaMode        alpha_mode;
+    enum AVChromaLocation   chroma_location;
 
     unsigned                crop_top;
     unsigned                crop_bottom;
@@ -223,12 +233,16 @@ typedef struct OutputFilterPriv {
 
     // those are only set if no format is specified and the encoder gives us multiple options
     // They point directly to the relevant lists of the encoder.
-    const int              *formats;
+    union {
+        const enum AVPixelFormat *pix_fmts;
+        const enum AVSampleFormat *sample_fmts;
+    };
     const AVChannelLayout  *ch_layouts;
     const int              *sample_rates;
     const enum AVColorSpace *color_spaces;
     const enum AVColorRange *color_ranges;
     const enum AVAlphaMode *alpha_modes;
+    const enum AVChromaLocation *chroma_locations;
 
     int32_t                 displaymatrix[9];
 
@@ -239,6 +253,9 @@ typedef struct OutputFilterPriv {
     int64_t                 ts_offset;
     int64_t                 next_pts;
     FPSConvContext          fps;
+
+    AVFifo                 *reinit_opts_fifo;
+    ReinitOpts              reinit_opts;
 
     unsigned                flags;
 } OutputFilterPriv;
@@ -281,6 +298,7 @@ static int sub2video_get_blank_frame(InputFilterPriv *ifp)
     frame->colorspace = ifp->color_space;
     frame->color_range = ifp->color_range;
     frame->alpha_mode = ifp->alpha_mode;
+    frame->chroma_location = ifp->chroma_location;
 
     ret = av_frame_get_buffer(frame, 0);
     if (ret < 0)
@@ -342,7 +360,7 @@ static void sub2video_update(InputFilterPriv *ifp, int64_t heartbeat_pts,
                              const AVSubtitle *sub)
 {
     AVFrame *frame = ifp->sub2video.frame;
-    int8_t *dst;
+    uint8_t *dst;
     int     dst_linesize;
     int num_rects;
     int64_t pts, end_pts;
@@ -399,20 +417,27 @@ static void choose_ ## name (OutputFilterPriv *ofp, AVBPrint *bprint)          \
     av_bprint_chars(bprint, ':', 1);                                           \
 }
 
-DEF_CHOOSE_FORMAT(pix_fmts, enum AVPixelFormat, format, formats,
+DEF_CHOOSE_FORMAT(pix_fmts, enum AVPixelFormat, format, pix_fmts,
                   AV_PIX_FMT_NONE, "%s", av_get_pix_fmt_name)
 
-DEF_CHOOSE_FORMAT(sample_fmts, enum AVSampleFormat, format, formats,
+DEF_CHOOSE_FORMAT(sample_fmts, enum AVSampleFormat, format, sample_fmts,
                   AV_SAMPLE_FMT_NONE, "%s", av_get_sample_fmt_name)
 
 DEF_CHOOSE_FORMAT(sample_rates, int, sample_rate, sample_rates, 0,
                   "%d", )
 
 DEF_CHOOSE_FORMAT(color_spaces, enum AVColorSpace, color_space, color_spaces,
-                  AVCOL_SPC_UNSPECIFIED, "%s", av_color_space_name);
+                  AVCOL_SPC_UNSPECIFIED, "%s", av_color_space_name)
 
 DEF_CHOOSE_FORMAT(color_ranges, enum AVColorRange, color_range, color_ranges,
-                  AVCOL_RANGE_UNSPECIFIED, "%s", av_color_range_name);
+                  AVCOL_RANGE_UNSPECIFIED, "%s", av_color_range_name)
+
+DEF_CHOOSE_FORMAT(alpha_modes, enum AVAlphaMode, alpha_mode, alpha_modes,
+                  AVALPHA_MODE_UNSPECIFIED, "%s", av_alpha_mode_name)
+
+DEF_CHOOSE_FORMAT(chroma_locations, enum AVChromaLocation, chroma_location,
+                  chroma_locations, AVCHROMA_LOC_UNSPECIFIED, "%s",
+                  av_chroma_location_name)
 
 DEF_CHOOSE_FORMAT(alpha_modes, enum AVAlphaMode, alpha_mode, alpha_modes,
                   AVALPHA_MODE_UNSPECIFIED, "%s", av_alpha_mode_name);
@@ -641,10 +666,23 @@ static const char *ofilter_item_name(void *obj)
     return ofp->log_name;
 }
 
+static const AVOption ofilter_options[] = {
+    {"video_size", "set video size", offsetof(OutputFilterPriv, width), AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL}, 0, INT_MAX },
+    {"pixel_format", "set pixel format", offsetof(OutputFilterPriv, format), AV_OPT_TYPE_PIXEL_FMT, {.i64 = AV_PIX_FMT_NONE}, -1, INT_MAX },
+    {"colorspace", "color space", offsetof(OutputFilterPriv, color_space), AV_OPT_TYPE_INT, {.i64 = AVCOL_SPC_UNSPECIFIED }, 0, INT_MAX },
+    {"color_range", "color range", offsetof(OutputFilterPriv, color_range), AV_OPT_TYPE_INT, {.i64 = AVCOL_RANGE_UNSPECIFIED }, 0, INT_MAX },
+    {"alpha_mode", "color range", offsetof(OutputFilterPriv, alpha_mode), AV_OPT_TYPE_INT, {.i64 = AVALPHA_MODE_UNSPECIFIED }, 0, INT_MAX },
+    {"chroma_location", "chroma sample location", offsetof(OutputFilterPriv, chroma_location), AV_OPT_TYPE_INT, {.i64 = AVCHROMA_LOC_UNSPECIFIED }, 0, INT_MAX },
+    {"ar", "set audio sampling rate (in Hz)", offsetof(OutputFilterPriv, sample_rate), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, INT_MAX },
+    {"ch_layout", NULL, offsetof(OutputFilterPriv, ch_layout), AV_OPT_TYPE_CHLAYOUT, {.str = NULL }, 0, 0 },
+    { NULL },
+};
+
 static const AVClass ofilter_class = {
     .class_name                = "OutputFilter",
     .version                   = LIBAVUTIL_VERSION_INT,
     .item_name                 = ofilter_item_name,
+    .option                    = ofilter_options,
     .parent_log_context_offset = offsetof(OutputFilterPriv, log_parent),
     .category                  = AV_CLASS_CATEGORY_FILTER,
 };
@@ -663,10 +701,8 @@ static OutputFilter *ofilter_alloc(FilterGraph *fg, enum AVMediaType type)
     ofp->log_parent   = fg;
     ofilter->graph    = fg;
     ofilter->type     = type;
-    ofp->format       = -1;
-    ofp->color_space  = AVCOL_SPC_UNSPECIFIED;
-    ofp->color_range  = AVCOL_RANGE_UNSPECIFIED;
-    ofp->alpha_mode   = AVALPHA_MODE_UNSPECIFIED;
+    av_opt_set_defaults(ofp);
+    ofp->reinit_opts  = (ReinitOpts){ .pts = AV_NOPTS_VALUE };
     ofilter->index    = fg->nb_outputs - 1;
 
     snprintf(ofp->log_name, sizeof(ofp->log_name), "%co%d",
@@ -807,6 +843,75 @@ static int set_channel_layout(OutputFilterPriv *f, const AVChannelLayout *layout
     return 0;
 }
 
+static int parse_reinit_opts(AVFifo **pout, const char *opts, void *logctx)
+{
+    AVFifo *out;
+    int ret = AVERROR_BUG;
+    char *ptr, *str, *substr = NULL;
+    const char *token;
+
+    str = av_strdup(opts);
+    if (!str)
+        return AVERROR(ENOMEM);
+
+    out = av_fifo_alloc2(1, sizeof(ReinitOpts), AV_FIFO_FLAG_AUTO_GROW);
+    if (!out) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+
+    token = av_strtok(str, ",", &ptr);
+    while (token) {
+        ReinitOpts o = { 0 };
+        const char *subtoken;
+        char *subptr, *endptr;
+
+        substr = av_strdup(token);
+        if (!substr) {
+            ret = AVERROR(ENOMEM);
+            goto end;
+        }
+        subtoken = av_strtok(substr, "|", &subptr);
+        if (subtoken && subptr) {
+            if (!av_strstart(subtoken, "pts=", &subtoken)) {
+                av_log(logctx, AV_LOG_ERROR, "Invalid reinit identifier\n");
+                ret = AVERROR(ENOMEM);
+                goto end;
+            }
+            o.pts = strtoll(subtoken, &endptr, 0);
+            if (*endptr || o.pts < 0) {
+                ret = AVERROR(EINVAL);
+                goto end;
+            }
+            ret = av_dict_parse_string(&o.dict, subptr, "=", ":", 0);
+            if (ret < 0) {
+                av_log(logctx, AV_LOG_ERROR, "Error parsing encoder options\n");
+                goto end;
+            }
+            ret = av_fifo_write(out, &o, 1);
+            if (ret < 0) {
+                av_dict_free(&o.dict);
+                goto end;
+            }
+        } else {
+            ret = AVERROR(EINVAL);
+            goto end;
+        }
+        av_freep(&substr);
+        if (ptr)
+            ptr += strspn(ptr, " \n\t\r");
+        token = av_strtok(NULL, ",", &ptr);
+    }
+
+    ret = 0;
+end:
+    *pout = out;
+    av_free(substr);
+    av_free(str);
+
+    return ret;
+}
+
 int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
                      const OutputFilterOptions *opts)
 {
@@ -832,6 +937,12 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
     ofilter->output_name  = av_strdup(opts->name);
     if (!ofilter->output_name)
         return AVERROR(EINVAL);
+
+    if (opts->reinit_opts) {
+        ret = parse_reinit_opts(&ofp->reinit_opts_fifo, opts->reinit_opts, ofilter);
+        if (ret < 0)
+            return ret;
+    }
 
     ret = av_dict_copy(&ofp->sws_opts, opts->sws_opts, 0);
     if (ret < 0)
@@ -859,7 +970,7 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
         if (opts->format != AV_PIX_FMT_NONE) {
             ofp->format = opts->format;
         } else
-            ofp->formats = opts->formats;
+            ofp->pix_fmts = opts->pix_fmts;
 
         if (opts->color_space != AVCOL_SPC_UNSPECIFIED)
             ofp->color_space = opts->color_space;
@@ -875,6 +986,11 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
             ofp->alpha_mode = opts->alpha_mode;
         else
             ofp->alpha_modes = opts->alpha_modes;
+
+        if (opts->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
+            ofp->chroma_location = opts->chroma_location;
+        else
+            ofp->chroma_locations = opts->chroma_locations;
 
         fgp->disable_conversions |= !!(ofp->flags & OFILTER_FLAG_DISABLE_CONVERT);
 
@@ -898,7 +1014,7 @@ int ofilter_bind_enc(OutputFilter *ofilter, unsigned sched_idx_enc,
         if (opts->format != AV_SAMPLE_FMT_NONE) {
             ofp->format = opts->format;
         } else {
-            ofp->formats = opts->formats;
+            ofp->sample_fmts = opts->sample_fmts;
         }
         if (opts->sample_rate) {
             ofp->sample_rate = opts->sample_rate;
@@ -1002,6 +1118,7 @@ static InputFilter *ifilter_alloc(FilterGraph *fg)
     ifp->color_space     = AVCOL_SPC_UNSPECIFIED;
     ifp->color_range     = AVCOL_RANGE_UNSPECIFIED;
     ifp->alpha_mode      = AVALPHA_MODE_UNSPECIFIED;
+    ifp->chroma_location = AVCHROMA_LOC_UNSPECIFIED;
 
     ifp->frame_queue = av_fifo_alloc2(8, sizeof(AVFrame*), AV_FIFO_FLAG_AUTO_GROW);
     if (!ifp->frame_queue)
@@ -1035,8 +1152,10 @@ void fg_free(FilterGraph **pfg)
         av_frame_free(&ifp->opts.fallback);
 
         av_buffer_unref(&ifp->hw_frames_ctx);
+        av_channel_layout_uninit(&ifp->ch_layout);
         av_freep(&ifilter->linklabel);
         av_freep(&ifp->opts.name);
+        av_buffer_unref(&ifp->downmixmatrix);
         av_frame_side_data_free(&ifp->side_data, &ifp->nb_side_data);
         av_freep(&ifilter->name);
         av_freep(&ifilter->input_name);
@@ -1055,6 +1174,12 @@ void fg_free(FilterGraph **pfg)
         av_freep(&ofilter->name);
         av_freep(&ofilter->output_name);
         av_freep(&ofilter->apad);
+        av_dict_free(&ofp->reinit_opts.dict);
+        if (ofp->reinit_opts_fifo) {
+            while (av_fifo_read(ofp->reinit_opts_fifo, &ofp->reinit_opts, 1) >= 0)
+                av_dict_free(&ofp->reinit_opts.dict);
+            av_fifo_freep2(&ofp->reinit_opts_fifo);
+        }
         av_channel_layout_uninit(&ofp->ch_layout);
         av_frame_side_data_free(&ofp->side_data, &ofp->nb_side_data);
         av_freep(&fg->outputs[j]);
@@ -1139,16 +1264,6 @@ int fg_create(FilterGraph **pfg, char **graph_desc, Scheduler *sch,
                       hw_device_for_filter());
     if (ret < 0)
         goto fail;
-
-    for (unsigned i = 0; i < graph->nb_filters; i++) {
-        const AVFilter *f = graph->filters[i]->filter;
-        if ((!avfilter_filter_pad_count(f, 0) &&
-             !(f->flags & AVFILTER_FLAG_DYNAMIC_INPUTS)) ||
-            !strcmp(f->name, "apad")) {
-            fgp->have_sources = 1;
-            break;
-        }
-    }
 
     for (AVFilterInOut *cur = inputs; cur; cur = cur->next) {
         InputFilter *const ifilter = ifilter_alloc(fg);
@@ -1678,7 +1793,10 @@ static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
         av_frame_side_data_remove(&ofp->side_data, &ofp->nb_side_data, AV_FRAME_DATA_DISPLAYMATRIX);
     }
 
-    if ((ofp->width || ofp->height) && (ofp->flags & OFILTER_FLAG_AUTOSCALE)) {
+    if ((ofp->width || ofp->height) && (ofp->flags & OFILTER_FLAG_AUTOSCALE) &&
+        // skip add scale for hardware format
+        !(ofp->format != AV_PIX_FMT_NONE &&
+          av_pix_fmt_desc_get(ofp->format)->flags & AV_PIX_FMT_FLAG_HWACCEL)) {
         char args[255];
         AVFilterContext *filter;
         const AVDictionaryEntry *e = NULL;
@@ -1702,12 +1820,13 @@ static int configure_output_video_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
     }
 
     av_assert0(!(ofp->flags & OFILTER_FLAG_DISABLE_CONVERT) ||
-               ofp->format != AV_PIX_FMT_NONE || !ofp->formats);
+               ofp->format != AV_PIX_FMT_NONE || !ofp->pix_fmts);
     av_bprint_init(&bprint, 0, AV_BPRINT_SIZE_UNLIMITED);
     choose_pix_fmts(ofp, &bprint);
     choose_color_spaces(ofp, &bprint);
     choose_color_ranges(ofp, &bprint);
     choose_alpha_modes(ofp, &bprint);
+    choose_chroma_locations(ofp, &bprint);
     if (!av_bprint_is_complete(&bprint))
         return AVERROR(ENOMEM);
 
@@ -1803,10 +1922,8 @@ static int configure_output_audio_filter(FilterGraphPriv *fgp, AVFilterGraph *gr
         pad_idx = 0;
     }
 
-    if (ofilter->apad) {
+    if (ofilter->apad)
         AUTO_INSERT_FILTER("-apad", "apad", ofilter->apad);
-        fgp->have_sources = 1;
-    }
 
     snprintf(name, sizeof(name), "trim for output %s", ofilter->output_name);
     ret = insert_trim(fgp, ofp->trim_start_us, ofp->trim_duration_us,
@@ -1879,6 +1996,7 @@ static int configure_input_video_filter(FilterGraph *fg, AVFilterGraph *graph,
     par->color_space         = ifp->color_space;
     par->color_range         = ifp->color_range;
     par->alpha_mode          = ifp->alpha_mode;
+    par->chroma_location     = ifp->chroma_location;
     par->hw_frames_ctx       = ifp->hw_frames_ctx;
     par->side_data           = ifp->side_data;
     par->nb_side_data        = ifp->nb_side_data;
@@ -2157,6 +2275,7 @@ static int configure_filtergraph(FilterGraph *fg, FilterGraphThread *fgt)
         ofp->color_space = av_buffersink_get_colorspace(sink);
         ofp->color_range = av_buffersink_get_color_range(sink);
         ofp->alpha_mode = av_buffersink_get_alpha_mode(sink);
+        ofp->chroma_location = av_buffersink_get_chroma_location(sink);
 
         // If the timing parameters are not locked yet, get the tentative values
         // here but don't lock them. They will only be used if no output frames
@@ -2253,6 +2372,7 @@ static int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *fr
     ifp->color_space         = frame->colorspace;
     ifp->color_range         = frame->color_range;
     ifp->alpha_mode          = frame->alpha_mode;
+    ifp->chroma_location     = frame->chroma_location;
 
     ifp->sample_rate         = frame->sample_rate;
     ret = av_channel_layout_copy(&ifp->ch_layout, &frame->ch_layout);
@@ -2275,8 +2395,11 @@ static int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *fr
     }
 
     sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DISPLAYMATRIX);
-    if (sd)
+    if (sd) {
         memcpy(ifp->displaymatrix, sd->data, sizeof(ifp->displaymatrix));
+        if (ifp->opts.flags & IFILTER_FLAG_AUTOROTATE)
+            av_frame_side_data_remove(&ifp->side_data, &ifp->nb_side_data, AV_FRAME_DATA_DISPLAYMATRIX);
+    }
     ifp->displaymatrix_present = !!sd;
 
     /* Copy downmix related side data to InputFilterPriv so it may be propagated
@@ -2291,6 +2414,39 @@ static int ifilter_parameters_from_frame(InputFilter *ifilter, const AVFrame *fr
         memcpy(&ifp->downmixinfo, sd->data, sizeof(ifp->downmixinfo));
     }
     ifp->downmixinfo_present = !!sd;
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DOWNMIX_MATRIX);
+    if (sd) {
+        ret = av_frame_side_data_clone(&ifp->side_data,
+                                       &ifp->nb_side_data, sd, 0);
+        if (ret < 0)
+            return ret;
+        ret = av_buffer_replace(&ifp->downmixmatrix, sd->buf);
+        if (ret < 0)
+            return ret;
+        ifp->downmixmatrix_size = sd->size;
+    }
+    ifp->downmixmatrix_present = !!sd;
+
+    return 0;
+}
+
+static int ifilter_parameters_from_ofilter(InputFilter *ifilter, OutputFilter *ofilter)
+{
+    const OutputFilterPriv *ofp = ofp_from_ofilter(ofilter);
+    InputFilterPriv  *ifp = ifp_from_ifilter(ifilter);
+
+    if (!ifp->opts.framerate.num) {
+        ifp->opts.framerate = ofp->fps.framerate;
+        if (ifp->opts.framerate.num > 0 && ifp->opts.framerate.den > 0)
+            ifp->opts.flags |= IFILTER_FLAG_CFR;
+    }
+
+    for (int i = 0; i < ofp->nb_side_data; i++) {
+        int ret = av_frame_side_data_clone(&ifp->side_data, &ifp->nb_side_data,
+                                           ofp->side_data[i], AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+        if (ret < 0)
+            return ret;
+    }
 
     return 0;
 }
@@ -2544,11 +2700,7 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
 
     if (delta0 < 0 &&
         delta > 0 &&
-        fps->vsync_method != VSYNC_PASSTHROUGH
-#if FFMPEG_OPT_VSYNC_DROP
-        && fps->vsync_method != VSYNC_DROP
-#endif
-        ) {
+        fps->vsync_method != VSYNC_PASSTHROUGH) {
         if (delta0 < -0.6) {
             av_log(ofp, AV_LOG_VERBOSE, "Past duration %f too large\n", -delta0);
         } else
@@ -2566,6 +2718,7 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
             delta0 = 0;
             ofp->next_pts = llrint(sync_ipts);
         }
+        av_fallthrough;
     case VSYNC_CFR:
         // FIXME set to 0.5 after we fix some dts/pts bugs like in avidec.c
         if (frame_drop_threshold && delta < frame_drop_threshold && fps->frame_number) {
@@ -2586,9 +2739,6 @@ static void video_sync_process(OutputFilterPriv *ofp, AVFrame *frame,
             ofp->next_pts = llrint(sync_ipts);
         frame->duration = llrint(duration);
         break;
-#if FFMPEG_OPT_VSYNC_DROP
-    case VSYNC_DROP:
-#endif
     case VSYNC_PASSTHROUGH:
         ofp->next_pts = llrint(sync_ipts);
         frame->duration = llrint(duration);
@@ -2833,8 +2983,10 @@ static int fg_output_step(OutputFilterPriv *ofp, FilterGraphThread *fgt,
     if (!fgt->got_frame) {
         ret = clone_side_data(&fd->side_data, &fd->nb_side_data,
                               ofp->side_data, ofp->nb_side_data, 0);
-        if (ret < 0)
+        if (ret < 0) {
+            av_frame_unref(frame);
             return ret;
+        }
     }
 
     fd->wallclock[LATENCY_PROBE_FILTER_POST] = av_gettime_relative();
@@ -2868,7 +3020,6 @@ static int read_frames(FilterGraph *fg, FilterGraphThread *fgt,
                        AVFrame *frame)
 {
     FilterGraphPriv *fgp = fgp_from_fg(fg);
-    int did_step = 0;
 
     // graph not configured, just select the input to request
     if (!fgt->graph) {
@@ -2887,7 +3038,7 @@ static int read_frames(FilterGraph *fg, FilterGraphThread *fgt,
         return AVERROR_BUG;
     }
 
-    while (fgp->nb_outputs_done < fg->nb_outputs) {
+    if (fgp->nb_outputs_done < fg->nb_outputs) {
         int ret;
 
         /* Reap all buffers present in the buffer sinks */
@@ -2902,9 +3053,6 @@ static int read_frames(FilterGraph *fg, FilterGraphThread *fgt,
             }
         }
 
-        // return after one iteration, so that scheduler can rate-control us
-        if (did_step && fgp->have_sources)
-            return 0;
 
         ret = avfilter_graph_request_oldest(fgt->graph);
         if (ret == AVERROR(EAGAIN)) {
@@ -2921,7 +3069,8 @@ static int read_frames(FilterGraph *fg, FilterGraphThread *fgt,
         }
         fgt->next_in = fg->nb_inputs;
 
-        did_step = 1;
+        // return so that scheduler can rate-control us
+        return 0;
     }
 
     return AVERROR_EOF;
@@ -3025,6 +3174,7 @@ static int send_eof(FilterGraphThread *fgt, InputFilter *ifilter,
             ifp->color_space            = ifp->opts.fallback->colorspace;
             ifp->color_range            = ifp->opts.fallback->color_range;
             ifp->alpha_mode             = ifp->opts.fallback->alpha_mode;
+            ifp->chroma_location        = ifp->opts.fallback->chroma_location;
             ifp->time_base              = ifp->opts.fallback->time_base;
 
             ret = av_channel_layout_copy(&ifp->ch_layout,
@@ -3073,7 +3223,7 @@ static const char *unknown_if_null(const char *str)
 }
 
 static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
-                      InputFilter *ifilter, AVFrame *frame)
+                      InputFilter *ifilter, AVFrame *frame, int force_reinit)
 {
     FilterGraphPriv *fgp = fgp_from_fg(fg);
     InputFilterPriv *ifp = ifp_from_ifilter(ifilter);
@@ -3095,7 +3245,8 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
             ifp->height != frame->height ||
             ifp->color_space != frame->colorspace ||
             ifp->color_range != frame->color_range ||
-            ifp->alpha_mode != frame->alpha_mode)
+            ifp->alpha_mode != frame->alpha_mode ||
+            ifp->chroma_location != frame->chroma_location)
             need_reinit |= VIDEO_CHANGED;
         break;
     }
@@ -3112,6 +3263,13 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
             memcmp(sd->data, &ifp->downmixinfo, sizeof(ifp->downmixinfo)))
             need_reinit |= DOWNMIX_CHANGED;
     } else if (ifp->downmixinfo_present)
+        need_reinit |= DOWNMIX_CHANGED;
+
+    if (sd = av_frame_get_side_data(frame, AV_FRAME_DATA_DOWNMIX_MATRIX)) {
+        if (!ifp->downmixmatrix_present ||
+            sd->size != ifp->downmixmatrix_size || memcmp(sd->data, ifp->downmixmatrix->data, sd->size))
+            need_reinit |= DOWNMIX_CHANGED;
+    } else if (ifp->downmixmatrix_present)
         need_reinit |= DOWNMIX_CHANGED;
 
     if (need_reinit && fgt->graph && (ifp->opts.flags & IFILTER_FLAG_DROPCHANGED)) {
@@ -3143,7 +3301,7 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
     }
 
     /* (re)init the graph if possible, otherwise buffer the frame and return */
-    if (need_reinit || !fgt->graph) {
+    if (need_reinit || force_reinit || !fgt->graph) {
         AVFrame *tmp = av_frame_alloc();
 
         if (!tmp)
@@ -3178,10 +3336,11 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
                 const char *color_space_name = av_color_space_name(frame->colorspace);
                 const char *color_range_name = av_color_range_name(frame->color_range);
                 const char *alpha_mode = av_alpha_mode_name(frame->alpha_mode);
-                av_bprintf(&reason, "video parameters changed to %s(%s, %s), %dx%d, %s alpha,",
+                const char *chroma_location = av_chroma_location_name(frame->chroma_location);
+                av_bprintf(&reason, "video parameters changed to %s(%s, %s), %dx%d, %s alpha, %s chroma, ",
                         unknown_if_null(pixel_format_name), unknown_if_null(color_range_name),
                         unknown_if_null(color_space_name), frame->width, frame->height,
-                        unknown_if_null(alpha_mode));
+                        unknown_if_null(alpha_mode), unknown_if_null(chroma_location));
             }
             if (need_reinit & MATRIX_CHANGED)
                 av_bprintf(&reason, "display matrix changed, ");
@@ -3189,6 +3348,8 @@ static int send_frame(FilterGraph *fg, FilterGraphThread *fgt,
                 av_bprintf(&reason, "downmix medatata changed, ");
             if (need_reinit & HWACCEL_CHANGED)
                 av_bprintf(&reason, "hwaccel changed, ");
+            if (force_reinit)
+                av_bprintf(&reason, "reinitialization arguments were provided, ");
             if (reason.len > 1)
                 reason.str[reason.len - 2] = '\0'; // remove last comma
             av_log(fg, AV_LOG_INFO, "Reconfiguring filter graph%s%s\n", reason.len ? " because " : "", reason.str);
@@ -3290,6 +3451,42 @@ fail:
     return AVERROR(ENOMEM);
 }
 
+static int check_reinit(FilterGraph *fg, FilterGraphThread *fgt)
+{
+    int ret, reinit = 0;
+
+    for (unsigned i = 0; i < fg->nb_outputs; i++) {
+        OutputFilterPriv *ofp = ofp_from_ofilter(fg->outputs[i]);
+
+        if (ofp->reinit_opts.pts == AV_NOPTS_VALUE && ofp->reinit_opts_fifo &&
+            av_fifo_can_read(ofp->reinit_opts_fifo)) {
+            av_fifo_read(ofp->reinit_opts_fifo, &ofp->reinit_opts, 1);
+        }
+        if (ofp->reinit_opts.pts != AV_NOPTS_VALUE &&
+            ofp->reinit_opts.pts <= av_rescale_q(fgt->frame->pts, fgt->frame->time_base, AV_TIME_BASE_Q)) {
+           FrameData *fd = frame_data(fgt->frame);
+           if (!fd)
+               return AVERROR(ENOMEM);
+
+           av_dict_free(&fd->reinit_opts);
+           ret = av_dict_copy(&fd->reinit_opts, ofp->reinit_opts.dict, 0);
+           if (ret < 0)
+               return ret;
+
+           av_opt_set_dict(ofp, &ofp->reinit_opts.dict);
+           av_dict_free(&ofp->reinit_opts.dict);
+
+           if (av_fifo_can_read(ofp->reinit_opts_fifo))
+               av_fifo_read(ofp->reinit_opts_fifo, &ofp->reinit_opts, 1);
+           else
+               ofp->reinit_opts = (ReinitOpts){ .pts = AV_NOPTS_VALUE };
+           reinit = 1;
+        }
+    }
+
+    return reinit;
+}
+
 static int filter_thread(void *arg)
 {
     FilterGraphPriv *fgp = arg;
@@ -3334,8 +3531,6 @@ static int filter_thread(void *arg)
 
         o = (intptr_t)fgt.frame->opaque;
 
-        o = (intptr_t)fgt.frame->opaque;
-
         // message on the control stream
         if (input_idx == fg->nb_inputs) {
             FilterCommand *fc;
@@ -3358,7 +3553,9 @@ static int filter_thread(void *arg)
             ret = sub2video_frame(ifilter, (fgt.frame->buf[0] || hb_frame) ? fgt.frame : NULL,
                                   !fgt.graph);
         } else if (fgt.frame->buf[0]) {
-            ret = send_frame(fg, &fgt, ifilter, fgt.frame);
+            ret = check_reinit(fg, &fgt);
+            if (ret >= 0)
+                ret = send_frame(fg, &fgt, ifilter, fgt.frame, ret);
         } else {
             av_assert1(o == FRAME_OPAQUE_EOF);
             ret = send_eof(&fgt, ifilter, fgt.frame->pts, fgt.frame->time_base);

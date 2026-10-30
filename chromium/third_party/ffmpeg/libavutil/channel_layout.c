@@ -32,6 +32,7 @@
 #include "bprint.h"
 #include "common.h"
 #include "error.h"
+#include "attributes.h"
 #include "macros.h"
 #include "mem.h"
 #include "opt.h"
@@ -217,11 +218,13 @@ static const struct channel_layout_name channel_layout_map[] = {
     { "5.1.2(back)",    AV_CHANNEL_LAYOUT_5POINT1POINT2_BACK  },
     { "octagonal",      AV_CHANNEL_LAYOUT_OCTAGONAL           },
     { "cube",           AV_CHANNEL_LAYOUT_CUBE                },
-    { "5.1.4",          AV_CHANNEL_LAYOUT_5POINT1POINT4_BACK  },
+    { "5.1.4",          AV_CHANNEL_LAYOUT_5POINT1POINT4       },
+    { "5.1.6",          AV_CHANNEL_LAYOUT_5POINT1POINT6       },
     { "7.1.2",          AV_CHANNEL_LAYOUT_7POINT1POINT2       },
-    { "7.1.4",          AV_CHANNEL_LAYOUT_7POINT1POINT4_BACK  },
+    { "7.1.4",          AV_CHANNEL_LAYOUT_7POINT1POINT4       },
+    { "7.1.6",          AV_CHANNEL_LAYOUT_7POINT1POINT6       },
     { "7.2.3",          AV_CHANNEL_LAYOUT_7POINT2POINT3       },
-    { "9.1.4",          AV_CHANNEL_LAYOUT_9POINT1POINT4_BACK  },
+    { "9.1.4",          AV_CHANNEL_LAYOUT_9POINT1POINT4       },
     { "9.1.6",          AV_CHANNEL_LAYOUT_9POINT1POINT6       },
     { "hexadecagonal",  AV_CHANNEL_LAYOUT_HEXADECAGONAL       },
     { "binaural",       AV_CHANNEL_LAYOUT_BINAURAL            },
@@ -271,7 +274,7 @@ static int parse_channel_list(AVChannelLayout *ch_layout, const char *str)
 
     while (*str) {
         char *channel, *chname;
-        int ret = av_opt_get_key_value(&str, "@", "+", AV_OPT_FLAG_IMPLICIT_KEY, &channel, &chname);
+        ret = av_opt_get_key_value(&str, "@", "+", AV_OPT_FLAG_IMPLICIT_KEY, &channel, &chname);
         if (ret < 0) {
             av_freep(&map);
             return ret;
@@ -345,7 +348,7 @@ int av_channel_layout_from_string(AVChannelLayout *channel_layout,
         channel_layout->nb_channels = (order + 1) * (order + 1);
 
         if (*endptr) {
-            int ret = av_channel_layout_from_string(&extra, endptr + 1);
+            ret = av_channel_layout_from_string(&extra, endptr + 1);
             if (ret < 0)
                 return ret;
             if (extra.nb_channels >= INT_MAX - channel_layout->nb_channels) {
@@ -401,8 +404,8 @@ int av_channel_layout_from_string(AVChannelLayout *channel_layout,
         return ret;
 
     if (ret >= 0) {
-        end = strchr(str, ')');
-        if (matches == 2 && (nb_channels != channel_layout->nb_channels || !end || *++end)) {
+        const char *end_par = strchr(str, ')');
+        if (matches == 2 && (nb_channels != channel_layout->nb_channels || !end_par || *++end_par)) {
             av_channel_layout_uninit(channel_layout);
             return AVERROR(EINVAL);
         }
@@ -608,7 +611,7 @@ int av_channel_layout_describe_bprint(const AVChannelLayout *channel_layout,
                 av_bprintf(bp, "%s", channel_layout_map[i].name);
                 return 0;
             }
-        // fall-through
+        av_fallthrough;
     case AV_CHANNEL_ORDER_CUSTOM:
         if (channel_layout->order == AV_CHANNEL_ORDER_CUSTOM) {
             int64_t mask;
@@ -639,7 +642,7 @@ int av_channel_layout_describe_bprint(const AVChannelLayout *channel_layout,
             av_bprintf(bp, ")");
             return 0;
         }
-        // fall-through
+        av_fallthrough;
     case AV_CHANNEL_ORDER_UNSPEC:
         av_bprintf(bp, "%d channels", channel_layout->nb_channels);
         return 0;
@@ -687,12 +690,13 @@ av_channel_layout_channel_from_index(const AVChannelLayout *channel_layout,
             return AV_CHAN_AMBISONIC_BASE + idx;
         idx -= ambi_channels;
         }
-    // fall-through
+        av_fallthrough;
     case AV_CHANNEL_ORDER_NATIVE:
         for (i = 0; i < 64; i++) {
             if ((1ULL << i) & channel_layout->u.mask && !idx--)
                 return i;
         }
+        av_fallthrough;
     default:
         return AV_CHAN_NONE;
     }
@@ -747,7 +751,7 @@ int av_channel_layout_index_from_channel(const AVChannelLayout *channel_layout,
 int av_channel_layout_index_from_string(const AVChannelLayout *channel_layout,
                                         const char *str)
 {
-    char *chname;
+    const char *chname;
     enum AVChannel ch = AV_CHAN_NONE;
 
     switch (channel_layout->order) {
@@ -768,7 +772,7 @@ int av_channel_layout_index_from_string(const AVChannelLayout *channel_layout,
                 (ch == AV_CHAN_NONE || ch == channel_layout->u.map[i].id))
                 return i;
         }
-        // fall-through
+        av_fallthrough;
     case AV_CHANNEL_ORDER_AMBISONIC:
     case AV_CHANNEL_ORDER_NATIVE:
         ch = av_channel_from_string(str);
@@ -953,10 +957,10 @@ int av_channel_layout_retype(AVChannelLayout *channel_layout, enum AVChannelOrde
         if (channel_layout->order == AV_CHANNEL_ORDER_CUSTOM) {
             int64_t mask;
             int nb_channels = channel_layout->nb_channels;
-            int order = av_channel_layout_ambisonic_order(channel_layout);
-            if (order < 0)
+            int amb_order = av_channel_layout_ambisonic_order(channel_layout);
+            if (amb_order < 0)
                 return AVERROR(ENOSYS);
-            mask = masked_description(channel_layout, (order + 1) * (order + 1));
+            mask = masked_description(channel_layout, (amb_order + 1) * (amb_order + 1));
             if (mask < 0)
                 return AVERROR(ENOSYS);
             lossy = has_channel_names(channel_layout);

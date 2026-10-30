@@ -39,13 +39,14 @@
 #include "h264_parse.h"
 #include "h264_ps.h"
 #include "hevc/parse.h"
+#include "hevc/sei.h"
 #include "hwconfig.h"
 #include "internal.h"
 #include "jni.h"
 #include "mediacodec_wrapper.h"
 #include "mediacodecdec_common.h"
 
-typedef struct MediaCodecH264DecContext {
+typedef struct MediaCodecContext {
 
     AVClass *avclass;
 
@@ -59,11 +60,11 @@ typedef struct MediaCodecH264DecContext {
     int use_ndk_codec;
     // Ref. MediaFormat KEY_OPERATING_RATE
     int operating_rate;
-} MediaCodecH264DecContext;
+} MediaCodecContext;
 
 static av_cold int mediacodec_decode_close(AVCodecContext *avctx)
 {
-    MediaCodecH264DecContext *s = avctx->priv_data;
+    MediaCodecContext *s = avctx->priv_data;
 
     ff_mediacodec_dec_close(avctx, s->ctx);
     s->ctx = NULL;
@@ -274,6 +275,7 @@ static int hevc_set_extradata(AVCodecContext *avctx, FFAMediaFormat *format)
     }
 
 done:
+    ff_hevc_reset_sei(&sei);
     ff_hevc_ps_uninit(&ps);
 
     av_freep(&vps_data);
@@ -313,7 +315,7 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
     const char *codec_mime = NULL;
 
     FFAMediaFormat *format = NULL;
-    MediaCodecH264DecContext *s = avctx->priv_data;
+    MediaCodecContext *s = avctx->priv_data;
 
     if (s->use_ndk_codec < 0)
         s->use_ndk_codec = !av_jni_get_java_vm(avctx);
@@ -488,7 +490,7 @@ done:
 
 static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
-    MediaCodecH264DecContext *s = avctx->priv_data;
+    MediaCodecContext *s = avctx->priv_data;
     int ret;
     ssize_t index;
 
@@ -571,7 +573,7 @@ static int mediacodec_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
 static void mediacodec_decode_flush(AVCodecContext *avctx)
 {
-    MediaCodecH264DecContext *s = avctx->priv_data;
+    MediaCodecContext *s = avctx->priv_data;
 
     av_packet_unref(&s->buffered_pkt);
 
@@ -591,7 +593,7 @@ static const AVCodecHWConfigInternal *const mediacodec_hw_configs[] = {
     NULL
 };
 
-#define OFFSET(x) offsetof(MediaCodecH264DecContext, x)
+#define OFFSET(x) offsetof(MediaCodecContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption ff_mediacodec_vdec_options[] = {
     { "delay_flush", "Delay flush until hw output buffers are returned to the decoder",
@@ -619,7 +621,7 @@ const FFCodec ff_ ## short_name ## _mediacodec_decoder = {                      
     .p.type         = AVMEDIA_TYPE_VIDEO,                                                      \
     .p.id           = codec_id,                                                                \
     .p.priv_class   = &ff_##short_name##_mediacodec_dec_class,                                 \
-    .priv_data_size = sizeof(MediaCodecH264DecContext),                                        \
+    .priv_data_size = sizeof(MediaCodecContext),                                               \
     .init           = mediacodec_decode_init,                                                  \
     FF_CODEC_RECEIVE_FRAME_CB(mediacodec_receive_frame),                                       \
     .flush          = mediacodec_decode_flush,                                                 \
@@ -677,14 +679,14 @@ static const AVClass ff_##short_name##_mediacodec_dec_class = { \
 };
 
 #define DECLARE_MEDIACODEC_ADEC(short_name, full_name, codec_id, bsf)                          \
-DECLARE_MEDIACODEC_VCLASS(short_name)                                                          \
+DECLARE_MEDIACODEC_ACLASS(short_name)                                                          \
 const FFCodec ff_ ## short_name ## _mediacodec_decoder = {                                     \
     .p.name         = #short_name "_mediacodec",                                               \
     CODEC_LONG_NAME(full_name " Android MediaCodec decoder"),                                  \
     .p.type         = AVMEDIA_TYPE_AUDIO,                                                      \
     .p.id           = codec_id,                                                                \
     .p.priv_class   = &ff_##short_name##_mediacodec_dec_class,                                 \
-    .priv_data_size = sizeof(MediaCodecH264DecContext),                                        \
+    .priv_data_size = sizeof(MediaCodecContext),                                               \
     .init           = mediacodec_decode_init,                                                  \
     FF_CODEC_RECEIVE_FRAME_CB(mediacodec_receive_frame),                                       \
     .flush          = mediacodec_decode_flush,                                                 \

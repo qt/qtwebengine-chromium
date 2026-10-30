@@ -30,11 +30,9 @@
 #include "config.h"
 #include "config_components.h"
 
+#include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/thread.h"
-#if ARCH_X86
-#include "libavutil/x86/asm.h"
-#endif
 
 #include "avcodec.h"
 #include "idctdsp.h"
@@ -143,7 +141,7 @@ av_cold void ff_msmpeg4_common_init(MPVContext *const s,
 #if CONFIG_WMV2_DECODER || CONFIG_WMV2_ENCODER
     case MSMP4_WMV2:
         ff_wmv2dsp_init(&s->idsp);
-        // fallthrough
+        av_fallthrough;
 #endif
     case MSMP4_WMV1:
         s->y_dc_scale_table= ff_wmv1_y_dc_scale_table;
@@ -230,7 +228,7 @@ int ff_msmpeg4_pred_dc(MpegEncContext *s, int n,
        necessitate to modify mpegvideo.c. The problem comes from the
        fact they decided to store the quantized DC (which would lead
        to problems if Q could vary !) */
-#if ARCH_X86 && HAVE_7REGS && HAVE_EBX_AVAILABLE
+#if ARCH_X86 && HAVE_X86_7REGS && HAVE_EBX_AVAILABLE
     __asm__ volatile(
         "movl %3, %%eax         \n\t"
         "shrl $1, %%eax         \n\t"

@@ -172,6 +172,7 @@ while (<$in>) {
 
         my $orig_operand_indent = length($label) + length($indent) +
                                   length($instr) + length($origspace);
+        my $orig_indent = $indent;
 
         if ($indent_operands) {
             $rest = columns($rest);
@@ -215,14 +216,35 @@ while (<$in>) {
             $size -= $instr_end;
         }
         my $operand_space = " ";
-        if ($size > 0) {
-            $operand_space = spaces($size);
+        if ($rest =~ /^\.req/i) {
+            # A line like "alias .req reg" shouldn't necessarily be
+            # reindented like "     alias          .req reg"; keep the original
+            # indentation instead.
+            $indent = $orig_indent;
+            $operand_space = $origspace;
+        } else {
+            if ($size > 0) {
+                $operand_space = spaces($size);
+            }
         }
+
+        # Lowercase register names. Only apply this on lines up to
+        # comments, as this can match common spec/code references in
+        # code comments. Split the string on //, /* or @ for comments, apply the
+        # substitution on the first segment (up to a comment char), and
+        # join the string again.
+        my @parts = split(/(\/\/|\/\*|@)/, $rest);
+        $parts[0] =~ s/\b([XWVQDSHBZP][0-9]+)\b/lc($1)/ge;
+        $rest = join('', @parts);
 
         # Lowercase the aarch64 vector layout description, .8B -> .8b
         $rest =~ s/(\.[84216]*[BHSD])/lc($1)/ge;
         # Lowercase modifiers like "uxtw" or "lsl"
         $rest =~ s/([SU]XT[BWH]|[LA]S[LR])/lc($1)/ge;
+        # Lowercase SVE/SME modifiers like "/Z" or "/M"
+        $rest =~ s,(/[ZM])\b,lc($1),ge;
+        # Lowercase SVE/SME vector lengths
+        $rest =~ s/\b(VL[0-9]+)\b/lc($1)/ge;
 
         # Reassemble the line
         if ($rest eq "") {

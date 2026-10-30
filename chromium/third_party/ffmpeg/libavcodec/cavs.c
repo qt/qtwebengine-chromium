@@ -393,6 +393,9 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
                                qpel_mc_func *qpix_op,
                                h264_chroma_mc_func chroma_op, cavs_vector *mv)
 {
+    if (!pic->data[0])
+        return;
+
     const int mx         = mv->x + src_x_offset * 8;
     const int my         = mv->y + src_y_offset * 8;
     const int luma_xy    = (mx & 3) + ((my & 3) << 2);
@@ -407,8 +410,6 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
     const int pic_height = 16 * h->mb_height;
     int emu = 0;
 
-    if (!pic->data[0])
-        return;
     if (mx & 7)
         extra_width  -= 3;
     if (my & 7)
@@ -726,9 +727,9 @@ int ff_cavs_init_pic(AVSContext *h)
     /* clear some predictors */
     for (i = 0; i <= 20; i += 4)
         h->mv[i] = un_mv;
-    h->mv[MV_BWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_BWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_BWD_X0], BLK_16X16);
-    h->mv[MV_FWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_FWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_FWD_X0], BLK_16X16);
     h->pred_mode_Y[3] = h->pred_mode_Y[6] = NOT_AVAIL;
     h->cy             = h->cur.f->data[0];
@@ -770,11 +771,10 @@ int ff_cavs_init_top_lines(AVSContext *h)
     h->col_mv        = av_calloc(h->mb_width * h->mb_height,
                                  4 * sizeof(*h->col_mv));
     h->col_type_base = av_mallocz(h->mb_width * h->mb_height);
-    h->block         = av_mallocz(64 * sizeof(int16_t));
 
     if (!h->top_qp || !h->top_mv[0] || !h->top_mv[1] || !h->top_pred_Y ||
         !h->top_border_y || !h->top_border_u || !h->top_border_v ||
-        !h->col_mv || !h->col_type_base || !h->block) {
+        !h->col_mv || !h->col_type_base) {
         av_freep(&h->top_qp);
         av_freep(&h->top_mv[0]);
         av_freep(&h->top_mv[1]);
@@ -784,7 +784,6 @@ int ff_cavs_init_top_lines(AVSContext *h)
         av_freep(&h->top_border_v);
         av_freep(&h->col_mv);
         av_freep(&h->col_type_base);
-        av_freep(&h->block);
         return AVERROR(ENOMEM);
     }
     return 0;
@@ -850,7 +849,6 @@ av_cold int ff_cavs_end(AVCodecContext *avctx)
     av_freep(&h->top_border_v);
     av_freep(&h->col_mv);
     av_freep(&h->col_type_base);
-    av_freep(&h->block);
     av_freep(&h->edge_emu_buffer);
     return 0;
 }

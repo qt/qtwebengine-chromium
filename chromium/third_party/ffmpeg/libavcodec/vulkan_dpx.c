@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
 #include "vulkan_decode.h"
 #include "hwaccel_internal.h"
 
@@ -41,7 +42,7 @@ typedef struct DPXVulkanDecodePicture {
 
 typedef struct DPXVulkanDecodeContext {
     FFVulkanShader shader;
-    AVBufferPool *frame_data_pool;
+    AVRefStructPool *frame_data_pool;
 } DPXVulkanDecodeContext;
 
 typedef struct DecodePushData {
@@ -56,10 +57,9 @@ typedef struct DecodePushData {
 
 static int vk_dpx_start_frame(AVCodecContext          *avctx,
                               const AVBufferRef       *buffer_ref,
-                              av_unused const uint8_t *buffer,
-                              av_unused uint32_t       size)
+                              const uint8_t *buffer,
+                              uint32_t       size)
 {
-    int err;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
     FFVulkanDecodeShared *ctx = dec->shared_ctx;
     DPXDecContext *dpx = avctx->priv_data;
@@ -71,15 +71,8 @@ static int vk_dpx_start_frame(AVCodecContext          *avctx,
     if (!vp->slices_buf &&
         ctx->s.extensions & FF_VK_EXT_EXTERNAL_HOST_MEMORY)
         ff_vk_host_map_buffer(&ctx->s, &vp->slices_buf, (uint8_t *)buffer,
-                              buffer_ref,
-                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-
-    /* Prepare frame to be used */
-    err = ff_vk_decode_prepare_frame_sdr(dec, dpx->frame, vp, 1,
-                                         FF_VK_REP_NATIVE, 0);
-    if (err < 0)
-        return err;
+                              size, buffer_ref,
+                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     return 0;
 }
@@ -119,26 +112,28 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
     int unpack = (avctx->bits_per_raw_sample == 12 && !dpx->packing) ||
                  avctx->bits_per_raw_sample == 10;
 
-    FFVkBuffer *slices_buf = (FFVkBuffer *)vp->slices_buf->data;
+    FFVkBuffer *slices_buf = vp->slices_buf;
 
     VkImageMemoryBarrier2 img_bar[8];
     int nb_img_bar = 0;
 
     FFVkExecContext *exec = ff_vk_exec_get(&ctx->s, &ctx->exec_pool);
-    ff_vk_exec_start(&ctx->s, exec);
+    err = ff_vk_exec_start(&ctx->s, exec);
+    if (err < 0)
+        return err;
 
     /* Prepare deps */
     RET(ff_vk_exec_add_dep_frame(&ctx->s, exec, dpx->frame,
                                  VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT));
 
-    err = ff_vk_exec_mirror_sem_value(&ctx->s, exec, &vp->sem, &vp->sem_value,
-                                      dpx->frame);
-    if (err < 0)
-        return err;
+    /* Exec-owned output views: freed on exec recycle, so releasing a picture
+     * needs no blocking wait. No mirror_sem: nothing consumes vp->sem here. */
+    VkImageView views[AV_NUM_DATA_POINTERS];
+    RET(ff_vk_create_imageviews(&ctx->s, exec, views, dpx->frame,
+                                FF_VK_REP_NATIVE));
 
-    RET(ff_vk_exec_add_dep_buf(&ctx->s, exec, &vp->slices_buf, 1, 0));
-    vp->slices_buf = NULL;
+    ff_vk_exec_move_dep_refstruct(&ctx->s, exec, &vp->slices_buf);
 
     AVVkFrame *vkf = (AVVkFrame *)dpx->frame->data[0];
     for (int i = 0; i < 4; i++) {
@@ -162,7 +157,7 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
 
     FFVulkanShader *shd = &dxv->shader;
     ff_vk_shader_update_img_array(&ctx->s, exec, shd,
-                                  dpx->frame, vp->view.out,
+                                  dpx->frame, views,
                                   0, 0,
                                   VK_IMAGE_LAYOUT_GENERAL,
                                   VK_NULL_HANDLE);
@@ -211,7 +206,10 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
     if (err < 0)
         return err;
 
+    return 0;
+
 fail:
+    ff_vk_exec_discard(&ctx->s, exec);
     return 0;
 }
 
@@ -240,29 +238,25 @@ static int init_shader(AVCodecContext *avctx, FFVulkanContext *s,
                                 VK_SHADER_STAGE_COMPUTE_BIT);
 
     const FFVulkanDescriptorSetBinding desc_set[] = {
-        {
-            .name       = "dst",
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
-            .elems      = av_pix_fmt_count_planes(dec_frames_ctx->sw_format),
+        { /* dst */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = av_pix_fmt_count_planes(dec_frames_ctx->sw_format),
         },
-        {
-            .name        = "data_buf",
-            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* data_buf */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
         },
-        {
-            .name        = "data_buf16",
-            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* data_buf16 */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
         },
-        {
-            .name        = "data_buf32",
-            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
+        { /* data_buf32 */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
         },
     };
-    ff_vk_shader_add_descriptor_set(s, shd, desc_set, 2 + (2*!unpack), 0, 0);
+    ff_vk_shader_add_descriptor_set(s, shd, desc_set, 2 + (2*!unpack), 0);
 
     const unsigned char *src = ff_dpx_copy_comp_spv_data;
     size_t src_len = ff_dpx_copy_comp_spv_len;
@@ -284,7 +278,7 @@ static void vk_decode_dpx_uninit(FFVulkanDecodeShared *ctx)
 
     ff_vk_shader_free(&ctx->s, &fv->shader);
 
-    av_buffer_pool_uninit(&fv->frame_data_pool);
+    av_refstruct_pool_uninit(&fv->frame_data_pool);
 
     av_freep(&fv);
 }
@@ -305,7 +299,7 @@ static int vk_decode_dpx_init(AVCodecContext *avctx)
     case AV_PIX_FMT_GBRP10:
         if (dpx->unpadded_10bit)
             return AVERROR(ENOTSUP);
-    /* fallthrough */
+        av_fallthrough;
     default:
         break;
     }

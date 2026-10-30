@@ -149,6 +149,47 @@ nsc:
     return si;
 }
 
+static const char *const lcevc_nal_type_name[32] = {
+    "UNSPEC0", // LCEVC_UNSPEC0_NUT
+    "UNSPEC1", // LCEVC_UNSPEC1_NUT
+    "UNSPEC2", // LCEVC_UNSPEC2_NUT
+    "UNSPEC3", // LCEVC_UNSPEC3_NUT
+    "UNSPEC4", // LCEVC_UNSPEC4_NUT
+    "UNSPEC5", // LCEVC_UNSPEC5_NUT
+    "UNSPEC6", // LCEVC_UNSPEC6_NUT
+    "UNSPEC7", // LCEVC_UNSPEC7_NUT
+    "UNSPEC8", // LCEVC_UNSPEC8_NUT
+    "UNSPEC9", // LCEVC_UNSPEC9_NUT
+    "UNSPEC10", // LCEVC_UNSPEC10_NUT
+    "UNSPEC11", // LCEVC_UNSPEC11_NUT
+    "UNSPEC12", // LCEVC_UNSPEC12_NUT
+    "UNSPEC13", // LCEVC_UNSPEC13_NUT
+    "UNSPEC14", // LCEVC_UNSPEC14_NUT
+    "UNSPEC15", // LCEVC_UNSPEC15_NUT
+    "UNSPEC16", // LCEVC_UNSPEC16_NUT
+    "UNSPEC17", // LCEVC_UNSPEC17_NUT
+    "UNSPEC18", // LCEVC_UNSPEC18_NUT
+    "UNSPEC19", // LCEVC_UNSPEC19_NUT
+    "UNSPEC20", // LCEVC_UNSPEC20_NUT
+    "UNSPEC21", // LCEVC_UNSPEC21_NUT
+    "UNSPEC22", // LCEVC_UNSPEC22_NUT
+    "UNSPEC23", // LCEVC_UNSPEC23_NUT
+    "UNSPEC24", // LCEVC_UNSPEC24_NUT
+    "UNSPEC25", // LCEVC_UNSPEC25_NUT
+    "UNSPEC26", // LCEVC_UNSPEC26_NUT
+    "UNSPEC27", // LCEVC_UNSPEC27_NUT
+    "NON_IDR_NUT", //LCEVC_NON_IDR_NUT
+    "IDR_NUT", // LCEVC_IDR_NUT
+    "RSV_NUT", // LCEVC_RSV_NUT
+    "UNSPEC31", // LCEVC_UNSPEC31_NUT
+};
+
+static const char *lcevc_nal_unit_name(int nal_type)
+{
+    av_assert0(nal_type >= 0 && nal_type < 32);
+    return lcevc_nal_type_name[nal_type];
+}
+
 static const char *const vvc_nal_type_name[32] = {
     "TRAIL_NUT", // VVC_TRAIL_NUT
     "STSA_NUT", // VVC_STSA_NUT
@@ -338,6 +379,26 @@ static int get_bit_length(H2645NAL *nal, int min_size, int skip_trailing_zeros)
  * @return AVERROR_INVALIDDATA if the packet is not a valid NAL unit,
  * 0 otherwise
  */
+
+static int lcevc_parse_nal_header(H2645NAL *nal, void *logctx)
+{
+    GetBitContext *gb = &nal->gb;
+
+    if (get_bits1(gb) != 0)     //forbidden_zero_bit
+        return AVERROR_INVALIDDATA;
+
+    if (get_bits1(gb) != 1)     //forbidden_one_bit
+        return AVERROR_INVALIDDATA;
+
+    nal->type = get_bits(gb, 5);
+
+    av_log(logctx, AV_LOG_DEBUG,
+           "nal_unit_type: %d(%s)\n",
+           nal->type, lcevc_nal_unit_name(nal->type));
+
+    return 0;
+}
+
 static int vvc_parse_nal_header(H2645NAL *nal, void *logctx)
 {
     GetBitContext *gb = &nal->gb;
@@ -586,6 +647,8 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
 
         if (codec_id == AV_CODEC_ID_VVC)
             ret = vvc_parse_nal_header(nal, logctx);
+        else if (codec_id == AV_CODEC_ID_LCEVC)
+            ret = lcevc_parse_nal_header(nal, logctx);
         else if (codec_id == AV_CODEC_ID_HEVC) {
             ret = hevc_parse_nal_header(nal, logctx);
             if (nal->nuh_layer_id == 63)
@@ -602,6 +665,24 @@ int ff_h2645_packet_split(H2645Packet *pkt, const uint8_t *buf, int length,
         pkt->nb_nals++;
     }
 
+    return 0;
+}
+
+int ff_h2645_unit_requires_zero_byte(enum AVCodecID codec_id,
+                                     unsigned int type,
+                                     int nal_unit_index)
+{
+    // Section B.1.2 in H.264, section B.2.2 in H.265, H.266.
+    if (nal_unit_index == 0) {
+        // Assume that this is the first NAL unit in an access unit.
+        return 1;
+    }
+    if (codec_id == AV_CODEC_ID_H264)
+        return type == H264_NAL_SPS || type == H264_NAL_PPS;
+    if (codec_id == AV_CODEC_ID_HEVC)
+        return type == HEVC_NAL_VPS || type == HEVC_NAL_SPS || type == HEVC_NAL_PPS;
+    if (codec_id == AV_CODEC_ID_VVC)
+        return type >= VVC_OPI_NUT && type <= VVC_SUFFIX_APS_NUT;
     return 0;
 }
 

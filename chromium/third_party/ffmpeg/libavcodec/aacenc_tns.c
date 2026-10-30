@@ -25,8 +25,10 @@
  * @author Rostislav Pehlivanov ( atomnuker gmail com )
  */
 
-#include "libavutil/libm.h"
+#include <math.h>
+
 #include "aacenc.h"
+#include <float.h>
 #include "aacenc_tns.h"
 #include "aactab.h"
 #include "aacenc_utils.h"
@@ -41,9 +43,13 @@
 /* We really need the bits we save here elsewhere */
 #define TNS_ENABLE_COEF_COMPRESSION
 
-/* TNS will only be used if the LPC gain is within these margins */
-#define TNS_GAIN_THRESHOLD_LOW      1.4f
-#define TNS_GAIN_THRESHOLD_HIGH     1.16f*TNS_GAIN_THRESHOLD_LOW
+/* Apple-derived TNS: weighted-spectrum predictor, accepted only if the measured
+ * post-quantization prediction gain clears a block-type-dependent bar (Apple RE). */
+#define TNS_PREDGAIN_GATE   1.4f    /* first gate: predicted LPC gain */
+#define TNS_PG_C1_LONG      1.4f    /* min measured gain, long blocks */
+#define TNS_PG_C1_SHORT     3.2f    /* min measured gain, short blocks */
+#define TNS_PG_CLAMP        6.0f    /* upper bound: poles near unit circle → noise blowup */
+#define TNS_WEIGHT_FLOOR    0.01f   /* per-bin masking floor for the weighted spectrum */
 
 static inline int compress_coeffs(int *coef, int order, int c_bits)
 {
@@ -62,11 +68,7 @@ static inline int compress_coeffs(int *coef, int order, int c_bits)
     return 1;
 }
 
-/**
- * Encode TNS data.
- * Coefficient compression is simply not lossless as it should be
- * on any decoder tested and as such is not active.
- */
+/** Encode TNS data. */
 void ff_aac_encode_tns_info(AACEncContext *s, SingleChannelElement *sce)
 {
     TemporalNoiseShaping *tns = &sce->tns;
@@ -98,18 +100,32 @@ void ff_aac_encode_tns_info(AACEncContext *s, SingleChannelElement *sce)
     }
 }
 
+/* Cap the TNS band range at the first PNS band to avoid TNS+PNS conflicts. */
+static int tns_max_nonpns(const SingleChannelElement *sce, int mmm)
+{
+    for (int w = 0; w < sce->ics.num_windows; w += sce->ics.group_len[w])
+        for (int g = 0; g < mmm; g++)
+            if (sce->band_type[w*16+g] == NOISE_BT) { mmm = g; break; }
+    return mmm;
+}
+
 /* Apply TNS filter */
 void ff_aac_apply_tns(AACEncContext *s, SingleChannelElement *sce)
 {
     TemporalNoiseShaping *tns = &sce->tns;
     IndividualChannelStream *ics = &sce->ics;
     int w, filt, m, i, top, order, bottom, start, end, size, inc;
-    const int mmm = FFMIN(ics->tns_max_bands, ics->max_sfb);
+    const int mmm = tns_max_nonpns(sce, FFMIN(ics->tns_max_bands, ics->max_sfb));
     float lpc[TNS_MAX_ORDER];
+
+    /* TNS predicts from the post-M/S and post-I/S coefficients. */
+    float hist[1024];
+    memcpy(hist, sce->coeffs, sizeof(hist));
 
     for (w = 0; w < ics->num_windows; w++) {
         bottom = ics->num_swb;
         for (filt = 0; filt < tns->n_filt[w]; filt++) {
+            int b0, e0;
             top    = bottom;
             bottom = FFMAX(0, top - tns->length[w][filt]);
             order  = tns->order[w][filt];
@@ -119,8 +135,10 @@ void ff_aac_apply_tns(AACEncContext *s, SingleChannelElement *sce)
             // tns_decode_coef
             compute_lpc_coefs(tns->coef[w][filt], 0, order, lpc, 0, 0, 0, NULL);
 
-            start = ics->swb_offset[FFMIN(bottom, mmm)];
-            end   = ics->swb_offset[FFMIN(   top, mmm)];
+            b0 = FFMIN(bottom, mmm);
+            e0 = FFMIN(   top, mmm);
+            start = ics->swb_offset[b0];
+            end   = ics->swb_offset[e0];
             if ((size = end - start) <= 0)
                 continue;
             if (tns->direction[w][filt]) {
@@ -134,9 +152,10 @@ void ff_aac_apply_tns(AACEncContext *s, SingleChannelElement *sce)
             /* AR filter */
             for (m = 0; m < size; m++, start += inc) {
                 for (i = 1; i <= FFMIN(m, order); i++) {
-                    sce->coeffs[start] += lpc[i-1]*sce->pcoeffs[start - i*inc];
+                    sce->coeffs[start] += lpc[i-1]*hist[start - i*inc];
                 }
             }
+
         }
     }
 }
@@ -158,12 +177,113 @@ static inline void quantize_coefs(double *coef, int *idx, float *lpc, int order,
 /*
  * 3 bits per coefficient with 8 short windows
  */
+/* Short blocks, pooled per group: one filter per scalefactor group so the
+ * shared sf sees uniform residuals (per-window filters caused silent
+ * sub-windows); all-or-none accept. */
+static void search_for_tns_short_pooled(AACEncContext *s, SingleChannelElement *sce)
+{
+    TemporalNoiseShaping *tns = &sce->tns;
+    const int mmm = tns_max_nonpns(sce, FFMIN(sce->ics.tns_max_bands, sce->ics.max_sfb ? sce->ics.max_sfb : sce->ics.num_swb));
+    const int sfb_start = av_clip(tns_min_sfb[1][s->samplerate_index], 0, mmm);
+    const int sfb_end   = av_clip(sce->ics.num_swb, 0, mmm);
+    const int c_bits = TNS_Q_BITS_IS8 == 4;
+    int count = 0;
+    FFPsyBand *const psy_bands = &s->psy.ch[s->cur_channel].psy_bands[0];
+
+    memset(tns, 0, sizeof(*tns));
+    if (sfb_end - sfb_start <= 0)
+        return;
+    const int c_lo = sce->ics.swb_offset[sfb_start];
+    const int c_hi = sce->ics.swb_offset[sfb_end];
+    const int clen = c_hi - c_lo;
+    const int ord_g = 7;
+    if (clen <= 2*ord_g)
+        return;
+
+    for (int wh = 0; wh < sce->ics.num_windows; wh += sce->ics.group_len[wh]) {
+        int gl = sce->ics.group_len[wh];
+        double coefs[MAX_LPC_ORDER];
+        float pooled[1024], lpc_q[TNS_MAX_ORDER];
+        float gain, gmin;
+        int ok = 1;
+
+        /* per-window weighted spectra, concatenated over the group */
+        for (int w2 = 0; w2 < gl; w2++) {
+            int w = wh + w2;
+            float maxrms = 0.0f, floorrms;
+            for (int g = sfb_start; g < sfb_end; g++) {
+                int s0 = sce->ics.swb_offset[g], s1 = sce->ics.swb_offset[g+1];
+                float rms = sqrtf(FFMAX(psy_bands[w*16 + g].threshold, 0.0f) / FFMAX(s1 - s0, 1));
+                maxrms = FFMAX(maxrms, rms);
+            }
+            floorrms = FFMAX(maxrms * TNS_WEIGHT_FLOOR, 1e-9f);
+            for (int g = sfb_start; g < sfb_end; g++) {
+                int s0 = sce->ics.swb_offset[g], s1 = sce->ics.swb_offset[g+1];
+                float rms = sqrtf(FFMAX(psy_bands[w*16 + g].threshold, 0.0f) / FFMAX(s1 - s0, 1));
+                float wgt = 1.0f / FFMAX(rms, floorrms);
+                for (int k = s0; k < s1; k++)
+                    pooled[w2*clen + (k - c_lo)] = sce->coeffs[w*128 + k] * wgt;
+            }
+        }
+
+        gain = ff_lpc_calc_ref_coefs_f(&s->lpc, pooled, clen*gl, ord_g, coefs, 0);
+        if (!isfinite(gain) || gain < TNS_PREDGAIN_GATE || gain > TNS_PG_CLAMP)
+            continue;
+        for (int i = 0; i < ord_g; i++)
+            coefs[i] = -coefs[i];
+
+        quantize_coefs(coefs, tns->coef_idx[wh][0], tns->coef[wh][0], ord_g, c_bits);
+        compute_lpc_coefs(tns->coef[wh][0], 0, ord_g, lpc_q, 0, 0, 0, NULL);
+
+        /* every window must clear the measured post-quantization bar */
+        gmin = FLT_MAX;
+        for (int w2 = 0; w2 < gl; w2++) {
+            const float *msrc = pooled + w2*clen;
+            float orig_e = 0.0f, filt_e = 0.0f;
+            for (int m = 0; m < clen; m++) {
+                float acc = msrc[m];
+                for (int i = 1; i <= FFMIN(m, ord_g); i++)
+                    acc += lpc_q[i-1] * msrc[m - i];
+                orig_e += msrc[m]*msrc[m];
+                filt_e += acc*acc;
+            }
+            gmin = FFMIN(gmin, orig_e / FFMAX(filt_e, 1e-9f));
+        }
+        {
+            /* accept Schmitt, run-scoped: hard entry / easy hold inside
+             * short runs (anti-gravel); isolated frames use the base bar */
+            int in_run  = s->nmr ? s->nmr->prev_was_short : 0;
+            int prev_on = s->nmr ? s->nmr->tns8_prev[s->cur_channel & 15] : 0;
+            float bar = TNS_PG_C1_SHORT * (!in_run ? 1.0f : prev_on ? 0.5f : 1.8f);
+            if (gmin < bar)
+                ok = 0;
+        }
+
+        if (ok) {
+            for (int w2 = 0; w2 < gl; w2++) {
+                int w = wh + w2;
+                tns->n_filt[w] = 1;
+                tns->length[w][0] = sfb_end - sfb_start;
+                tns->order[w][0] = ord_g;
+                tns->direction[w][0] = 0;
+                if (w2) {
+                    memcpy(tns->coef_idx[w][0], tns->coef_idx[wh][0], sizeof(tns->coef_idx[w][0]));
+                    memcpy(tns->coef[w][0],     tns->coef[wh][0],     sizeof(tns->coef[w][0]));
+                }
+                count++;
+            }
+        }
+    }
+    sce->tns.present = !!count;
+    if (s->nmr)
+        s->nmr->tns8_prev[s->cur_channel & 15] = !!count;
+}
+
 void ff_aac_search_for_tns(AACEncContext *s, SingleChannelElement *sce)
 {
     TemporalNoiseShaping *tns = &sce->tns;
-    int w, g, count = 0;
-    double gain, coefs[MAX_LPC_ORDER];
-    const int mmm = FFMIN(sce->ics.tns_max_bands, sce->ics.max_sfb);
+    int w, count = 0;
+    const int mmm = tns_max_nonpns(sce, FFMIN(sce->ics.tns_max_bands, sce->ics.max_sfb));
     const int is8 = sce->ics.window_sequence[0] == EIGHT_SHORT_SEQUENCE;
     const int c_bits = is8 ? TNS_Q_BITS_IS8 == 4 : TNS_Q_BITS == 4;
     const int sfb_start = av_clip(tns_min_sfb[is8][s->samplerate_index], 0, mmm);
@@ -174,56 +294,161 @@ void ff_aac_search_for_tns(AACEncContext *s, SingleChannelElement *sce)
     const int sfb_len = sfb_end - sfb_start;
     const int coef_len = sce->ics.swb_offset[sfb_end] - sce->ics.swb_offset[sfb_start];
     const int n_filt = is8 ? 1 : order != TNS_MAX_ORDER ? 2 : 3;
+    const int ord_g  = order / n_filt;
+
+    /* Apple's accept bar (minimum measured prediction gain): higher on short blocks,
+     * where a weak filter's shaped-noise tail spreads across the 50% overlap. */
+    const float c1 = is8 ? TNS_PG_C1_SHORT : TNS_PG_C1_LONG;
+    FFPsyBand *const psy_bands = &s->psy.ch[s->cur_channel].psy_bands[0];
 
     if (coef_len <= 0 || sfb_len <= 0) {
         sce->tns.present = 0;
         return;
     }
+    if (is8) {
+        search_for_tns_short_pooled(s, sce);
+        return;
+    }
+
+    /* time-domain window length backing one coding window: a long MDCT block is
+     * fed 2048 windowed samples (current 1024 + overlap), each short block 256. */
+    const int tlen = is8 ? 256 : 2048;
+
+    float mgain[8] = {0};
 
     for (w = 0; w < sce->ics.num_windows; w++) {
-        float en[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        int oc_start = 0;
-        int coef_start = sce->ics.swb_offset[sfb_start];
+        int filt, any = 0;
 
-        if (n_filt == 2) {
-            for (g = sfb_start; g < sce->ics.num_swb && g <= sfb_end; g++) {
-                FFPsyBand *band = &s->psy.ch[s->cur_channel].psy_bands[w*16+g];
-                    if (g > sfb_start + (sfb_len/2))
-                        en[1] += band->energy; /* End */
-                    else
-                        en[0] += band->energy; /* Start */
+        /* The filter gets ran in the direction of the signal's *temporal* energy,
+         * so the quantization noise stays in the loud masked part rather than spilling
+         * into the quiet part. */
+        const float *tw = sce->ret_buf + w*tlen;
+        float e_early = 0.0f, e_late = 0.0f;
+        int ti;
+        for (ti = 0; ti < tlen/2; ti++)
+            e_early += tw[ti]*tw[ti];
+        for (; ti < tlen; ti++)
+            e_late += tw[ti]*tw[ti];
+        const int tdir = e_early > e_late;
+
+        /* Walk the frequency regions exactly as the decoder does: filter 0 is the
+         * topmost band region, each subsequent filter covers the next region down,
+         * clamped to mmm. Each filter gets its own LPC over its own region. */
+        int top_sfb = sce->ics.num_swb;
+        for (filt = 0; filt < n_filt; filt++) {
+            double coefs[MAX_LPC_ORDER];
+            float wspec[1024], tmp[1024], lpc_q[TNS_MAX_ORDER];
+            int len_sfb = (filt == n_filt - 1) ? sfb_len - filt*(sfb_len/n_filt)
+                                               : sfb_len/n_filt;
+            int bot_sfb = FFMAX(0, top_sfb - len_sfb);
+            int g_lo = FFMIN(bot_sfb, mmm), g_hi = FFMIN(top_sfb, mmm);
+            int c_lo = sce->ics.swb_offset[g_lo];
+            int c_hi = sce->ics.swb_offset[g_hi];
+            int clen = c_hi - c_lo;
+            const int dir = slant != 2 ? slant : tdir;
+            float gain, orig_e = 0.0f, filt_e = 0.0f;
+            int m, i, g, inc, st;
+
+            tns->length[w][filt] = len_sfb;
+            tns->order[w][filt]  = 0;     /* default: region carries no filter */
+            top_sfb = bot_sfb;
+
+            if (clen <= 2*ord_g)          /* too short for a stable order-ord_g LPC */
+                continue;
+
+            /* Fit LPC on the perceptually-weighted spectrum X/sqrt(thr), floored
+             * to avoid a near-zero threshold blowing up a single bin (Apple). */
+            {
+                float maxrms = 0.0f, floorrms;
+                int k;
+                for (g = g_lo; g < g_hi; g++) {
+                    int s0 = sce->ics.swb_offset[g], s1 = sce->ics.swb_offset[g+1];
+                    float rms = sqrtf(FFMAX(psy_bands[w*16 + g].threshold, 0.0f) /
+                                      FFMAX(s1 - s0, 1));
+                    maxrms = FFMAX(maxrms, rms);
+                }
+                floorrms = FFMAX(maxrms * TNS_WEIGHT_FLOOR, 1e-9f);
+                for (g = g_lo; g < g_hi; g++) {
+                    int s0 = sce->ics.swb_offset[g], s1 = sce->ics.swb_offset[g+1];
+                    float rms = sqrtf(FFMAX(psy_bands[w*16 + g].threshold, 0.0f) /
+                                      FFMAX(s1 - s0, 1));
+                    float wgt = 1.0f / FFMAX(rms, floorrms);
+                    for (k = s0; k < s1; k++)
+                        wspec[k - c_lo] = sce->coeffs[w*128 + k] * wgt;
+                }
+                /* Short blocks: unwindowed fit; Hann window zeros the edges of the
+                 * tiny region, wrecking the LPC. Long blocks keep the window. */
+                gain = ff_lpc_calc_ref_coefs_f(&s->lpc, wspec, clen, ord_g, coefs, !is8);
             }
-            en[2] = en[0];
-        } else {
-            for (g = sfb_start; g < sce->ics.num_swb && g <= sfb_end; g++) {
-                FFPsyBand *band = &s->psy.ch[s->cur_channel].psy_bands[w*16+g];
-                    if (g > sfb_start + (sfb_len/2) + (sfb_len/4))
-                        en[2] += band->energy; /* End */
-                    else if (g > sfb_start + (sfb_len/2) - (sfb_len/4))
-                        en[1] += band->energy; /* Middle */
-                    else
-                        en[0] += band->energy; /* Start */
+            /* Reject below the first gate and above the clamp (poles near unit circle). */
+            if (!isfinite(gain) || gain < TNS_PREDGAIN_GATE || gain > TNS_PG_CLAMP)
+                continue;
+            /* Negate: ff_lpc_calc_ref_coefs_f sign convention is opposite to what
+             * ff_aac_apply_tns's MA filter needs; fed unnegated, it anti-whitens. */
+            for (i = 0; i < ord_g; i++)
+                coefs[i] = -coefs[i];
+
+            /* Quantize, then build the decoder's direct-form LPC. */
+            quantize_coefs(coefs, tns->coef_idx[w][filt], tns->coef[w][filt],
+                           ord_g, c_bits);
+            compute_lpc_coefs(tns->coef[w][filt], 0, ord_g, lpc_q, 0, 0, 0, NULL);
+
+            /* Apply the quantized filter to the weighted spectrum and measure gain. */
+            const float *msrc = wspec;
+            inc = dir ? -1 : 1;
+            st  = dir ? clen - 1 : 0;
+            for (m = 0; m < clen; m++) {
+                int idx = st + m*inc;
+                float acc = msrc[idx];
+                for (i = 1; i <= FFMIN(m, ord_g); i++)
+                    acc += lpc_q[i-1] * msrc[idx - i*inc];
+                tmp[idx] = acc;
             }
-            en[3] = en[0];
+            for (m = 0; m < clen; m++) {
+                orig_e += msrc[m]*msrc[m];
+                filt_e += tmp[m]*tmp[m];
+            }
+            filt_e = FFMAX(filt_e, 1e-9f);
+
+            /* Keep only if measured post-quantization gain clears C1 (Apple's outcome gate). */
+            if (orig_e < c1*filt_e)
+                continue;
+
+            tns->order[w][filt] = ord_g;
+            tns->direction[w][filt] = dir;
+            mgain[w] = orig_e / filt_e;
+            any = 1;
         }
+        tns->n_filt[w] = any ? n_filt : 0;
+        if (any)
+            count++;
+    }
 
-        /* LPC */
-        gain = ff_lpc_calc_ref_coefs_f(&s->lpc, &sce->coeffs[w*128 + coef_start],
-                                       coef_len, order, coefs);
-
-        if (!order || !isfinite(gain) || gain < TNS_GAIN_THRESHOLD_LOW || gain > TNS_GAIN_THRESHOLD_HIGH)
-            continue;
-
-        tns->n_filt[w] = n_filt;
-        for (g = 0; g < tns->n_filt[w]; g++) {
-            tns->direction[w][g] = slant != 2 ? slant : en[g] < en[g + 1];
-            tns->order[w][g] = order/tns->n_filt[w];
-            tns->length[w][g] = sfb_len/tns->n_filt[w];
-            quantize_coefs(&coefs[oc_start], tns->coef_idx[w][g], tns->coef[w][g],
-                            tns->order[w][g], c_bits);
-            oc_start += tns->order[w][g];
+    /* per-window path: group-uniformity gate (mismatched whitening within a
+     * shared-sf group silences sub-windows) */
+    if (is8 && count) {
+        const float gspread = 2.0f;
+        count = 0;
+        for (w = 0; w < sce->ics.num_windows; w += sce->ics.group_len[w]) {
+            int gl = sce->ics.group_len[w], drop = 0;
+            float gmin = FLT_MAX, gmax = 0.0f;
+            for (int w2 = w; w2 < w + gl; w2++) {
+                if (!tns->n_filt[w2] || mgain[w2] <= 0.0f) { drop = 1; break; }
+                gmin = FFMIN(gmin, mgain[w2]);
+                gmax = FFMAX(gmax, mgain[w2]);
+            }
+            if (!drop && gmax > gspread * gmin)
+                drop = 1;
+            for (int w2 = w; w2 < w + gl; w2++) {
+                if (drop) {
+                    tns->n_filt[w2] = 0;
+                    for (int f2 = 0; f2 < n_filt; f2++)
+                        tns->order[w2][f2] = 0;
+                } else if (tns->n_filt[w2]) {
+                    count++;
+                }
+            }
         }
-        count++;
     }
     sce->tns.present = !!count;
 }

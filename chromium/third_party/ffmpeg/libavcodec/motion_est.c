@@ -702,15 +702,11 @@ static inline int h263_mv4_search(MPVEncContext *const s, int mx, int my, int sh
     }
 
     if(c->avctx->mb_cmp&FF_CMP_CHROMA){
-        int dxy;
-        int mx, my;
-        int offset;
+        int mx_chroma = ff_h263_round_chroma(mx4_sum);
+        int my_chroma = ff_h263_round_chroma(my4_sum);
+        int dxy = ((my_chroma & 1) << 1) | (mx_chroma & 1);
 
-        mx= ff_h263_round_chroma(mx4_sum);
-        my= ff_h263_round_chroma(my4_sum);
-        dxy = ((my & 1) << 1) | (mx & 1);
-
-        offset = (s->c.mb_x*8 + (mx>>1)) + (s->c.mb_y*8 + (my>>1))*s->c.uvlinesize;
+        int offset = (s->c.mb_x*8 + (mx_chroma>>1)) + (s->c.mb_y*8 + (my_chroma>>1))*s->c.uvlinesize;
 
         c->hpel_put[1][dxy](c->scratchpad    , s->c.last_pic.data[1] + offset, s->c.uvlinesize, 8);
         c->hpel_put[1][dxy](c->scratchpad + 8, s->c.last_pic.data[2] + offset, s->c.uvlinesize, 8);
@@ -1153,11 +1149,12 @@ static int estimate_motion_b(MPVEncContext *const s, int mb_x, int mb_y,
         c->pred_x = P_LEFT[0];
         c->pred_y = P_LEFT[1];
 
-        if(mv_table == s->b_forw_mv_table){
-            mv_scale= (s->c.pb_time<<16) / (s->c.pp_time<<shift);
-        }else{
-            mv_scale = ((s->c.pb_time - s->c.pp_time) * (1 << 16)) / (s->c.pp_time<<shift);
-        }
+        int64_t pp = s->c.next_pic.ptr->f->pts - s->c.last_pic.ptr->f->pts;
+        int64_t pb = s->c. cur_pic.ptr->f->pts - s->c.last_pic.ptr->f->pts;
+        if (mv_table == s->b_forw_mv_table)
+            mv_scale = (pb << (16 - shift)) / pp;
+        else
+            mv_scale = (pb - pp) * (1 << (16 - shift)) / pp;
 
         dmin = ff_epzs_motion_search(s, &mx, &my, P, 0, ref_index, s->p_mv_table, mv_scale, 0, 16);
     }

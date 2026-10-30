@@ -53,6 +53,7 @@ typedef struct AssContext {
     ASS_Renderer *renderer;
     ASS_Track    *track;
     char *filename;
+    char *script;
     char *fontsdir;
     char *charenc;
     char *force_style;
@@ -75,6 +76,12 @@ typedef struct AssContext {
     {"original_size",  "set the size of the original video (used to scale fonts)", OFFSET(original_w), AV_OPT_TYPE_IMAGE_SIZE, {.str = NULL},  0, 0, FLAGS }, \
     {"fontsdir",       "set the directory containing the fonts to read",           OFFSET(fontsdir),   AV_OPT_TYPE_STRING,     {.str = NULL},  0, 0, FLAGS }, \
     {"alpha",          "enable processing of alpha channel",                       OFFSET(alpha),      AV_OPT_TYPE_BOOL,       {.i64 = 0   },         0,        1, FLAGS }, \
+
+#define SHAPING_OPTIONS \
+    {"shaping", "set shaping engine", OFFSET(shaping), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, FLAGS, .unit = "shaping_mode"}, \
+        {"auto",    NULL,              0, AV_OPT_TYPE_CONST, {.i64 = -1},                  INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"}, \
+        {"simple",  "simple shaping",  0, AV_OPT_TYPE_CONST, {.i64 = ASS_SHAPING_SIMPLE},  INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"}, \
+        {"complex", "complex shaping", 0, AV_OPT_TYPE_CONST, {.i64 = ASS_SHAPING_COMPLEX}, INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"}, \
 
 /* libass supports a log level ranging from 0 to 7 */
 static const int ass_libavfilter_log_level_map[] = {
@@ -135,11 +142,6 @@ static void ass_log(int ass_level, const char *fmt, va_list args, void *ctx)
 static av_cold int init(AVFilterContext *ctx)
 {
     AssContext *ass = ctx->priv;
-
-    if (!ass->filename) {
-        av_log(ctx, AV_LOG_ERROR, "No filename provided!\n");
-        return AVERROR(EINVAL);
-    }
 
     ass->library = ass_library_init();
     if (!ass->library) {
@@ -262,34 +264,57 @@ static const AVFilterPad ass_inputs[] = {
 
 static const AVOption ass_options[] = {
     COMMON_OPTIONS
-    {"shaping", "set shaping engine", OFFSET(shaping), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, 1, FLAGS, .unit = "shaping_mode"},
-        {"auto", NULL,                 0, AV_OPT_TYPE_CONST, {.i64 = -1},                  INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"},
-        {"simple",  "simple shaping",  0, AV_OPT_TYPE_CONST, {.i64 = ASS_SHAPING_SIMPLE},  INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"},
-        {"complex", "complex shaping", 0, AV_OPT_TYPE_CONST, {.i64 = ASS_SHAPING_COMPLEX}, INT_MIN, INT_MAX, FLAGS, .unit = "shaping_mode"},
+    SHAPING_OPTIONS
+    {"script", "set the ASS script to render instead of reading a file", OFFSET(script), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS | AV_OPT_FLAG_RUNTIME_PARAM },
     {NULL},
 };
 
 AVFILTER_DEFINE_CLASS(ass);
 
+static int read_track(AVFilterContext *ctx)
+{
+    AssContext *ass = ctx->priv;
+    ASS_Track *track = ass->script ? ass_read_memory(ass->library, ass->script, strlen(ass->script), NULL)
+                                   : ass_read_file(ass->library, ass->filename, NULL);
+
+    if (!track) {
+        av_log(ctx, AV_LOG_ERROR, "Could not create a libass track from %s\n",
+               ass->filename ? ass->filename : "the script");
+        return AVERROR(EINVAL);
+    }
+    if (ass->track)
+        ass_free_track(ass->track);
+    ass->track = track;
+    return 0;
+}
+
 static av_cold int init_ass(AVFilterContext *ctx)
 {
     AssContext *ass = ctx->priv;
-    int ret = init(ctx);
+    int ret;
 
+    if (!ass->filename == !ass->script) {
+        av_log(ctx, AV_LOG_ERROR, "Exactly one of filename and script must be set\n");
+        return AVERROR(EINVAL);
+    }
+    ret = init(ctx);
     if (ret < 0)
         return ret;
 
     /* Initialize fonts */
     ass_set_fonts(ass->renderer, NULL, NULL, 1, NULL, 1);
 
-    ass->track = ass_read_file(ass->library, ass->filename, NULL);
-    if (!ass->track) {
-        av_log(ctx, AV_LOG_ERROR,
-               "Could not create a libass track when reading file '%s'\n",
-               ass->filename);
-        return AVERROR(EINVAL);
-    }
-    return 0;
+    return read_track(ctx);
+}
+
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *arg,
+                           char *res, int res_len, int flags)
+{
+    int ret = ff_filter_process_command(ctx, cmd, arg, res, res_len, flags);
+
+    if (ret < 0 || (ret = read_track(ctx)) < 0)
+        return ret;
+    return config_input(ctx->inputs[0]);
 }
 
 const FFFilter ff_vf_ass = {
@@ -302,6 +327,7 @@ const FFFilter ff_vf_ass = {
     FILTER_INPUTS(ass_inputs),
     FILTER_OUTPUTS(ff_video_default_filterpad),
     FILTER_QUERY_FUNC2(query_formats),
+    .process_command = process_command,
 };
 #endif
 
@@ -316,6 +342,7 @@ static const AVOption subtitles_options[] = {
 #if FF_ASS_FEATURE_WRAP_UNICODE
     {"wrap_unicode", "break lines according to the Unicode Line Breaking Algorithm", OFFSET(wrap_unicode), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, FLAGS },
 #endif
+    SHAPING_OPTIONS
     {NULL},
 };
 
@@ -363,6 +390,11 @@ static av_cold int init_subtitles(AVFilterContext *ctx)
     AVStream *st;
     AVPacket pkt;
     AssContext *ass = ctx->priv;
+
+    if (!ass->filename) {
+        av_log(ctx, AV_LOG_ERROR, "No filename provided!\n");
+        return AVERROR(EINVAL);
+    }
 
     /* Init libass */
     ret = init(ctx);

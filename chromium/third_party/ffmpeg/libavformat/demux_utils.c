@@ -19,11 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
+
 #include "libavutil/mem.h"
 
 #include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
 #include "libavcodec/bytestream.h"
-#include "libavcodec/packet_internal.h"
+#include "packet_internal.h"
 #include "avformat.h"
 #include "avformat_internal.h"
 #include "avio_internal.h"
@@ -95,7 +98,7 @@ int avformat_queue_attached_pictures(AVFormatContext *s)
                 continue;
             }
 
-            ret = avpriv_packet_list_put(&fci->raw_packet_buffer,
+            ret = ff_packet_list_put(&fci->raw_packet_buffer,
                                          &s->streams[i]->attached_pic,
                                          av_packet_ref, 0);
             if (ret < 0)
@@ -172,8 +175,8 @@ int ff_add_param_change(AVPacket *pkt, int32_t channels,
 
 int av_read_play(AVFormatContext *s)
 {
-    if (ffifmt(s->iformat)->read_play)
-        return ffifmt(s->iformat)->read_play(s);
+    if (ffifmt(s->iformat)->read_set_state)
+        return ffifmt(s->iformat)->read_set_state(s, FF_INFMT_STATE_PLAY);
     if (s->pb)
         return avio_pause(s->pb, 0);
     return AVERROR(ENOSYS);
@@ -181,10 +184,24 @@ int av_read_play(AVFormatContext *s)
 
 int av_read_pause(AVFormatContext *s)
 {
-    if (ffifmt(s->iformat)->read_pause)
-        return ffifmt(s->iformat)->read_pause(s);
+    if (ffifmt(s->iformat)->read_set_state)
+        return ffifmt(s->iformat)->read_set_state(s, FF_INFMT_STATE_PAUSE);
     if (s->pb)
         return avio_pause(s->pb, 1);
+    return AVERROR(ENOSYS);
+}
+
+int avformat_send_command(AVFormatContext *s, enum AVFormatCommandID id, void *data)
+{
+    if (ffifmt(s->iformat)->handle_command)
+        return ffifmt(s->iformat)->handle_command(s, FF_INFMT_COMMAND_SUBMIT, id, data);
+    return AVERROR(ENOSYS);
+}
+
+int avformat_receive_command_reply(AVFormatContext *s, enum AVFormatCommandID id, void **data_out)
+{
+    if (ffifmt(s->iformat)->handle_command)
+        return ffifmt(s->iformat)->handle_command(s, FF_INFMT_COMMAND_GET_REPLY, id, data_out);
     return AVERROR(ENOSYS);
 }
 
@@ -345,4 +362,33 @@ int ff_find_stream_index(const AVFormatContext *s, int id)
         if (s->streams[i]->id == id)
             return i;
     return -1;
+}
+
+/* Over nine months at 44.1 kHz; keeps sums and rescalings in range. */
+#define SMPB_MAX_SAMPLES (INT64_C(1) << 40)
+
+int ff_itunes_parse_smpb(const char *value, int64_t *priming,
+                         int64_t *remainder, int64_t *samples)
+{
+    uint64_t reserved, p, r, s;
+    int end[4];
+
+    /* 16 digits is the widest an uint64_t can take, and what the tag writes. */
+    if (sscanf(value, "%16"SCNx64"%n %16"SCNx64"%n %16"SCNx64"%n %16"SCNx64"%n",
+               &reserved, &end[0], &p, &end[1], &r, &end[2], &s, &end[3]) != 4)
+        return AVERROR_INVALIDDATA;
+
+    /* A field cut short at 16 digits would shift every field after it. */
+    for (int i = 0; i < 4; i++)
+        if (av_isxdigit(value[end[i]]))
+            return AVERROR_INVALIDDATA;
+
+    if (p > SMPB_MAX_SAMPLES || r > SMPB_MAX_SAMPLES || s > SMPB_MAX_SAMPLES)
+        return AVERROR_INVALIDDATA;
+
+    *priming   = p;
+    *remainder = r;
+    *samples   = s;
+
+    return 0;
 }

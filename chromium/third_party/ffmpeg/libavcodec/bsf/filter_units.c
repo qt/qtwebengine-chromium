@@ -22,9 +22,10 @@
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
-#include "bsf.h"
-#include "bsf_internal.h"
-#include "cbs.h"
+#include "libavcodec/bsf.h"
+#include "libavcodec/bsf_internal.h"
+#include "libavcodec/cbs.h"
+#include "libavcodec/cbs_bsf.h"
 
 
 typedef struct FilterUnitsContext {
@@ -35,7 +36,8 @@ typedef struct FilterUnitsContext {
 
     const char *pass_types;
     const char *remove_types;
-    enum AVDiscard discard;
+    /* enum AVDiscard, use int for AVOption */
+    int discard;
     int discard_flags;
 
     enum {

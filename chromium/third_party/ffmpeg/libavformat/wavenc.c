@@ -145,6 +145,25 @@ static void bwf_write_bext_chunk(AVFormatContext *s)
     ff_end_tag(s->pb, bext);
 }
 
+static av_cold int wav_init(AVFormatContext *s)
+{
+    WAVMuxContext *wav = s->priv_data;
+
+    if (wav->write_peak == PEAK_ONLY) {
+        if (wav->rf64 == RF64_ALWAYS) {
+            av_log(s, AV_LOG_ERROR, "write_peak=only is not compatible with RF64\n");
+            return AVERROR(EINVAL);
+        }
+        if (wav->rf64 == RF64_AUTO)
+            wav->rf64 = RF64_NEVER;
+    }
+
+    if (wav->rf64 == RF64_AUTO && !(s->pb->seekable & AVIO_SEEKABLE_NORMAL))
+        wav->rf64 = RF64_NEVER;
+
+    return 0;
+}
+
 static av_cold void wav_deinit(AVFormatContext *s)
 {
     WAVMuxContext *wav = s->priv_data;
@@ -315,9 +334,9 @@ static int wav_write_header(AVFormatContext *s)
 
     ffio_wfourcc(pb, "WAVE");
 
-    if (wav->rf64 != RF64_NEVER) {
-        /* write empty ds64 chunk or JUNK chunk to reserve space for ds64 */
-        ffio_wfourcc(pb, wav->rf64 == RF64_ALWAYS ? "ds64" : "JUNK");
+    if (wav->rf64 == RF64_ALWAYS) {
+        /* write empty ds64 chunk */
+        ffio_wfourcc(pb, "ds64");
         avio_wl32(pb, 28); /* chunk size */
         wav->ds64 = avio_tell(pb);
         ffio_fill(pb, 0, 28);
@@ -332,6 +351,16 @@ static int wav_write_header(AVFormatContext *s)
             return AVERROR(ENOSYS);
         }
         ff_end_tag(pb, fmt);
+
+        if (wav->rf64 == RF64_AUTO) {
+            /* reserve space for ds64 */
+            ffio_wfourcc(pb, "JUNK");
+            avio_wl32(pb, 28); /* chunk size */
+            ffio_fill(pb, 0, 28);
+
+            /* in RF64_AUTO mode, fmt + JUNK will be overwritten by ds64 + fmt */
+            wav->ds64 = fmt;
+        }
     }
 
     if (s->streams[0]->codecpar->codec_tag != 0x01 /* hence for all other than PCM */
@@ -411,11 +440,13 @@ static int wav_write_trailer(AVFormatContext *s)
     WAVMuxContext    *wav = s->priv_data;
     int64_t file_size, data_size;
     int64_t number_of_samples = 0;
+    int64_t pos;
     int rf64 = 0;
     int ret = 0;
 
     if (s->pb->seekable & AVIO_SEEKABLE_NORMAL) {
-        if (wav->write_peak != PEAK_ONLY && avio_tell(pb) - wav->data < UINT32_MAX) {
+        data_size = avio_tell(pb) - wav->data;
+        if (wav->write_peak != PEAK_ONLY && data_size < UINT32_MAX) {
             ff_end_tag(pb, wav->data);
         }
 
@@ -425,7 +456,6 @@ static int wav_write_trailer(AVFormatContext *s)
 
         /* update file size */
         file_size = avio_tell(pb);
-        data_size = file_size - wav->data;
         if (wav->rf64 == RF64_ALWAYS || (wav->rf64 == RF64_AUTO && file_size - 8 > UINT32_MAX)) {
             rf64 = 1;
         } else if (file_size - 8 <= UINT32_MAX) {
@@ -459,7 +489,7 @@ static int wav_write_trailer(AVFormatContext *s)
             ffio_wfourcc(pb, "RF64");
             avio_wl32(pb, -1);
 
-            /* write ds64 chunk (overwrite JUNK if rf64 == RF64_AUTO) */
+            /* write ds64 chunk (overwrite fmt + JUNK if rf64 == RF64_AUTO) */
             avio_seek(pb, wav->ds64 - 8, SEEK_SET);
             ffio_wfourcc(pb, "ds64");
             avio_wl32(pb, 28);                  /* ds64 chunk size */
@@ -467,6 +497,11 @@ static int wav_write_trailer(AVFormatContext *s)
             avio_wl64(pb, data_size);           /* data chunk size */
             avio_wl64(pb, number_of_samples);   /* fact chunk number of samples */
             avio_wl32(pb, 0);                   /* number of table entries for non-'data' chunks */
+
+            /* rewrite fmt in its RF64 position after ds64 */
+            pos = ff_start_tag(pb, "fmt ");
+            ret = ff_put_wav_header(s, pb, s->streams[0]->codecpar, 0);
+            ff_end_tag(pb, pos);
 
             /* write -1 in data chunk size */
             avio_seek(pb, wav->data - 4, SEEK_SET);
@@ -513,6 +548,7 @@ const FFOutputFormat ff_wav_muxer = {
     .p.audio_codec     = AV_CODEC_ID_PCM_S16LE,
     .p.video_codec     = AV_CODEC_ID_NONE,
     .p.subtitle_codec  = AV_CODEC_ID_NONE,
+    .init              = wav_init,
     .write_header      = wav_write_header,
     .write_packet      = wav_write_packet,
     .write_trailer     = wav_write_trailer,

@@ -66,6 +66,13 @@ This demuxer is used to demux ASF files and MMS network streams.
 Do not try to resynchronize by looking for a certain optional start code.
 @end table
 
+@section astc
+
+ASTC (Adaptive Scalable Texture Compression) demuxer.
+
+This demuxer reads the 16-byte @file{.astc} header, hands it to the decoder as
+extradata, and emits the compressed image as a single packet.
+
 @anchor{concat}
 @section concat
 
@@ -235,6 +242,15 @@ expressed in microseconds. The duration metadata is only set if it is known
 based on the concat file.
 The default is 0.
 
+@item chapter_per_file
+If set to 1, add a chapter for each file, named after the @code{title}
+metadata of the file or, failing that, its file name, and carrying the rest
+of the file's metadata. The files are opened in order when the script is read
+to learn their durations, stopping after the first file whose duration is
+unknown, which gets the last chapter; when all durations are known, this also
+makes the total duration known and the output seekable.
+The default is 0.
+
 @end table
 
 @subsection Examples
@@ -281,7 +297,11 @@ This demuxer accepts the following option:
 @table @option
 
 @item cenc_decryption_key
-16-byte key, in hex, to decrypt files encrypted using ISO Common Encryption (CENC/AES-128 CTR; ISO/IEC 23001-7).
+Default 16-byte key, in hex, to decrypt files encrypted using ISO Common Encryption (CENC/AES-128 CTR; ISO/IEC 23001-7).
+
+@item cenc_decryption_keys
+Dictionary of 16-byte key ID => 16-byte key, both in hex, to decrypt files encrypted using ISO Common Encryption
+(CENC/AES-128 CTR; ISO/IEC 23001-7).
 
 @end table
 
@@ -550,7 +570,9 @@ The id field is set to the bitrate variant index number. By setting
 the discard flags on AVStreams (by pressing 'a' or 'v' in ffplay),
 the caller can decide which variant streams to actually receive.
 The total bitrate of the variant that the stream belongs to is
-available in a metadata key named "variant_bitrate".
+available in a metadata key named "variant_bitrate". It is unset when
+the stream is shared by variants with different bitrates. The value is
+always available in the corresponding program's metadata.
 
 It accepts the following options:
 
@@ -723,6 +745,15 @@ terminating with the ".png" suffix:
 ffmpeg -framerate 10 -pattern_type glob -i "*.png" out.mkv
 @end example
 @end itemize
+
+@section ktx
+
+Khronos Texture 1.0 demuxer for ASTC textures.
+
+This demuxer reads the KTX 1.0 header and maps the ASTC GL internal format to
+the block footprint the decoder needs, so only files using the ASTC formats
+are accepted. A @code{KTXorientation} key is preserved as stream display
+metadata, and the texture is emitted as a single packet.
 
 @section libgme
 
@@ -940,7 +971,11 @@ Fixed key used for handling Audible AAX/AAX+ files. It has been pre-set so shoul
 specify.
 
 @item decryption_key
-16-byte key, in hex, to decrypt files encrypted using ISO Common Encryption (CENC/AES-128 CTR; ISO/IEC 23001-7).
+Default 16-byte key, in hex, to decrypt files encrypted using ISO Common Encryption (CENC/AES-128 CTR; ISO/IEC 23001-7).
+
+@item decryption_keys
+Dictionary of 16-byte key ID => 16-byte key, both in hex, to decrypt files encrypted using ISO Common Encryption
+(CENC/AES-128 CTR; ISO/IEC 23001-7).
 
 @item max_stts_delta
 Very high sample deltas written in a trak's stts box may occasionally be intended but usually they are written in
@@ -1000,7 +1035,7 @@ streams move to different PIDs. Default value is 0.
 
 @item max_packet_size
 Set maximum size, in bytes, of packet emitted by the demuxer. Payloads above this size
-are split across multiple packets. Range is 1 to INT_MAX/2. Default is 204800 bytes.
+are split across multiple packets. Range is 184 to INT_MAX/2. Default is 204800 bytes.
 @end table
 
 @section mpjpeg
@@ -1173,10 +1208,51 @@ RIFF Wave Audio demuxer.
 
 This demuxer accepts the following options:
 @table @option
+@item ignore_length @var{bool}
+Ignore the size of the @code{data} chunk and keep reading until the end of the file if set.
+May be useful to read broken or partial files where the header was not properly updated,
+but will misinterpret files with non-audio chunks after the @code{data} chunk.
+Default is disabled.
+
 @item max_size
 Specify the maximum packet size in bytes for the demuxed packets. By default
 this is set to 0, which means that a sensible value is chosen based on the
 input format.
+@end table
+
+@section webp
+
+Animated WebP demuxer.
+
+It accepts the following options:
+
+@table @option
+@item -min_delay @var{int}
+Set the minimum valid delay between frames in milliseconds.
+Range is 0 to 60000. Default value is 10.
+
+@item -max_webp_delay @var{int}
+Set the maximum valid delay between frames in milliseconds.
+Range is 0 to 16777215. Default value is 16777215 (over four hours),
+the maximum value allowed by the specification.
+
+@item -default_delay @var{int}
+Set the default delay between frames in milliseconds.
+Range is 0 to 60000. Default value is 100.
+
+@item -ignore_loop @var{bool}
+WebP files can contain information to loop a certain number of times
+(or infinitely). If @option{ignore_loop} is set to true, then the loop
+setting from the input will be ignored and looping will not occur.
+If set to false, then looping will occur and will cycle the number
+of times according to the WebP. Default value is true.
+
+@item usebgcolor @var{bool}
+WebP files contain a background color hint in the ANIM chunk, but the
+WebP specification says that viewer applications are not required to
+use it. If @option{usebgcolor} is set to true, then the background
+color hint will be used, otherwise transparent black will be used for
+the background. Default value is false.
 @end table
 
 @c man end DEMUXERS

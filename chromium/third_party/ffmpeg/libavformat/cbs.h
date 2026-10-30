@@ -19,13 +19,18 @@
 #ifndef AVFORMAT_CBS_H
 #define AVFORMAT_CBS_H
 
+#include "config.h"
+
 #define CBS_PREFIX lavf_cbs
 #define CBS_WRITE 0
 #define CBS_TRACE 0
+#define CBS_APV CONFIG_CBS_APV_LAVF
+#define CBS_AV1 CONFIG_CBS_AV1_LAVF
 #define CBS_H264 0
 #define CBS_H265 0
 #define CBS_H266 0
 #define CBS_JPEG 0
+#define CBS_LCEVC 0
 #define CBS_MPEG2 0
 #define CBS_VP8 0
 #define CBS_VP9 0
