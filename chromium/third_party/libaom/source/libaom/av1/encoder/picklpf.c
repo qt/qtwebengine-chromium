@@ -247,9 +247,15 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
   }
 
   if (cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN &&
-      cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
-      cpi->sf.rt_sf.skip_lf_screen)
-    disable_filter_rt_screen = av1_cyclic_refresh_disable_lf_cdef(cpi);
+      cpi->sf.rt_sf.skip_lf_screen) {
+    // Skip the filter when most of the frame is inactive, for any aq mode.
+    if (cpi->active_map.enabled &&
+        cpi->rc.percent_blocks_inactive >
+            cpi->sf.rt_sf.thresh_active_maps_skip_lf_cdef)
+      disable_filter_rt_screen = 1;
+    else if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ)
+      disable_filter_rt_screen = av1_cyclic_refresh_disable_lf(cpi);
+  }
 
   if (disable_filter_rt_screen ||
       cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_NONE ||
@@ -295,8 +301,11 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
     // Keyframes: filt_guess = q * 0.06699 - 1.60817
     // Other frames: filt_guess = q * inter_frame_multiplier + 2.48225
     //
-    // And high bit depth separately:
-    // filt_guess = q * 0.316206 + 3.87252
+    // 10 bit depth:
+    // filt_guess = q * 0.01976 + 3.87252
+    //
+    // 12 bit depth:
+    // filt_guess = q * 0.00494 + 3.87252
     int filt_guess;
     switch (seq_params->bit_depth) {
       case AOM_BITS_8:

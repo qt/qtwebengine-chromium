@@ -29,6 +29,11 @@ typedef int64_t (*pick_interinter_mask_type)(
 // speed feature.
 static const int num_comp_mode_skip_cand[3] = { 5, 4, 2 };
 
+// Look-up table for the number of top smooth interintra estimated RD Costs that
+// should be considered based on skip_interintra_using_top_smooth_rd_lvl
+// speed feature.
+static const int num_interintra_skip_cand[2] = { 2, 1 };
+
 // Checks if characteristics of search match
 static inline int is_comp_rd_match(const AV1_COMP *const cpi,
                                    const MACROBLOCK *const x,
@@ -488,7 +493,6 @@ static int64_t estimate_yrd_for_sb(const AV1_COMP *const cpi, BLOCK_SIZE bs,
                                    RD_STATS *rd_stats) {
   MACROBLOCKD *const xd = &x->e_mbd;
   if (ref_best_rd < 0) return INT64_MAX;
-  av1_subtract_plane(x, bs, 0);
   const int64_t rd = av1_estimate_txfm_yrd(cpi, x, rd_stats, ref_best_rd, bs,
                                            max_txsize_rect_lookup[bs]);
   if (rd != INT64_MAX) {
@@ -603,12 +607,6 @@ static int handle_smooth_inter_intra_mode(
   }
   *best_rd = rd;
   *best_mode_rate = rmode;
-  // Return early if best rd not good enough
-  if (ref_best_rd < INT64_MAX &&
-      (*best_rd >> INTER_INTRA_RD_THRESH_SHIFT) * INTER_INTRA_RD_THRESH_SCALE >
-          ref_best_rd) {
-    return IGNORE_MODE;
-  }
   return 0;
 }
 
@@ -758,6 +756,24 @@ static inline void push_comp_avg_est_rd(
   }
 }
 
+// Store the estimated smooth interintra RD Cost in the sorted top-N array.
+static inline void push_smooth_interintra_rd(
+    int64_t *top_smooth_interintra_rd, int64_t tmp_rd,
+    int skip_interintra_using_top_smooth_rd_lvl) {
+  if (!skip_interintra_using_top_smooth_rd_lvl) return;
+
+  // Insert the RD Cost in sorted order.
+  for (int i = 0; i < TOP_SMOOTH_INTERINTRA_RD_COUNT; ++i) {
+    if (tmp_rd < top_smooth_interintra_rd[i]) {
+      for (int j = TOP_SMOOTH_INTERINTRA_RD_COUNT - 1; j > i; --j) {
+        top_smooth_interintra_rd[j] = top_smooth_interintra_rd[j - 1];
+      }
+      top_smooth_interintra_rd[i] = tmp_rd;
+      break;
+    }
+  }
+}
+
 // Avoid further evaluation of compound modes based on top estimated RD Costs of
 // compound average.
 static inline bool prune_comp_eval_using_comp_avg_est_rd(
@@ -776,6 +792,22 @@ static inline bool prune_comp_eval_using_comp_avg_est_rd(
     return false;
 
   if (tmp_rd > top_comp_avg_est_rd[num_top_cand - 1]) return true;
+
+  return false;
+}
+
+static inline bool prune_interintra_using_smooth_rd(
+    const int64_t *top_smooth_interintra_rd, int64_t tmp_rd,
+    int skip_interintra_using_top_smooth_rd_lvl) {
+  if (!skip_interintra_using_top_smooth_rd_lvl) return false;
+
+  const int num_top_cand =
+      num_interintra_skip_cand[skip_interintra_using_top_smooth_rd_lvl - 1];
+
+  // Do not prune if there is no valid top RD Cost for comparison.
+  if (top_smooth_interintra_rd[num_top_cand - 1] == INT64_MAX) return false;
+
+  if (tmp_rd > top_smooth_interintra_rd[num_top_cand - 1]) return true;
 
   return false;
 }
@@ -825,6 +857,24 @@ int av1_handle_inter_intra_mode(const AV1_COMP *const cpi, MACROBLOCK *const x,
         &best_interintra_rd_nowedge, &best_mode_rate, orig_dst, tmp_buf,
         intrapred, args);
     if (ret == IGNORE_MODE) {
+      return IGNORE_MODE;
+    }
+
+    push_smooth_interintra_rd(
+        x->top_smooth_interintra_rd, best_interintra_rd_nowedge,
+        cpi->sf.inter_sf.skip_interintra_using_top_smooth_rd_lvl);
+
+    if (prune_interintra_using_smooth_rd(
+            x->top_smooth_interintra_rd, best_interintra_rd_nowedge,
+            cpi->sf.inter_sf.skip_interintra_using_top_smooth_rd_lvl)) {
+      return IGNORE_MODE;
+    }
+
+    // Return early if best rd not good enough.
+    if (ref_best_rd < INT64_MAX &&
+        (best_interintra_rd_nowedge >> INTER_INTRA_RD_THRESH_SHIFT) *
+                INTER_INTRA_RD_THRESH_SCALE >
+            ref_best_rd) {
       return IGNORE_MODE;
     }
   }
@@ -1072,7 +1122,7 @@ static inline int prune_mode_by_skip_rd(const AV1_COMP *const cpi,
                              TX_SEARCH_COMP_TYPE_MODE, /*eval_motion_mode=*/0);
   // Check if the mode is good enough based on skip rd
   if (txfm_rd_gate_level) {
-    int64_t sse_y = compute_sse_plane(x, xd, PLANE_TYPE_Y, bsize);
+    int64_t sse_y = compute_sse_plane(cpi, x, xd, PLANE_TYPE_Y, bsize);
     int64_t skip_rd = RDCOST(x->rdmult, mode_rate, (sse_y << 4));
     eval_txfm =
         check_txfm_eval(x, bsize, ref_skip_rd, skip_rd, txfm_rd_gate_level, 1);
@@ -1432,7 +1482,8 @@ int av1_compound_type_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
 
       // use spare buffer for following compound type try
       if (cur_type == COMPOUND_AVERAGE) restore_dst_buf(xd, *tmp_dst, 1);
-    } else if (cur_type == COMPOUND_WEDGE) {
+    } else if (!cpi->sf.inter_sf.enable_comp_wedge_search_using_model_rd &&
+               cur_type == COMPOUND_WEDGE) {
       int best_mask_index = 0;
       int best_wedge_sign = 0;
       int_mv tmp_mv[2] = { mbmi->mv[0], mbmi->mv[1] };
@@ -1670,7 +1721,7 @@ int av1_compound_type_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
     } else {
       // Handle masked compound types
       bool eval_masked_comp_type = true;
-      if (*rd != INT64_MAX) {
+      if (*rd != INT64_MAX && cur_type == COMPOUND_DIFFWTD) {
         // Factors to control gating of compound type selection based on best
         // approximate rd so far
         const int max_comp_type_rd_threshold_mul =
@@ -1679,8 +1730,7 @@ int av1_compound_type_rd(const AV1_COMP *const cpi, MACROBLOCK *x,
         const int max_comp_type_rd_threshold_div =
             comp_type_rd_threshold_div[cpi->sf.inter_sf
                                            .prune_comp_type_by_comp_avg];
-        // Evaluate COMPOUND_WEDGE / COMPOUND_DIFFWTD if approximated cost is
-        // within threshold
+        // Evaluate COMPOUND_DIFFWTD if approximated cost is within threshold.
         const int64_t approx_rd = ((*rd / max_comp_type_rd_threshold_div) *
                                    max_comp_type_rd_threshold_mul);
         if (approx_rd >= ref_best_rd) eval_masked_comp_type = false;

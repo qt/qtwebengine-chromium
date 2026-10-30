@@ -168,8 +168,13 @@ static const double q_pow_term[(QINDEX_RANGE >> 5) + 1] = { 0.65, 0.70, 0.75,
                                                             0.80, 0.85, 0.90,
                                                             0.95, 0.95, 0.95 };
 #define ERR_DIVISOR 96.0
-static double calc_correction_factor(double err_per_mb, int q) {
-  const double error_term = err_per_mb / ERR_DIVISOR;
+static double calc_correction_factor(double err_per_mb, int q,
+                                     double inactive_zone,
+                                     bool lower_qindex_on_static_frame) {
+  double error_term = err_per_mb / ERR_DIVISOR;
+  if (lower_qindex_on_static_frame) {
+    error_term = error_term * (1 - AOMMIN(0.6, inactive_zone));
+  }
   const int index = q >> 5;
   // Adjustment to power term based on qindex
   const double power_term =
@@ -319,15 +324,17 @@ static int qbpm_enumerator(int rate_err_tol, bool use_smaller_enumerator) {
 // calculation of a correction_factor.
 static int find_qindex_by_rate_with_correction(
     uint64_t desired_bits_per_mb, aom_bit_depth_t bit_depth,
-    double error_per_mb, double group_weight_factor, int rate_err_tol,
-    int best_qindex, int worst_qindex, bool use_smaller_enumerator) {
+    double error_per_mb, bool lower_qindex_on_static_frame,
+    double group_weight_factor, int rate_err_tol, int best_qindex,
+    int worst_qindex, bool use_smaller_enumerator, double inactive_zone) {
   assert(best_qindex <= worst_qindex);
   int low = best_qindex;
   int high = worst_qindex;
 
   while (low < high) {
     const int mid = (low + high) >> 1;
-    const double mid_factor = calc_correction_factor(error_per_mb, mid);
+    const double mid_factor = calc_correction_factor(
+        error_per_mb, mid, inactive_zone, lower_qindex_on_static_frame);
     const double q = av1_convert_qindex_to_q(mid, bit_depth);
     const int enumerator =
         qbpm_enumerator(rate_err_tol, use_smaller_enumerator);
@@ -392,12 +399,28 @@ static int get_twopass_worst_quality(AV1_COMP *cpi, const double av_frame_err,
     // Update bpm correction factor based on previous GOP rate error.
     twopass_update_bpm_factor(cpi, rate_err_tol);
 
+    int baseline_gf_interval = cpi->ppi->p_rc.baseline_gf_interval - 1;
+    const FIRSTPASS_STATS *cur_arf_stats = av1_firstpass_info_peek(
+        &cpi->ppi->twopass.firstpass_info, baseline_gf_interval);
+
+    bool lower_qindex_on_static_frame = false;
+
+    if (cur_arf_stats != NULL) {
+      // The changes are only applied if the coded_error of the current
+      // gf_group's arf frame does not significantly exceed the group's average
+      // error. It serves as a safeguard for certain corner cases that arf
+      // frames might not be good enough.
+      lower_qindex_on_static_frame =
+          (cur_arf_stats->coded_error < 2 * av_err_per_mb);
+    }
+
     // Try and pick a max Q that will be high enough to encode the
     // content at the given rate.
     int q = find_qindex_by_rate_with_correction(
         target_norm_bits_per_mb, cpi->common.seq_params->bit_depth,
-        av_err_per_mb, cpi->ppi->twopass.bpm_factor, rate_err_tol,
-        rc->best_quality, rc->worst_quality, use_smaller_enumerator);
+        av_err_per_mb, lower_qindex_on_static_frame,
+        cpi->ppi->twopass.bpm_factor, rate_err_tol, rc->best_quality,
+        rc->worst_quality, use_smaller_enumerator, inactive_zone);
 
     // Restriction on active max q for constrained quality mode.
     if (rc_cfg->mode == AOM_CQ) q = AOMMAX(q, rc_cfg->cq_level);
@@ -1095,52 +1118,26 @@ static int is_shorter_gf_interval_better(
       av1_encode_for_extrc(&cpi->ext_ratectrl)) {
     return 0;
   }
-  const RATE_CONTROL *const rc = &cpi->rc;
   PRIMARY_RATE_CONTROL *const p_rc = &cpi->ppi->p_rc;
   int gop_length_decision_method = cpi->sf.tpl_sf.gop_length_decision_method;
-  int shorten_gf_interval;
+  int shorten_gf_interval = 0;
 
   av1_tpl_preload_rc_estimate(cpi, frame_params);
 
-  if (gop_length_decision_method == 2) {
+  if (gop_length_decision_method == 1) {
     // GF group length is decided based on GF boost and tpl stats of ARFs from
     // base layer, (base+1) layer.
     shorten_gf_interval =
         (p_rc->gfu_boost <
          p_rc->num_stats_used_for_gfu_boost * GF_MIN_BOOST * 1.4) &&
-        !av1_tpl_setup_stats(cpi, 3, frame_params);
-  } else {
-    int do_complete_tpl = 1;
-    GF_GROUP *const gf_group = &cpi->ppi->gf_group;
-    int is_temporal_filter_enabled =
-        (rc->frames_since_key > 0 && gf_group->arf_index > -1);
-
-    if (gop_length_decision_method == 1) {
-      // Check if tpl stats of ARFs from base layer, (base+1) layer,
-      // (base+2) layer can decide the GF group length.
-      int gop_length_eval = av1_tpl_setup_stats(cpi, 2, frame_params);
-
-      if (gop_length_eval != 2) {
-        do_complete_tpl = 0;
-        shorten_gf_interval = !gop_length_eval;
-      }
-    }
-
-    if (do_complete_tpl) {
-      // Decide GF group length based on complete tpl stats.
-      shorten_gf_interval = !av1_tpl_setup_stats(cpi, 1, frame_params);
-      // Tpl stats is reused when the ARF is temporally filtered and GF
-      // interval is not shortened.
-      if (is_temporal_filter_enabled && !shorten_gf_interval) {
-        cpi->skip_tpl_setup_stats = 1;
-#if CONFIG_BITRATE_ACCURACY && !CONFIG_THREE_PASS
-        assert(cpi->gf_frame_index == 0);
-        av1_vbr_rc_update_q_index_list(&cpi->vbr_rc_info, &cpi->ppi->tpl_data,
-                                       gf_group,
-                                       cpi->common.seq_params->bit_depth);
-#endif  // CONFIG_BITRATE_ACCURACY
-      }
-    }
+        !av1_tpl_setup_stats(cpi, /*approx_gop_eval=*/true, frame_params);
+  } else if (gop_length_decision_method == 0) {
+    // Check if tpl stats of ARFs from base layer, (base+1) layer,
+    // (base+2) layer can decide the GF group length.
+    int gop_length_eval =
+        av1_tpl_setup_stats(cpi, /*approx_gop_eval=*/true, frame_params);
+    assert(gop_length_eval != -1);
+    shorten_gf_interval = !gop_length_eval;
   }
   return shorten_gf_interval;
 }
@@ -4216,7 +4213,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
       }
       if (max_gop_length > 16 && oxcf->algo_cfg.enable_tpl_model &&
           oxcf->gf_cfg.lag_in_frames >= 32 &&
-          cpi->sf.tpl_sf.gop_length_decision_method != 3) {
+          cpi->sf.tpl_sf.gop_length_decision_method != 2) {
         int this_idx = rc->frames_since_key +
                        p_rc->gf_intervals[p_rc->cur_gf_index] -
                        p_rc->regions_offset - 1;
@@ -4518,8 +4515,7 @@ void av1_twopass_postencode_update(AV1_COMP *cpi) {
       p_rc->active_best_quality[i] = cpi->common.quant_params.base_qindex;
 #if CONFIG_TUNE_VMAF
       if (cpi->vmaf_info.original_qindex != -1 &&
-          (cpi->oxcf.tune_cfg.tuning >= AOM_TUNE_VMAF_WITH_PREPROCESSING &&
-           cpi->oxcf.tune_cfg.tuning <= AOM_TUNE_VMAF_NEG_MAX_GAIN)) {
+          is_vmaf_tuning_mode(cpi->oxcf.tune_cfg.tuning)) {
         p_rc->active_best_quality[i] = cpi->vmaf_info.original_qindex;
       }
 #endif
@@ -4578,13 +4574,12 @@ void av1_twopass_postencode_update(AV1_COMP *cpi) {
       }
       twopass->extend_maxq -= 1;
       // Overshoot
-    } else if ((rc_cfg->over_shoot_pct < 100) &&
+    } else if ((rc_cfg->over_shoot_pct <= 100) &&
                (p_rc->rolling_actual_bits > p_rc->rolling_target_bits)) {
       int pct_error =
           ((p_rc->rolling_actual_bits - p_rc->rolling_target_bits) * 100) /
           p_rc->rolling_target_bits;
 
-      pct_error = clamp(pct_error, 0, 100);
       if ((pct_error >= rc_cfg->over_shoot_pct) &&
           (p_rc->rate_error_estimate < 0)) {
         twopass->extend_maxq += 1;
@@ -4610,13 +4605,21 @@ void av1_twopass_postencode_update(AV1_COMP *cpi) {
     // frame is unexpectedly almost perfectly predicted by the ARF or GF
     // but not very well predcited by the previous frame.
     if (!frame_is_kf_gf_arf(cpi) && !cpi->rc.is_src_frame_alt_ref) {
-      int fast_extra_thresh = rc->base_frame_target / HIGH_UNDERSHOOT_RATIO;
-      if (rc->projected_frame_size < fast_extra_thresh) {
-        p_rc->vbr_bits_off_target_fast +=
-            fast_extra_thresh - rc->projected_frame_size;
-        p_rc->vbr_bits_off_target_fast =
-            AOMMIN(p_rc->vbr_bits_off_target_fast,
-                   (4 * (int64_t)rc->avg_frame_bandwidth));
+#if CONFIG_AV1_HIGHBITDEPTH
+      if (cpi->common.seq_params->bit_depth > 8 &&
+          cpi->oxcf.algo_cfg.sharpness == 3 && p_rc->vbr_bits_off_target < 0) {
+        p_rc->vbr_bits_off_target_fast = 0;
+      } else
+#endif
+      {
+        int fast_extra_thresh = rc->base_frame_target / HIGH_UNDERSHOOT_RATIO;
+        if (rc->projected_frame_size < fast_extra_thresh) {
+          p_rc->vbr_bits_off_target_fast +=
+              fast_extra_thresh - rc->projected_frame_size;
+          p_rc->vbr_bits_off_target_fast =
+              AOMMIN(p_rc->vbr_bits_off_target_fast,
+                     (4 * (int64_t)rc->avg_frame_bandwidth));
+        }
       }
     }
 

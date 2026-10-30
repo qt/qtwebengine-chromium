@@ -127,6 +127,13 @@ void av1_build_compound_diffwtd_mask_d16_c(uint8_t *mask, DIFFWTD_MASK_TYPE mask
 void av1_build_compound_diffwtd_mask_d16_neon(uint8_t *mask, DIFFWTD_MASK_TYPE mask_type, const CONV_BUF_TYPE *src0, int src0_stride, const CONV_BUF_TYPE *src1, int src1_stride, int h, int w, ConvolveParams *conv_params, int bd);
 #define av1_build_compound_diffwtd_mask_d16 av1_build_compound_diffwtd_mask_d16_neon
 
+void av1_calc_centroids_dim1_c(const int16_t *data, int16_t *centroids, const uint8_t *indices, int n, int k);
+void av1_calc_centroids_dim1_neon(const int16_t *data, int16_t *centroids, const uint8_t *indices, int n, int k);
+#define av1_calc_centroids_dim1 av1_calc_centroids_dim1_neon
+
+void av1_calc_centroids_dim2_c(const int16_t *data, int16_t *centroids, const uint8_t *indices, int n, int k);
+#define av1_calc_centroids_dim2 av1_calc_centroids_dim2_c
+
 void av1_calc_indices_dim1_c(const int16_t *data, const int16_t *centroids, uint8_t *indices, int64_t *total_dist, int n, int k);
 void av1_calc_indices_dim1_neon(const int16_t *data, const int16_t *centroids, uint8_t *indices, int64_t *total_dist, int n, int k);
 #define av1_calc_indices_dim1 av1_calc_indices_dim1_neon
@@ -511,22 +518,16 @@ static void setup_rtcd_internal(void)
     (void)flags;
 
     av1_block_error = av1_block_error_neon;
-#if HAVE_SVE
     if (flags & HAS_SVE) av1_block_error = av1_block_error_sve;
-#endif
     av1_block_error_lp = av1_block_error_lp_neon;
-#if HAVE_SVE
     if (flags & HAS_SVE) av1_block_error_lp = av1_block_error_lp_sve;
-#endif
     av1_convolve_2d_scale = av1_convolve_2d_scale_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_scale = av1_convolve_2d_scale_neon_i8mm;
     av1_convolve_2d_sr = av1_convolve_2d_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_2d_sr = av1_convolve_2d_sr_neon_i8mm;
-#if HAVE_SVE2
     if (flags & HAS_SVE2) av1_convolve_2d_sr = av1_convolve_2d_sr_sve2;
-#endif
     av1_convolve_x_sr = av1_convolve_x_sr_neon;
     if (flags & HAS_NEON_DOTPROD) av1_convolve_x_sr = av1_convolve_x_sr_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_convolve_x_sr = av1_convolve_x_sr_neon_i8mm;
@@ -550,13 +551,9 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_NEON_DOTPROD) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_dotprod;
     if (flags & HAS_NEON_I8MM) av1_resize_and_extend_frame = av1_resize_and_extend_frame_neon_i8mm;
     av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_neon;
-#if HAVE_SVE
     if (flags & HAS_SVE) av1_wedge_sign_from_residuals = av1_wedge_sign_from_residuals_sve;
-#endif
     av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_neon;
-#if HAVE_SVE
     if (flags & HAS_SVE) av1_wedge_sse_from_residuals = av1_wedge_sse_from_residuals_sve;
-#endif
 }
 #endif
 

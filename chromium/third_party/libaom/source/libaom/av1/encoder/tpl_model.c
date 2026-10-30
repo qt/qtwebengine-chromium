@@ -212,6 +212,24 @@ void av1_setup_tpl_buffers(AV1_PRIMARY *const ppi,
   tpl_data->prev_gop_arf_disp_order = -1;
 }
 
+static inline void tpl_subtract_block(BitDepthInfo bd_info, int rows, int cols,
+                                      int16_t *diff, ptrdiff_t diff_stride,
+                                      const uint8_t *src8, ptrdiff_t src_stride,
+                                      const uint8_t *pred8,
+                                      ptrdiff_t pred_stride) {
+  assert(rows >= 4 && cols >= 4);
+#if CONFIG_AV1_HIGHBITDEPTH
+  if (bd_info.use_highbitdepth_buf) {
+    aom_highbd_subtract_block(rows, cols, diff, diff_stride, src8, src_stride,
+                              pred8, pred_stride);
+    return;
+  }
+#endif
+  (void)bd_info;
+  aom_subtract_block(rows, cols, diff, diff_stride, src8, src_stride, pred8,
+                     pred_stride);
+}
+
 static inline int32_t tpl_get_satd_cost(BitDepthInfo bd_info, int16_t *src_diff,
                                         int diff_stride, const uint8_t *src,
                                         int src_stride, const uint8_t *dst,
@@ -219,7 +237,7 @@ static inline int32_t tpl_get_satd_cost(BitDepthInfo bd_info, int16_t *src_diff,
                                         int bw, int bh, TX_SIZE tx_size) {
   const int pix_num = bw * bh;
 
-  av1_subtract_block(bd_info, bh, bw, src_diff, diff_stride, src, src_stride,
+  tpl_subtract_block(bd_info, bh, bw, src_diff, diff_stride, src, src_stride,
                      dst, dst_stride);
   av1_quick_txfm(/*use_hadamard=*/0, tx_size, bd_info, src_diff, bw, coeff);
   return aom_satd(coeff, pix_num);
@@ -247,7 +265,7 @@ static inline void txfm_quant_rdcost(
   const MACROBLOCKD *xd = &x->e_mbd;
   const BitDepthInfo bd_info = get_bit_depth_info(xd);
   uint16_t eob;
-  av1_subtract_block(bd_info, bh, bw, src_diff, diff_stride, src, src_stride,
+  tpl_subtract_block(bd_info, bh, bw, src_diff, diff_stride, src, src_stride,
                      dst, dst_stride);
   av1_quick_txfm(/*use_hadamard=*/0, tx_size, bd_info, src_diff, bw, coeff);
 
@@ -836,6 +854,20 @@ static inline void mode_estimation(AV1_COMP *cpi, TplTxfmStats *tpl_txfm_stats,
           cpi, x, src_mb_buffer, ref_mb, src_stride, ref_stride, src_width,
           ref_width, bsize, center_mvs[idx].mv.as_mv, &this_mv);
 
+#if CONFIG_AV1_HIGHBITDEPTH
+      if (xd->bd > 8 && cpi->oxcf.algo_cfg.sharpness == 3) {
+        // Bias towards (0,0) / short motion vectors in stationary background.
+        // Require a noticeable SAD improvement before replacing (0,0) with a
+        // non-zero MV.
+        if (bestsme != UINT32_MAX && best_rfidx_mv.as_int == 0 &&
+            this_mv.as_int != 0) {
+          if (thissme + (thissme >> 4) >= bestsme) {
+            continue;
+          }
+        }
+      }
+#endif
+
       if (thissme < bestsme) {
         bestsme = thissme;
         best_rfidx_mv = this_mv;
@@ -851,7 +883,11 @@ static inline void mode_estimation(AV1_COMP *cpi, TplTxfmStats *tpl_txfm_stats,
     // Store inter cost for each ref frame. This is used to prune inter modes.
     tpl_stats->pred_error[rf_idx] = AOMMAX(1, inter_cost);
 
-    if (inter_cost < best_inter_cost) {
+    // If we have saved the previous arf frame. Only allow using it as reference
+    // for previous gop.
+    if (inter_cost < best_inter_cost &&
+        (tpl_data->prev_gop_arf_disp_order < 0 ||
+         tpl_data->src_ref_frame[rf_idx] != tpl_data->ref_frame[rf_idx])) {
       best_rf_idx = rf_idx;
 
       best_inter_cost = inter_cost;
@@ -959,7 +995,8 @@ static inline void mode_estimation(AV1_COMP *cpi, TplTxfmStats *tpl_txfm_stats,
     int rate_mv;
     av1_joint_motion_search(cpi, x, bsize, tmp_mv, NULL, 0, &rate_mv,
                             !cpi->sf.mv_sf.disable_second_mv,
-                            NUM_JOINT_ME_REFINE_ITER);
+                            NUM_JOINT_ME_REFINE_ITER,
+                            /*use_subpel_mv_cost_none=*/true);
 
     for (int ref = 0; ref < 2; ++ref) {
       struct buf_2d ref_buf = { NULL, ref_frame_ptr[ref]->y_buffer,
@@ -981,7 +1018,13 @@ static inline void mode_estimation(AV1_COMP *cpi, TplTxfmStats *tpl_txfm_stats,
     inter_cost =
         tpl_get_satd_cost(bd_info, src_diff, bw, src_mb_buffer, src_stride,
                           predictor, bw, coeff, bw, bh, tx_size);
-    if (inter_cost < best_inter_cost) {
+
+    // If we have saved the previous arf frame. Only allow using it as reference
+    // for previous gop.
+    if (inter_cost < best_inter_cost &&
+        (tpl_data->prev_gop_arf_disp_order < 0 ||
+         (tpl_data->src_ref_frame[rf_idx0] != tpl_data->ref_frame[rf_idx0] &&
+          tpl_data->src_ref_frame[rf_idx1] != tpl_data->ref_frame[rf_idx1]))) {
       best_cmp_rf_idx = cmp_rf_idx;
       best_inter_cost = inter_cost;
       best_mv[0] = tmp_mv[0];
@@ -1625,12 +1668,16 @@ static void mc_flow_synthesizer(TplParams *tpl_data, int frame_idx, int mi_rows,
   }
 }
 
+#define MIN_TPL_Q_INDEX 120
+#define MAX_TPL_Q_INDEX 220
+
 static inline int init_gop_frames_for_tpl(
     AV1_COMP *cpi, const EncodeFrameParams *const init_frame_params,
     GF_GROUP *gf_group, int *tpl_group_frames, int *pframe_qindex) {
   AV1_COMMON *cm = &cpi->common;
   assert(cpi->gf_frame_index == 0);
   *pframe_qindex = 0;
+  int leaf_frame_qindex = *pframe_qindex;
 
   RefFrameMapPair ref_frame_map_pairs[REF_FRAMES];
   init_ref_map_pair(cpi, ref_frame_map_pairs);
@@ -1641,6 +1688,7 @@ static inline int init_gop_frames_for_tpl(
   TplParams *const tpl_data = &cpi->ppi->tpl_data;
 
   int ref_picture_map[REF_FRAMES];
+  int has_prev_arf = 0;
 
   for (int i = 0; i < REF_FRAMES; ++i) {
     if (frame_params.frame_type == KEY_FRAME) {
@@ -1651,15 +1699,22 @@ static inline int init_gop_frames_for_tpl(
       if (cm->ref_frame_map[i]->display_order_hint ==
           tpl_data->prev_gop_arf_disp_order) {
         tpl_data->tpl_frame[-i - 1].gf_picture = &tpl_data->prev_gop_arf_src;
+        tpl_data->tpl_frame[-i - 1].rec_picture =
+            &tpl_data->prev_gop_arf_tpl_recon;
+        has_prev_arf = 1;
       } else {
         tpl_data->tpl_frame[-i - 1].gf_picture = &cm->ref_frame_map[i]->buf;
+        tpl_data->tpl_frame[-i - 1].rec_picture = &cm->ref_frame_map[i]->buf;
       }
-      tpl_data->tpl_frame[-i - 1].rec_picture = &cm->ref_frame_map[i]->buf;
       tpl_data->tpl_frame[-i - 1].frame_display_index =
           cm->ref_frame_map[i]->display_order_hint;
     }
 
     ref_picture_map[i] = -i - 1;
+  }
+
+  if (frame_params.frame_type != KEY_FRAME && !has_prev_arf) {
+    tpl_data->prev_gop_arf_disp_order = -1;
   }
 
   *tpl_group_frames = 0;
@@ -1680,8 +1735,20 @@ static inline int init_gop_frames_for_tpl(
         frame_update_type == OVERLAY_UPDATE;
     frame_params.frame_type = gf_group->frame_type[gf_index];
 
-    if (frame_update_type == LF_UPDATE)
+    if (frame_update_type == LF_UPDATE) {
       *pframe_qindex = gf_group->q_val[gf_index];
+      leaf_frame_qindex = *pframe_qindex;
+      if (cpi->oxcf.rc_cfg.mode == AOM_VBR || cpi->oxcf.rc_cfg.mode == AOM_Q) {
+        const int bit_depth = cm->seq_params->bit_depth;
+        const double q_val = av1_convert_qindex_to_q(*pframe_qindex, bit_depth);
+        const double qindex_ratio = (double)(*pframe_qindex) / MAXQ;
+        const double qstep_ratio = 1.0 - (qindex_ratio * qindex_ratio * 0.5);
+        const int delta_qindex =
+            av1_compute_qdelta(&cpi->rc, q_val, q_val * qstep_ratio, bit_depth);
+        *pframe_qindex = CLIP(*pframe_qindex + delta_qindex, MIN_TPL_Q_INDEX,
+                              MAX_TPL_Q_INDEX);
+      }
+    }
 
     const struct lookahead_entry *buf = av1_lookahead_peek(
         cpi->ppi->lookahead, lookahead_index, cpi->compressor_stage);
@@ -1798,7 +1865,9 @@ static inline int init_gop_frames_for_tpl(
       }
     }
 #endif  // CONFIG_BITRATE_ACCURACY && CONFIG_THREE_PASS
-    gf_group->q_val[gf_index] = *pframe_qindex;
+    // Store the unclipped qindex in gf_group->q_val[] which is used when
+    // ducky_encode is on.
+    gf_group->q_val[gf_index] = leaf_frame_qindex;
     const int true_disp = (int)(tpl_frame->frame_display_index);
     av1_get_ref_frames(ref_frame_map_pairs, true_disp, cpi, gf_index, 0,
                        remapped_ref_idx);
@@ -1864,23 +1933,19 @@ int av1_tpl_stats_ready(const TplParams *tpl_data, int gf_frame_index) {
   return tpl_data->tpl_frame[gf_frame_index].is_valid;
 }
 
-static inline int eval_gop_length(double *beta, int gop_eval) {
-  switch (gop_eval) {
-    case 1:
+static inline int eval_gop_length(double *beta,
+                                  int gop_length_decision_method) {
+  switch (gop_length_decision_method) {
+    case 0:
       // Allow larger GOP size if the base layer ARF has higher dependency
       // factor than the intermediate ARF and both ARFs have reasonably high
       // dependency factors.
-      return (beta[0] >= beta[1] + 0.7) && beta[0] > 3.0;
-    case 2:
-      if ((beta[0] >= beta[1] + 0.4) && beta[0] > 1.6)
-        return 1;  // Don't shorten the gf interval
-      else if ((beta[0] < beta[1] + 0.1) || beta[0] <= 1.4)
+      if ((beta[0] < beta[1] + 0.1) || beta[0] <= 1.4)
         return 0;  // Shorten the gf interval
       else
-        return 2;  // Cannot decide the gf interval, so redo the
-                   // tpl stats calculation.
-    case 3: return beta[0] > 1.1;
-    default: return 2;
+        return 1;  // Don't shorten the gf interval
+    case 1: return beta[0] > 1.1;
+    default: assert(0 && "Invalid gop length decision method"); return -1;
   }
 }
 
@@ -1905,13 +1970,14 @@ void av1_tpl_preload_rc_estimate(AV1_COMP *cpi,
 }
 
 static inline int skip_tpl_for_frame(const GF_GROUP *gf_group, int frame_idx,
-                                     int gop_eval, int approx_gop_eval,
+                                     int gop_length_decision_method,
+                                     int approx_gop_eval,
                                      int reduce_num_frames) {
-  // When gop_eval is set to 2, tpl stats calculation is done for ARFs from base
-  // layer, (base+1) layer and (base+2) layer. When gop_eval is set to 3,
-  // tpl stats calculation is limited to ARFs from base layer and (base+1)
-  // layer.
-  const int num_arf_layers = (gop_eval == 2) ? 3 : 2;
+  // When gop_length_decision_method is set to 0, tpl stats calculation is done
+  // for ARFs from base layer, (base+1) layer and (base+2) layer. When
+  // gop_length_decision_method is set to 1, tpl stats calculation is limited to
+  // ARFs from base layer and (base+1) layer.
+  const int num_arf_layers = (gop_length_decision_method == 0) ? 3 : 2;
   const int gop_length = get_gop_length(gf_group);
 
   if (gf_group->update_type[frame_idx] == INTNL_OVERLAY_UPDATE ||
@@ -2044,7 +2110,7 @@ static void trim_tpl_stats(struct aom_internal_error_info *error_info,
   extrc_tpl_gop_stats->frame_stats_list = new_frame_stats;
 }
 
-int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
+int av1_tpl_setup_stats(AV1_COMP *cpi, int approx_gop_eval,
                         const EncodeFrameParams *const frame_params) {
 #if CONFIG_COLLECT_COMPONENT_TIMING
   start_timing(cpi, av1_tpl_setup_stats_time);
@@ -2056,7 +2122,8 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
   GF_GROUP *gf_group = &cpi->ppi->gf_group;
   EncodeFrameParams this_frame_params = *frame_params;
   TplParams *const tpl_data = &cpi->ppi->tpl_data;
-  int approx_gop_eval = (gop_eval > 1);
+  const int gop_length_decision_method =
+      cpi->sf.tpl_sf.gop_length_decision_method;
 
   if (cpi->superres_mode != AOM_SUPERRES_NONE) {
     assert(cpi->superres_mode != AOM_SUPERRES_AUTO);
@@ -2127,8 +2194,8 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
   // Backward propagation from tpl_group_frames to 1.
   for (int frame_idx = cpi->gf_frame_index; frame_idx < tpl_gf_group_frames;
        ++frame_idx) {
-    if (skip_tpl_for_frame(gf_group, frame_idx, gop_eval, approx_gop_eval,
-                           reduce_num_frames))
+    if (skip_tpl_for_frame(gf_group, frame_idx, gop_length_decision_method,
+                           approx_gop_eval, reduce_num_frames))
       continue;
 
     init_mc_flow_dispenser(cpi, frame_idx, pframe_qindex);
@@ -2171,8 +2238,8 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
 
   for (int frame_idx = tpl_gf_group_frames - 1;
        frame_idx >= cpi->gf_frame_index; --frame_idx) {
-    if (skip_tpl_for_frame(gf_group, frame_idx, gop_eval, approx_gop_eval,
-                           reduce_num_frames))
+    if (skip_tpl_for_frame(gf_group, frame_idx, gop_length_decision_method,
+                           approx_gop_eval, reduce_num_frames))
       continue;
 
     mc_flow_synthesizer(tpl_data, frame_idx, cm->mi_params.mi_rows,
@@ -2188,7 +2255,7 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
 #if CONFIG_COLLECT_COMPONENT_TIMING
   // Record the time if the function returns.
   if (cpi->common.tiles.large_scale || gf_group->max_layer_depth_allowed == 0 ||
-      !gop_eval)
+      !approx_gop_eval)
     end_timing(cpi, av1_tpl_setup_stats_time);
 #endif
 
@@ -2199,7 +2266,7 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
   }
   if (cpi->common.tiles.large_scale) return 0;
   if (gf_group->max_layer_depth_allowed == 0) return 1;
-  if (!gop_eval) return 0;
+  if (!approx_gop_eval) return 0;
   assert(gf_group->arf_index >= 0);
 
   double beta[2] = { 0.0 };
@@ -2211,7 +2278,7 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
 #if CONFIG_COLLECT_COMPONENT_TIMING
   end_timing(cpi, av1_tpl_setup_stats_time);
 #endif
-  return eval_gop_length(beta, gop_eval);
+  return eval_gop_length(beta, gop_length_decision_method);
 }
 
 void av1_tpl_rdmult_setup(AV1_COMP *cpi) {

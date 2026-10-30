@@ -227,6 +227,7 @@ struct av1_extracfg {
   // Indicates if the application of post-processing filters should be skipped
   // on reconstructed frame.
   unsigned int skip_postproc_filtering;
+  int mode_ref_delta_enabled;
   // the name of the second pass output file when passes > 2
   const char *two_pass_output;
   const char *second_pass_log;
@@ -247,6 +248,7 @@ struct av1_extracfg {
   int sb_qp_sweep;
   aom_screen_detection_mode screen_detection_mode;
   unsigned int validate_hbd_input;
+  unsigned int force_max_q;
 };
 
 #if !CONFIG_REALTIME_ONLY
@@ -396,6 +398,7 @@ static const struct av1_extracfg default_extra_cfg = {
   -1,              // fwd_kf_dist
   LOOPFILTER_ALL,  // loopfilter_control
   0,               // skip_postproc_filtering
+  1,               // mode_ref_delta_enabled
   NULL,            // two_pass_output
   NULL,            // second_pass_log
   0,               // auto_intra_tools_off
@@ -404,6 +407,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,               // sb_qp_sweep
   AOM_SCREEN_DETECTION_STANDARD,
   1,  // validate_hbd_input
+  0,  // force_max_q
 };
 #else
 // Some settings are changed for realtime only build.
@@ -553,6 +557,7 @@ static const struct av1_extracfg default_extra_cfg = {
   -1,              // fwd_kf_dist
   LOOPFILTER_ALL,  // loopfilter_control
   0,               // skip_postproc_filtering
+  1,               // mode_ref_delta_enabled
   NULL,            // two_pass_output
   NULL,            // second_pass_log
   0,               // auto_intra_tools_off
@@ -561,6 +566,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,               // sb_qp_sweep
   AOM_SCREEN_DETECTION_STANDARD,
   1,  // validate_hbd_input
+  0,  // force_max_q
 };
 #endif
 
@@ -881,8 +887,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
 #endif
 
 #if !CONFIG_TUNE_VMAF
-  if (extra_cfg->tuning >= AOM_TUNE_VMAF_WITH_PREPROCESSING &&
-      extra_cfg->tuning <= AOM_TUNE_VMAF_NEG_MAX_GAIN) {
+  if (is_vmaf_tuning_mode(extra_cfg->tuning)) {
     ERROR(
         "This error may be related to the wrong configuration options: try to "
         "set -DCONFIG_TUNE_VMAF=1 at the time CMake is run.");
@@ -943,6 +948,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
   RANGE_CHECK_HI(extra_cfg, deltaq_strength, 1000);
   RANGE_CHECK_HI(extra_cfg, loopfilter_control, 3);
   RANGE_CHECK_BOOL(extra_cfg, skip_postproc_filtering);
+  RANGE_CHECK_BOOL(extra_cfg, mode_ref_delta_enabled);
   RANGE_CHECK_HI(extra_cfg, enable_cdef, 3);
   RANGE_CHECK_BOOL(extra_cfg, auto_intra_tools_off);
   RANGE_CHECK_BOOL(extra_cfg, strict_level_conformance);
@@ -1270,6 +1276,7 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
   rc_cfg->vbrbias = cfg->rc_2pass_vbr_bias_pct;
   rc_cfg->vbrmin_section = cfg->rc_2pass_vbr_minsection_pct;
   rc_cfg->vbrmax_section = cfg->rc_2pass_vbr_maxsection_pct;
+  rc_cfg->force_max_q = extra_cfg->force_max_q;
 
   // Set Toolset related configuration.
   tool_cfg->bit_depth = cfg->g_bit_depth;
@@ -1362,6 +1369,7 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
       resize_cfg->resize_mode ? 0 : extra_cfg->enable_tpl_model;
   algo_cfg->loopfilter_control = extra_cfg->loopfilter_control;
   algo_cfg->skip_postproc_filtering = extra_cfg->skip_postproc_filtering;
+  algo_cfg->mode_ref_delta_enabled = extra_cfg->mode_ref_delta_enabled;
   algo_cfg->screen_detection_mode = extra_cfg->screen_detection_mode;
 
   // Set two-pass stats configuration.
@@ -1402,11 +1410,14 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
 
   // Now, low complexity decode mode supports good-quality encoding (speed 1 to
   // 3) for vertical videos (608p to 1080p) and horizontal videos (720p to
-  // 1080p). This can be further modified if needed.
+  // 1080p) when sharpness is not equal to 3. This can be further modified if
+  // needed.
   const int is_low_complexity_decode_mode_supported =
       (cfg->g_usage == AOM_USAGE_GOOD_QUALITY) &&
       (oxcf->speed >= 1 && oxcf->speed <= 3) &&
-      (AOMMIN(cfg->g_w, cfg->g_h) >= 608 && AOMMIN(cfg->g_w, cfg->g_h) <= 1080);
+      (AOMMIN(cfg->g_w, cfg->g_h) >= 608 &&
+       AOMMIN(cfg->g_w, cfg->g_h) <= 1080) &&
+      (extra_cfg->sharpness != 3);
   oxcf->enable_low_complexity_decode =
       extra_cfg->enable_low_complexity_decode &&
       is_low_complexity_decode_mode_supported;
@@ -1661,21 +1672,31 @@ static aom_codec_err_t encoder_set_config(aom_codec_alg_priv_t *ctx,
     if (cfg->g_lag_in_frames > 1 || cfg->g_pass != AOM_RC_ONE_PASS)
       ERROR("Cannot change width or height after initialization");
     // Note: function encoder_set_config() is allowed to be called multiple
-    // times. However, when the original frame width or height is less than two
-    // times of the new frame width or height, a forced key frame should be
-    // used (for the case of single spatial layer, since otherwise a previous
+    // times. In one-pass mode without lookahead (g_lag_in_frames == 0),
+    // and with the maximum frame size declared up front via
+    // g_forced_max_frame_width/height, reference frame scaling allows upscaling
+    // up to 16x and downscaling by up to 2x without forcing a keyframe. The
+    // forced maximum frame size is required because the internal buffers are
+    // then allocated for that maximum; without it they are only sized for the
+    // current frame size and a larger frame would overflow them. Outside of
+    // this mode, or if reference frame scaling constraints are violated, a
+    // keyframe is forced (for single spatial layer, since otherwise a previous
     // encoded frame at a lower layer may be the desired reference). To make
-    // sure the correct detection of a forced key frame, we need
-    // to update the frame width and height only when the actual encoding is
-    // performed. cpi->last_coded_width and cpi->last_coded_height are used to
-    // track the actual coded frame size.
+    // sure the correct detection of a forced key frame, we need to update the
+    // frame width and height only when the actual encoding is performed.
+    // cpi->last_coded_width and cpi->last_coded_height are used to track the
+    // actual coded frame size.
+    const bool allow_ref_scaled_upscale =
+        cfg->g_forced_max_frame_width && cfg->g_forced_max_frame_height &&
+        cfg->g_pass == AOM_RC_ONE_PASS && cfg->g_lag_in_frames == 0;
     if (ctx->ppi->cpi->svc.number_spatial_layers == 1 &&
         ctx->ppi->cpi->last_coded_width && ctx->ppi->cpi->last_coded_height &&
         (!valid_ref_frame_size(ctx->ppi->cpi->last_coded_width,
                                ctx->ppi->cpi->last_coded_height, cfg->g_w,
                                cfg->g_h) ||
-         ((int)cfg->g_w > ctx->ppi->cpi->last_coded_width) ||
-         ((int)cfg->g_h > ctx->ppi->cpi->last_coded_height))) {
+         (!allow_ref_scaled_upscale &&
+          (((int)cfg->g_w > ctx->ppi->cpi->last_coded_width) ||
+           ((int)cfg->g_h > ctx->ppi->cpi->last_coded_height))))) {
       force_key = 1;
     }
   }
@@ -2834,6 +2855,14 @@ static aom_codec_err_t ctrl_set_skip_postproc_filtering(
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
+static aom_codec_err_t ctrl_set_mode_ref_delta_enabled(
+    aom_codec_alg_priv_t *ctx, va_list args) {
+  struct av1_extracfg extra_cfg = ctx->extra_cfg;
+  extra_cfg.mode_ref_delta_enabled =
+      CAST(AV1E_SET_MODE_REF_DELTA_ENABLED, args);
+  return update_extra_cfg(ctx, &extra_cfg);
+}
+
 static aom_codec_err_t ctrl_set_rtc_external_rc(aom_codec_alg_priv_t *ctx,
                                                 va_list args) {
   ctx->ppi->cpi->rc.rtc_external_ratectrl =
@@ -3213,7 +3242,9 @@ static aom_codec_err_t encoder_destroy(aom_codec_alg_priv_t *ctx) {
 
   if (ctx->ppi) {
     AV1_PRIMARY *ppi = ctx->ppi;
-    av1_extrc_delete(&ppi->cpi->ext_ratectrl);
+    if (ppi->cpi) {
+      av1_extrc_delete(&ppi->cpi->ext_ratectrl);
+    }
     for (int i = 0; i < MAX_PARALLEL_FRAMES - 1; i++) {
       if (ppi->parallel_frames_data[i].cx_data) {
         free(ppi->parallel_frames_data[i].cx_data);
@@ -3386,8 +3417,7 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
   }
 
 #if CONFIG_TUNE_VMAF
-  if (ctx->extra_cfg.tuning >= AOM_TUNE_VMAF_WITH_PREPROCESSING &&
-      ctx->extra_cfg.tuning <= AOM_TUNE_VMAF_NEG_MAX_GAIN) {
+  if (is_vmaf_tuning_mode(ctx->extra_cfg.tuning)) {
     aom_init_vmaf_model(&ppi->cpi->vmaf_info.vmaf_model,
                         ppi->cpi->oxcf.tune_cfg.vmaf_model_path);
   }
@@ -4061,10 +4091,16 @@ static aom_codec_err_t ctrl_set_number_spatial_layers(aom_codec_alg_priv_t *ctx,
   // it is false (the default) the actual limit is 3 for both spatial and
   // temporal layers. Given the order of these calls are unpredictable the
   // final check is deferred until encoder_encode() (av1_set_svc_fixed_mode()).
+  // The condition to return invalid_param when use_svc is set
+  // (set in set_svc_params) is to avoid calling this control when
+  // set_svc_params is already called (which sets the number of spatial and
+  // temporal layers).
   if (number_spatial_layers <= 0 ||
-      number_spatial_layers > MAX_NUM_SPATIAL_LAYERS)
+      number_spatial_layers > MAX_NUM_SPATIAL_LAYERS || ctx->ppi->use_svc)
     return AOM_CODEC_INVALID_PARAM;
   ctx->ppi->number_spatial_layers = number_spatial_layers;
+  ctx->ppi->cpi->common.spatial_layer_id = clamp(
+      ctx->ppi->cpi->common.spatial_layer_id, 0, number_spatial_layers - 1);
   // update_encoder_cfg() is somewhat costly and this control may be called
   // multiple times, so update_encoder_cfg() is only called to ensure frame and
   // superblock sizes are updated before they're fixed by the first encode
@@ -4080,7 +4116,10 @@ static aom_codec_err_t ctrl_set_layer_id(aom_codec_alg_priv_t *ctx,
   aom_svc_layer_id_t *const data = va_arg(args, aom_svc_layer_id_t *);
   if (data->spatial_layer_id < 0 || data->temporal_layer_id < 0 ||
       data->spatial_layer_id >= (int)ctx->ppi->number_spatial_layers ||
-      data->temporal_layer_id >= (int)ctx->ppi->number_temporal_layers) {
+      data->temporal_layer_id >= (int)ctx->ppi->number_temporal_layers ||
+      data->spatial_layer_id >= (int)ctx->ppi->cpi->svc.number_spatial_layers ||
+      data->temporal_layer_id >=
+          (int)ctx->ppi->cpi->svc.number_temporal_layers) {
     return AOM_CODEC_INVALID_PARAM;
   }
   ctx->ppi->cpi->common.spatial_layer_id = data->spatial_layer_id;
@@ -4132,20 +4171,16 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
     ctx->next_frame_flags |= AOM_EFLAG_FORCE_KF;
     av1_set_svc_seq_params(ppi);
     av1_free_svc_cyclic_refresh(cpi);
-    // Check for valid values for the spatial/temporal_layer_id here, since
-    // there has been a dynamic change in the number_spatial/temporal_layers,
-    // and if the ctrl_set_layer_id is not used after this call, the
-    // previous (last_encoded) values of spatial/temporal_layer_id will be used,
-    // which may be invalid.
-    cpi->svc.spatial_layer_id =
-        clamp(cpi->svc.spatial_layer_id, 0, cpi->svc.number_spatial_layers - 1);
-    cpi->svc.temporal_layer_id = clamp(cpi->svc.temporal_layer_id, 0,
-                                       cpi->svc.number_temporal_layers - 1);
-    cpi->common.spatial_layer_id = clamp(cpi->common.spatial_layer_id, 0,
-                                         cpi->svc.number_spatial_layers - 1);
-    cpi->common.temporal_layer_id = clamp(cpi->common.temporal_layer_id, 0,
-                                          cpi->svc.number_temporal_layers - 1);
   }
+
+  // Check for valid values for the spatial/temporal_layer_id here.
+  // If ctrl_set_layer_id is not used after this call, the currently configured
+  // values of spatial/temporal_layer_id will be used, which may be out of
+  // bounds.
+  cpi->common.spatial_layer_id = cpi->svc.spatial_layer_id =
+      clamp(cpi->svc.spatial_layer_id, 0, cpi->svc.number_spatial_layers - 1);
+  cpi->common.temporal_layer_id = cpi->svc.temporal_layer_id =
+      clamp(cpi->svc.temporal_layer_id, 0, cpi->svc.number_temporal_layers - 1);
 
   if (ppi->number_spatial_layers > 1 || ppi->number_temporal_layers > 1) {
     unsigned int sl, tl;
@@ -4871,6 +4906,12 @@ static aom_codec_err_t encoder_set_option(aom_codec_alg_priv_t *ctx,
   } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.validate_hbd_input,
                               argv, err_string)) {
     extra_cfg.validate_hbd_input = arg_parse_int_helper(&arg, err_string);
+  } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.force_max_q, argv,
+                              err_string)) {
+    extra_cfg.force_max_q = arg_parse_uint_helper(&arg, err_string);
+  } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.resize_mode, argv,
+                              err_string)) {
+    ctx->cfg.rc_resize_mode = arg_parse_uint_helper(&arg, err_string);
   } else {
     match = 0;
     snprintf(err_string, ARG_ERR_MSG_MAX_LEN, "Cannot find aom option %s",
@@ -5079,6 +5120,7 @@ static aom_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { AV1E_SET_ENABLE_TX_SIZE_SEARCH, ctrl_set_enable_tx_size_search },
   { AV1E_SET_LOOPFILTER_CONTROL, ctrl_set_loopfilter_control },
   { AV1E_SET_SKIP_POSTPROC_FILTERING, ctrl_set_skip_postproc_filtering },
+  { AV1E_SET_MODE_REF_DELTA_ENABLED, ctrl_set_mode_ref_delta_enabled },
   { AV1E_SET_AUTO_INTRA_TOOLS_OFF, ctrl_set_auto_intra_tools_off },
   { AV1E_SET_RTC_EXTERNAL_RC, ctrl_set_rtc_external_rc },
   { AV1E_SET_QUANTIZER_ONE_PASS, ctrl_set_quantizer_one_pass },

@@ -1334,7 +1334,7 @@ void av1_ml_prune_4_partition(AV1_COMP *const cpi, MACROBLOCK *const x,
   const int mi_col = blk_params.mi_col;
   const BLOCK_SIZE bsize = blk_params.bsize;
 
-  int64_t(*rect_part_rd)[SUB_PARTITIONS_RECT] = part_state->rect_part_rd;
+  int64_t (*rect_part_rd)[SUB_PARTITIONS_RECT] = part_state->rect_part_rd;
   int64_t *split_rd = part_state->split_rd;
   if (ext_ml_model_decision_after_part_ab(
           cpi, x, bsize, part_ctx, best_rd, rect_part_rd, split_rd,
@@ -2469,6 +2469,7 @@ static void write_motion_feature_to_file(
   snprintf(filename, sizeof(filename), "%s/motion_search_feature_sb%d", path,
            sb_counter);
   FILE *pfile = fopen(filename, "w");
+  if (pfile == NULL) return;
   fprintf(pfile, "%d,%d,%d,%d,%d\n", mi_row, mi_col, bsize,
           block_size_wide[fixed_block_size], num_blocks);
   for (int i = 0; i < num_blocks; ++i) {
