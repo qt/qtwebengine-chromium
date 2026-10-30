@@ -34,4 +34,12 @@ static inline void ff_mpeg1_clean_buffers(MPVEncContext *s)
     memset(s->c.last_mv, 0, sizeof(s->c.last_mv));
 }
 
+static inline void ff_mpeg1_clean_buffers(MPVEncContext *s)
+{
+    s->last_dc[0] = 128 << s->c.intra_dc_precision;
+    s->last_dc[1] = s->last_dc[0];
+    s->last_dc[2] = s->last_dc[0];
+    memset(s->c.last_mv, 0, sizeof(s->c.last_mv));
+}
+
 #endif /* AVCODEC_MPEG12ENC_H */

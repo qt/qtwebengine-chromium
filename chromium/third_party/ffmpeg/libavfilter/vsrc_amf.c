@@ -76,8 +76,8 @@ AVFILTER_DEFINE_CLASS(amf_capture);
 
 #include <timeapi.h>
 
-typedef WINMMAPI MMRESULT (WINAPI *timeBeginPeriod_fn)( UINT uPeriod);
-typedef WINMMAPI MMRESULT (WINAPI *timeEndPeriod_fn)(UINT uPeriod);
+typedef MMRESULT (WINAPI *timeBeginPeriod_fn)(UINT uPeriod);
+typedef MMRESULT (WINAPI *timeEndPeriod_fn)(UINT uPeriod);
 
 static void amf_increase_timer_precision(AMFGrabContext *ctx)
 {
@@ -159,7 +159,7 @@ static int amf_init_vsrc(AVFilterLink *outlink)
                                                           amf_device_ctx->context,
                                                           AMFDisplayCapture,
                                                           &ctx->capture);
-    AMF_RETURN_IF_FALSE(ctx, res == AMF_OK, AVERROR_FILTER_NOT_FOUND, "CreateComponent(%ls) failed with error %d\n", AMFDisplayCapture, res);
+    AMF_RETURN_IF_FALSE(avctx, res == AMF_OK, AVERROR_FILTER_NOT_FOUND, "CreateComponent(%ls) failed with error %d\n", AMFDisplayCapture, res);
 
     AMF_ASSIGN_PROPERTY_INT64(res, ctx->capture, AMF_DISPLAYCAPTURE_MONITOR_INDEX, ctx->monitor_index);
     if (res != AMF_OK) {

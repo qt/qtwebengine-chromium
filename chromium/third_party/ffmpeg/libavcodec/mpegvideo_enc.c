@@ -1301,6 +1301,13 @@ static int load_input_picture(MPVMainEncContext *const m, const AVFrame *pic_arg
         display_picture_number = m->input_picture_number++;
 
         if (pts != AV_NOPTS_VALUE) {
+            if (s->c.codec_id == AV_CODEC_ID_MPEG4 &&
+                (pts > INT64_MAX / 2 / s->c.avctx->time_base.num ||
+                 pts < INT64_MIN / 2 / s->c.avctx->time_base.num)) {
+                av_log(s->c.avctx, AV_LOG_ERROR, "pts %"PRId64" is out of the supported range\n", pts);
+                return AVERROR_PATCHWELCOME;
+            }
+
             if (m->user_specified_pts != AV_NOPTS_VALUE) {
                 int64_t last = m->user_specified_pts;
 
@@ -1362,7 +1369,6 @@ static int load_input_picture(MPVMainEncContext *const m, const AVFrame *pic_arg
                 int w = AV_CEIL_RSHIFT(s->c.width , h_shift);
                 int h = AV_CEIL_RSHIFT(s->c.height, v_shift);
                 const uint8_t *src = pic_arg->data[i];
-                uint8_t *dst = pic->f->data[i];
                 int vpad = 16;
 
                 if (   s->c.codec_id == AV_CODEC_ID_MPEG2VIDEO
@@ -1371,7 +1377,8 @@ static int load_input_picture(MPVMainEncContext *const m, const AVFrame *pic_arg
                     vpad = 32;
 
                 if (!s->c.avctx->rc_buffer_size)
-                    dst += INPLACE_OFFSET;
+                    pic->f->data[i] += INPLACE_OFFSET;
+                uint8_t *dst = pic->f->data[i];
 
                 if (src_stride == dst_stride)
                     memcpy(dst, src, src_stride * h - src_stride + w);
@@ -1435,8 +1442,7 @@ static int skip_check(MPVMainEncContext *const m,
         const int bw = plane ? 1 : 2;
         for (int y = 0; y < s->c.mb_height * bw; y++) {
             for (int x = 0; x < s->c.mb_width * bw; x++) {
-                int off = p->shared ? 0 : 16;
-                const uint8_t *dptr = p->f->data[plane] + 8 * (x + y * stride) + off;
+                const uint8_t *dptr = p->f->data[plane] + 8 * (x + y * stride);
                 const uint8_t *rptr = ref->f->data[plane] + 8 * (x + y * stride);
                 int v = m->frame_skip_cmp_fn(s, dptr, rptr, stride, 8);
 
@@ -1517,29 +1523,22 @@ static int estimate_best_b_count(MPVMainEncContext *const m)
                                            s->c.next_pic.ptr;
 
         if (pre_input_ptr) {
-            const uint8_t *data[4];
-            memcpy(data, pre_input_ptr->f->data, sizeof(data));
-
-            if (!pre_input_ptr->shared && i) {
-                data[0] += INPLACE_OFFSET;
-                data[1] += INPLACE_OFFSET;
-                data[2] += INPLACE_OFFSET;
-            }
+            const AVFrame *const pre_input = pre_input_ptr->f;
 
             s->mpvencdsp.shrink[scale](m->tmp_frames[i]->data[0],
                                        m->tmp_frames[i]->linesize[0],
-                                       data[0],
-                                       pre_input_ptr->f->linesize[0],
+                                       pre_input->data[0],
+                                       pre_input->linesize[0],
                                        width, height);
             s->mpvencdsp.shrink[scale](m->tmp_frames[i]->data[1],
                                        m->tmp_frames[i]->linesize[1],
-                                       data[1],
-                                       pre_input_ptr->f->linesize[1],
+                                       pre_input->data[1],
+                                       pre_input->linesize[1],
                                        width >> 1, height >> 1);
             s->mpvencdsp.shrink[scale](m->tmp_frames[i]->data[2],
                                        m->tmp_frames[i]->linesize[2],
-                                       data[2],
-                                       pre_input_ptr->f->linesize[2],
+                                       pre_input->data[2],
+                                       pre_input->linesize[2],
                                        width >> 1, height >> 1);
         }
     }
@@ -1722,6 +1721,12 @@ static int set_bframe_chain_length(MPVMainEncContext *const m)
             }
         }
 
+        if (s->c.codec_id == AV_CODEC_ID_MPEG4)
+            while (b_frames &&
+                   m->input_picture[b_frames]->f->pts * s->c.avctx->time_base.num -
+                   s->c.last_non_b_time > UINT16_MAX)
+                b_frames--;
+
         for (int i = b_frames - 1; i >= 0; i--) {
             int type = m->input_picture[i]->f->pict_type;
             if (type && type != AV_PICTURE_TYPE_B)
@@ -1802,8 +1807,11 @@ static int select_input_picture(MPVMainEncContext *const m)
             ret = av_frame_ref(s->new_pic, m->reordered_input_picture[0]->f);
             if (ret < 0)
                 goto fail;
+            // The input was stored INPLACE_OFFSET into the buffer, which
+            // new_pic now points at. Point the frame back at the start of
+            // the buffer for the reconstruction.
             for (int i = 0; i < MPV_MAX_PLANES; i++)
-                s->new_pic->data[i] += INPLACE_OFFSET;
+                m->reordered_input_picture[0]->f->data[i] -= INPLACE_OFFSET;
         }
         s->c.cur_pic.ptr = m->reordered_input_picture[0];
         m->reordered_input_picture[0] = NULL;
@@ -1929,6 +1937,9 @@ int ff_mpv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
                                   (growing_buffer ? 64 : (MAX_MB_BYTES + 100));
         if (CONFIG_MJPEG_ENCODER && avctx->codec_id == AV_CODEC_ID_MJPEG) {
             ret = ff_mjpeg_add_icc_profile_size(avctx, s->new_pic, &pkt_size);
+            if (ret < 0)
+                return ret;
+            ret = ff_mjpeg_add_gain_map_size(avctx, s->mjpeg_ctx, s->new_pic, &pkt_size);
             if (ret < 0)
                 return ret;
         }
@@ -3665,9 +3676,9 @@ static void set_frame_distances(MPVEncContext *const s)
         s->c.pb_time = s->c.pp_time - (s->c.last_non_b_time - s->c.time);
         av_assert1(s->c.pb_time > 0 && s->c.pb_time < s->c.pp_time);
     }else{
+        av_assert1(s->picture_number == 0 || s->c.time > s->c.last_non_b_time);
         s->c.pp_time = s->c.time - s->c.last_non_b_time;
         s->c.last_non_b_time = s->c.time;
-        av_assert1(s->picture_number == 0 || s->c.pp_time > 0);
     }
 }
 
@@ -3678,12 +3689,10 @@ static int encode_picture(MPVMainEncContext *const m, const AVPacket *pkt)
     int bits;
     int context_count = s->c.slice_context_count;
 
-    /* we need to initialize some time vars before we can encode B-frames */
-    // RAL: Condition added for MPEG1VIDEO
-    if (s->c.out_format == FMT_MPEG1 || (s->c.h263_pred && s->c.msmpeg4_version == MSMP4_UNUSED))
+    if (CONFIG_MPEG4_ENCODER && s->c.codec_id == AV_CODEC_ID_MPEG4) {
         set_frame_distances(s);
-    if (CONFIG_MPEG4_ENCODER && s->c.codec_id == AV_CODEC_ID_MPEG4)
         ff_set_mpeg4_time(s);
+    }
 
 //    s->lambda = s->c.cur_pic.ptr->quality; //FIXME qscale / ... stuff for ME rate distortion
 

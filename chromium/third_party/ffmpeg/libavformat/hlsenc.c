@@ -30,6 +30,7 @@
 
 #include "libavutil/attributes_internal.h"
 #include "libavutil/avassert.h"
+#include "libavutil/macros.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -52,6 +53,9 @@
 #include "hlsplaylist.h"
 #include "internal.h"
 #include "mux.h"
+#if CONFIG_MP4_MUXER
+#include "movenc.h"
+#endif
 #include "os_support.h"
 #include "url.h"
 
@@ -666,6 +670,9 @@ static int do_encrypt(AVFormatContext *s, VariantStream *vs)
 
         if (!hls->iv) {
             AV_WB64(iv + 8, vs->sequence);
+        } else if (strlen(hls->iv) < sizeof(iv)) {
+            av_log(hls, AV_LOG_ERROR, "hls_enc_iv is shorter than %zu bytes\n", sizeof(iv));
+            return AVERROR(EINVAL);
         } else {
             memcpy(iv, hls->iv, sizeof(iv));
         }
@@ -690,6 +697,9 @@ static int do_encrypt(AVFormatContext *s, VariantStream *vs)
                 av_log(s, AV_LOG_ERROR, "Cannot generate a strong random key\n");
                 return ret;
             }
+        } else if (strlen(hls->key) < sizeof(key)) {
+            av_log(hls, AV_LOG_ERROR, "hls_enc_key is shorter than %zu bytes\n", sizeof(key));
+            return AVERROR(EINVAL);
         } else {
             memcpy(key, hls->key, sizeof(key));
         }
@@ -1140,20 +1150,31 @@ static int hls_append_segment(struct AVFormatContext *s, HLSContext *hls,
     return 0;
 }
 
-static int extract_segment_number(const char *filename) {
+static int extract_segment_number(const char *filename)
+{
     const char *dot = strrchr(filename, '.');
-    const char *num_start = dot - 1;
+    const char *num_start;
+    char *end;
+    long value;
 
-    while (num_start > filename && *num_start >= '0' && *num_start <= '9') {
+    if (!dot)
+        return -1;
+    if (dot == filename)
+        return -1;
+
+    num_start = dot;
+    while (num_start > filename &&
+           num_start[-1] >= '0' && num_start[-1] <= '9')
         num_start--;
-    }
-
-    num_start++;
-
     if (num_start == dot)
         return -1;
 
-    return atoi(num_start);
+    errno = 0;
+    value = strtol(num_start, &end, 10);
+    if (errno == ERANGE || end != dot || value > INT_MAX)
+        return -1;
+
+    return (int)value;
 }
 
 static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs)
@@ -1200,11 +1221,13 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
             ptr = av_stristr(line, "URI=\"");
             if (ptr) {
                 ptr += strlen("URI=\"");
-                end = av_stristr(ptr, ",");
+                end = strchr(ptr, '"');
                 if (end) {
-                    av_strlcpy(vs->key_uri, ptr, end - ptr);
+                    av_strlcpy(vs->key_uri, ptr,
+                               FFMIN(end - ptr + 1, sizeof(vs->key_uri)));
                 } else {
-                    av_strlcpy(vs->key_uri, ptr, sizeof(vs->key_uri));
+                    ret = AVERROR_INVALIDDATA;
+                    goto fail;
                 }
             }
 
@@ -1213,7 +1236,7 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
                 ptr += strlen("IV=0x");
                 end = av_stristr(ptr, ",");
                 if (end) {
-                    av_strlcpy(vs->iv_string, ptr, end - ptr);
+                    av_strlcpy(vs->iv_string, ptr, FFMIN(end - ptr + 1, sizeof(vs->iv_string)));
                 } else {
                     av_strlcpy(vs->iv_string, ptr, sizeof(vs->iv_string));
                 }
@@ -2477,6 +2500,8 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
                     ((pkt->flags & AV_PKT_FLAG_KEY) || (hls->flags & HLS_SPLIT_BY_TIME));
         is_ref_pkt = (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && (pkt->stream_index == vs->reference_stream_index);
     }
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE)
+        is_ref_pkt = can_split = 0;
     if (pkt->pts == AV_NOPTS_VALUE)
         is_ref_pkt = can_split = 0;
 
@@ -2506,6 +2531,11 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
         int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
         double cur_duration;
 
+#if CONFIG_MP4_MUXER
+        if (hls->segment_type == SEGMENT_TYPE_FMP4 && is_ref_pkt &&
+            pkt->dts != AV_NOPTS_VALUE)
+            ff_mov_set_fragment_end_hint(oc, stream_index, pkt, st->time_base);
+#endif
         av_write_frame(oc, NULL); /* Flush any buffered data */
         new_start_pos = avio_tell(oc->pb);
         vs->size = new_start_pos - vs->start_pos;
@@ -2513,6 +2543,7 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
         if (hls->segment_type == SEGMENT_TYPE_FMP4) {
             if (!vs->init_range_length) {
                 range_length = avio_close_dyn_buf(oc->pb, &vs->init_buffer);
+                oc->pb = NULL;
                 if (range_length <= 0)
                     return AVERROR(EINVAL);
                 avio_write(vs->out, vs->init_buffer, range_length);
@@ -2702,6 +2733,8 @@ static void hls_deinit(AVFormatContext *s)
         av_freep(&vs->vtt_m3u8_name);
 
         avformat_free_context(vs->vtt_avf);
+        if (vs->avf)
+            ffio_free_dyn_buf(&vs->avf->pb);
         avformat_free_context(vs->avf);
         if (hls->resend_init_file)
             av_freep(&vs->init_buffer);
@@ -2739,6 +2772,8 @@ static int hls_write_trailer(struct AVFormatContext *s)
         vs = &hls->var_streams[i];
         oc = vs->avf;
         vtt_oc = vs->vtt_avf;
+        if (!oc->pb)
+            continue;
         old_filename = av_strdup(oc->url);
         use_temp_file = 0;
 

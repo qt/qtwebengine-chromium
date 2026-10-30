@@ -28,13 +28,13 @@
  */
 #ifdef __clang__
 #pragma STDC FP_CONTRACT OFF
-#elif AV_GCC_VERSION_AT_LEAST(4, 8)
+#elif defined(__GNUC__)
 #pragma GCC optimize ("fp-contract=off")
 #elif defined(_MSC_VER)
 #pragma fp_contract (off)
 #endif
 
-#if AV_GCC_VERSION_AT_LEAST(4, 4)
+#if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC optimize ("finite-math-only")
 #endif
 
@@ -92,6 +92,7 @@
     SWS_FOR(TYPE, CLEAR,          REF_ENTRY)                \
     SWS_FOR(TYPE, LINEAR,         REF_ENTRY)                \
     SWS_FOR(TYPE, DITHER,         REF_ENTRY)                \
+    SWS_FOR(TYPE, LUT_3D,         REF_ENTRY)                \
     /* end of macro */
 
 static const SwsUOpTable uop_table = {
@@ -184,7 +185,10 @@ static int compile_c(SwsContext *ctx, const SwsOpList *ops, SwsCompiledOp *out)
     if (!uops)
         return AVERROR(ENOMEM);
 
-    int ret = ff_sws_ops_translate(ctx, ops, 0, uops);
+    const SwsUOpFlags flags = SWS_UOP_FLAG_EXPAND_BIT
+                            | SWS_UOP_FLAG_READ_PALETTE
+                            | SWS_UOP_FLAG_ADD;
+    int ret = ff_sws_ops_translate(ctx, ops, flags, uops);
     if (ret < 0)
         goto fail;
 

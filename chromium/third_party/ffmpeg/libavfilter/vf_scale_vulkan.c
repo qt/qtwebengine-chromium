@@ -22,12 +22,16 @@
 #include "vulkan_filter.h"
 #include "scale_eval.h"
 #include "filters.h"
+#include "formats.h"
 #include "colorspace.h"
 #include "video.h"
 #include "libswscale/swscale.h"
 
 extern const unsigned char ff_scale_comp_spv_data[];
 extern const unsigned int ff_scale_comp_spv_len;
+
+extern const unsigned char ff_debayer_comp_spv_data[];
+extern const unsigned int ff_debayer_comp_spv_len;
 
 extern const unsigned char ff_debayer_comp_spv_data[];
 extern const unsigned int ff_debayer_comp_spv_len;
@@ -72,6 +76,8 @@ typedef struct ScaleVulkanContext {
         int crop_w;
         int crop_h;
         float in_dims[2];
+        float in_chroma_loc[2];
+        float out_chroma_loc[2];
     } opts;
 
     char *out_format_string;
@@ -91,9 +97,12 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     ScaleVulkanContext *s = ctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
     FFVulkanShader *shd = &s->shd;
+    const AVPixFmtDescriptor *in_desc = av_pix_fmt_desc_get(s->vkctx.input_format);
+    int chroma_planes = 0;
 
     int in_planes = av_pix_fmt_count_planes(s->vkctx.input_format);
     int out_planes = av_pix_fmt_count_planes(s->vkctx.output_format);
+    const AVHWFramesContext *frames = (AVHWFramesContext *)in->hw_frames_ctx->data;
 
     switch (s->scaler) {
     case F_NEAREST:
@@ -106,6 +115,8 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
 
     if (s->vkctx.output_format == s->vkctx.input_format) {
         mode = MODE_COPY;
+        if (in_desc->log2_chroma_w || in_desc->log2_chroma_h)
+            chroma_planes = (1 << in_desc->comp[1].plane) | (1 << in_desc->comp[2].plane);
     } else {
         switch (s->vkctx.output_format) {
         case AV_PIX_FMT_NV12:    mode = MODE_NV12;   break;
@@ -115,14 +126,17 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
         }
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
     RET(ff_vk_init_sampler(vkctx, &s->sampler, 0, sampler_mode));
 
-    SPEC_LIST_CREATE(sl, 3, 3*sizeof(int32_t))
+    SPEC_LIST_CREATE(sl, 6, 6*sizeof(int32_t))
     SPEC_LIST_ADD(sl, 0, 32, out_planes);
     SPEC_LIST_ADD(sl, 1, 32, mode);
     SPEC_LIST_ADD(sl, 2, 32, s->out_range == AVCOL_RANGE_JPEG);
+    SPEC_LIST_ADD(sl, 3, 32, chroma_planes);
+    SPEC_LIST_ADD(sl, 4, 32, in_desc->log2_chroma_w);
+    SPEC_LIST_ADD(sl, 5, 32, in_desc->log2_chroma_h);
 
     ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT, sl,
                       (uint32_t []) { 32, 32, 1 }, 0);
@@ -167,8 +181,9 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
         s->opts.yuv_matrix[3][3] = 1.0;
     }
 
-    s->opts.in_dims[0] = in->width;
-    s->opts.in_dims[1] = in->height;
+    /* Normalized texture coordinates include hardware frame padding. */
+    s->opts.in_dims[0] = frames->width;
+    s->opts.in_dims[1] = frames->height;
 
     RET(ff_vk_shader_link(vkctx, shd,
                           ff_scale_comp_spv_data,
@@ -189,7 +204,7 @@ static av_cold int init_debayer(AVFilterContext *ctx, AVFrame *in)
     FFVulkanContext *vkctx = &s->vkctx;
     FFVulkanShader *shd = &s->shd;
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*2, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
     SPEC_LIST_CREATE(sl, 1, 1*sizeof(int32_t))
     SPEC_LIST_ADD(sl, 0, 32, s->debayer);
@@ -228,12 +243,26 @@ fail:
     return err;
 }
 
+static void chroma_loc_offset(float offset[2], enum AVChromaLocation loc,
+                              const AVPixFmtDescriptor *desc)
+{
+    int x, y;
+
+    if (loc == AVCHROMA_LOC_UNSPECIFIED)
+        loc = AVCHROMA_LOC_CENTER;
+    av_chroma_location_enum_to_pos(&x, &y, loc);
+    offset[0] = x * ((1 << desc->log2_chroma_w) - 1) / 256.0f;
+    offset[1] = y * ((1 << desc->log2_chroma_h) - 1) / 256.0f;
+}
+
 static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
 {
     int err;
     AVFilterContext *ctx = link->dst;
     ScaleVulkanContext *s = ctx->priv;
     AVFilterLink *outlink = ctx->outputs[0];
+    const AVPixFmtDescriptor *in_desc = av_pix_fmt_desc_get(s->vkctx.input_format);
+    const AVPixFmtDescriptor *out_desc = av_pix_fmt_desc_get(s->vkctx.output_format);
 
     AVFrame *out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
     if (!out) {
@@ -257,7 +286,10 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
 
     if (s->out_range != AVCOL_RANGE_UNSPECIFIED)
         out->color_range = s->out_range;
-    if (s->vkctx.output_format != s->vkctx.input_format)
+    if (outlink->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
+        out->chroma_location = outlink->chroma_location;
+    else if (s->vkctx.output_format != s->vkctx.input_format &&
+             !in_desc->log2_chroma_w && !in_desc->log2_chroma_h)
         out->chroma_location = AVCHROMA_LOC_TOPLEFT;
 
     if (!s->sws) {
@@ -274,6 +306,12 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
             else
                 RET(init_filter(ctx, in));
         }
+
+        /* Input without a chroma location is assumed to be sited like the output. */
+        chroma_loc_offset(s->opts.in_chroma_loc,
+                          in->chroma_location != AVCHROMA_LOC_UNSPECIFIED ?
+                          in->chroma_location : out->chroma_location, in_desc);
+        chroma_loc_offset(s->opts.out_chroma_loc, out->chroma_location, out_desc);
 
         RET(ff_vk_filter_process_simple(&s->vkctx, &s->e, &s->shd, out, in,
                                         s->sampler, 1, &s->opts, sizeof(s->opts)));
@@ -363,6 +401,24 @@ static int scale_vulkan_config_output(AVFilterLink *outlink)
     return ff_vk_filter_config_output(outlink);
 }
 
+static int scale_vulkan_query_formats(const AVFilterContext *avctx,
+                                      AVFilterFormatsConfig **cfg_in,
+                                      AVFilterFormatsConfig **cfg_out)
+{
+    int err;
+
+    err = ff_set_common_formats2(avctx, cfg_in, cfg_out,
+                                 ff_make_formats_list_singleton(AV_PIX_FMT_VULKAN));
+    if (err < 0)
+        return err;
+
+    err = ff_formats_ref(ff_all_chroma_locations(), &cfg_in[0]->chroma_locations);
+    if (err < 0)
+        return err;
+
+    return ff_formats_ref(ff_all_chroma_locations(), &cfg_out[0]->chroma_locations);
+}
+
 static void scale_vulkan_uninit(AVFilterContext *avctx)
 {
     ScaleVulkanContext *s = avctx->priv;
@@ -433,6 +489,6 @@ const FFFilter ff_vf_scale_vulkan = {
     .uninit         = &scale_vulkan_uninit,
     FILTER_INPUTS(scale_vulkan_inputs),
     FILTER_OUTPUTS(scale_vulkan_outputs),
-    FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    FILTER_QUERY_FUNC2(&scale_vulkan_query_formats),
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

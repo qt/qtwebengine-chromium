@@ -55,7 +55,6 @@ typedef struct AACContext {
     int prog_ref;
     int metadata_mode;
     AACENC_MetaData metaDataSetup;
-    int delay;
     int frame_length;
 
     AudioFrameQueue afq;
@@ -263,7 +262,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
         if (!av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_7POINT1)) {
             mode = MODE_7_1_REAR_SURROUND;
 #if FDKENC_VER_AT_LEAST(4, 0) // 4.0.0
-        } else if (!av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_7POINT1_TOP_BACK)) {
+        } else if (!av_channel_layout_compare(&avctx->ch_layout, &(AVChannelLayout)AV_CHANNEL_LAYOUT_5POINT1POINT2_BACK)) {
             mode = MODE_7_1_TOP_FRONT;
 #endif
         } else {
@@ -420,7 +419,6 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     }
 
     avctx->frame_size = info.frameLength;
-    s->delay =
 #if FDKENC_VER_AT_LEAST(4, 0) // 4.0.0
     avctx->initial_padding = info.nDelay;
 #else
@@ -441,8 +439,10 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     }
 
     cpb_props = ff_encode_add_cpb_side_data(avctx);
-    if (!cpb_props)
-        return AVERROR(ENOMEM);
+    if (!cpb_props) {
+        ret = AVERROR(ENOMEM);
+        goto error;
+    }
     cpb_props->max_bitrate =
     cpb_props->min_bitrate =
     cpb_props->avg_bitrate = avctx->bit_rate;
@@ -566,7 +566,7 @@ static const AVChannelLayout aac_ch_layouts[16] = {
     AV_CHANNEL_LAYOUT_7POINT1,
 #endif
 #if FDKENC_VER_AT_LEAST(4, 0) // 4.0.0
-    AV_CHANNEL_LAYOUT_7POINT1_TOP_BACK,
+    AV_CHANNEL_LAYOUT_5POINT1POINT2_BACK,
 #endif
     { 0 },
 };

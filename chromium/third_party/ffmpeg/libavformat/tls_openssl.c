@@ -425,6 +425,7 @@ typedef struct TLSContext {
     TLSShared tls_shared;
     SSL_CTX *ctx;
     SSL *ssl;
+    int do_shutdown;
     BIO_METHOD* url_bio_method;
     int io_err;
     char error_message[256];
@@ -483,10 +484,16 @@ static int print_ssl_error(URLContext *h, int ret)
 {
     TLSContext *c = h->priv_data;
     int printed = 0, e, averr = AVERROR(EIO);
+    int err = SSL_get_error(c->ssl, ret);
     if (h->flags & AVIO_FLAG_NONBLOCK) {
-        int err = SSL_get_error(c->ssl, ret);
         if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
             return AVERROR(EAGAIN);
+    }
+    switch (err) {
+    case SSL_ERROR_SSL:
+    case SSL_ERROR_SYSCALL:
+        c->do_shutdown = 0;
+        break;
     }
     while ((e = ERR_get_error()) != 0) {
         av_log(h, AV_LOG_ERROR, "%s\n", ERR_error_string(e, NULL));
@@ -507,7 +514,8 @@ static int tls_close(URLContext *h)
 {
     TLSContext *c = h->priv_data;
     if (c->ssl) {
-        SSL_shutdown(c->ssl);
+        if (c->do_shutdown)
+            SSL_shutdown(c->ssl);
         SSL_free(c->ssl);
     }
     if (c->ctx)
@@ -572,8 +580,9 @@ static int url_bio_bwrite(BIO *b, const char *buf, int len)
         return ret;
     BIO_clear_retry_flags(b);
     if (ret == AVERROR_EXIT)
-        return 0;
-    if (ret == AVERROR(EAGAIN))
+        /* Don't return 0: that signals success and silently drops the data. */
+        c->io_err = ret;
+    else if (ret == AVERROR(EAGAIN))
         BIO_set_retry_write(b);
     else
         c->io_err = ret;
@@ -649,9 +658,11 @@ static int dtls_handshake(URLContext *h)
             goto end;
         }
 
+        ERR_clear_error();
         ret = SSL_do_handshake(c->ssl);
         if (ret == 1) {
             av_log(c, AV_LOG_TRACE, "Handshake success\n");
+            c->do_shutdown = 1;
             break;
         }
         err = SSL_get_error(c->ssl, ret);
@@ -851,16 +862,38 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
     }
 
     init_bio_method(h);
-    if (!s->listen && !s->numerichost) {
+    if (!s->listen) {
+        // Pin a numeric host to the certificate's iPAddress SAN and everything else
+        // to the hostname. Classify s->host with the same AI_NUMERICHOST rule tls.c
+        // uses and hand OpenSSL the binary address, so legacy numeric forms (e.g.
+        // 2130706433) are pinned as IPs instead of falling back to hostname matching.
+        // A verifyhost=<name> override leaves s->host non-numeric and binds by name.
+        struct addrinfo hints = { .ai_flags = AI_NUMERICHOST }, *ai = NULL;
+        int is_numeric_host = !getaddrinfo(s->host, NULL, &hints, &ai);
+        int ok;
+
         // By default OpenSSL does too lax wildcard matching
         SSL_set_hostflags(c->ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-        if (!SSL_set1_host(c->ssl, s->host)) {
-            av_log(h, AV_LOG_ERROR, "Failed to set hostname for TLS/SSL verification: %s\n",
-                openssl_get_error(c));
+        if (is_numeric_host) {
+            void *addr = ai->ai_family == AF_INET6 ?
+                (void *)&((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr :
+                (void *)&((struct sockaddr_in  *)ai->ai_addr)->sin_addr;
+            ok = X509_VERIFY_PARAM_set1_ip(SSL_get0_param(c->ssl), addr,
+                                           ai->ai_family == AF_INET6 ? 16 : 4);
+        } else {
+            ok = SSL_set1_host(c->ssl, s->host);
+        }
+        if (ai)
+            freeaddrinfo(ai);
+        if (!ok) {
+            av_log(h, AV_LOG_ERROR, "Failed to set %s for TLS/SSL verification: %s\n",
+                is_numeric_host ? "IP" : "hostname", openssl_get_error(c));
             ret = AVERROR_EXTERNAL;
             goto fail;
         }
-        if (!SSL_set_tlsext_host_name(c->ssl, s->host)) {
+        // SNI MUST NOT carry a literal IP address (RFC 6066 sec. 3); suppress it for
+        // numeric transport hosts, matching the GnuTLS backend.
+        if (!s->numerichost && !SSL_set_tlsext_host_name(c->ssl, s->host)) {
             av_log(h, AV_LOG_ERROR, "Failed to set hostname for SNI: %s\n", openssl_get_error(c));
             ret = AVERROR_EXTERNAL;
             goto fail;
@@ -885,6 +918,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
         }
         av_log(c, AV_LOG_VERBOSE, "Setup ok, MTU=%d\n", c->tls_shared.mtu);
     } else {
+        ERR_clear_error();
         ret = s->listen ? SSL_accept(c->ssl) : SSL_connect(c->ssl);
         if (ret == 0) {
             av_log(h, AV_LOG_ERROR, "Unable to negotiate TLS/SSL session\n");
@@ -894,6 +928,7 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
             ret = print_ssl_error(h, ret);
             goto fail;
         }
+        c->do_shutdown = 1;
     }
 
     return 0;
@@ -919,6 +954,7 @@ static int tls_read(URLContext *h, uint8_t *buf, int size)
     // Set or clear the AVIO_FLAG_NONBLOCK on the underlying socket
     uc->flags &= ~AVIO_FLAG_NONBLOCK;
     uc->flags |= h->flags & AVIO_FLAG_NONBLOCK;
+    ERR_clear_error();
     ret = SSL_read(c->ssl, buf, size);
     if (ret > 0)
         return ret;
@@ -943,6 +979,7 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
         size = FFMIN(size, mtu_size);
     }
 
+    ERR_clear_error();
     ret = SSL_write(c->ssl, buf, size);
     if (ret > 0)
         return ret;

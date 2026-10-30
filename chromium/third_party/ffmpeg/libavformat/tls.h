@@ -25,6 +25,7 @@
 
 #include "libavutil/bprint.h"
 #include "libavutil/opt.h"
+#include "version.h"
 
 #include "url.h"
 
@@ -86,6 +87,12 @@ typedef struct TLSShared {
 } TLSShared;
 
 #define TLS_OPTFL (AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_ENCODING_PARAM)
+
+#if FF_API_NO_DEFAULT_TLS_VERIFY
+#define TLS_VERIFY_DEFAULT 0
+#else
+#define TLS_VERIFY_DEFAULT 1
+#endif
 
 #define FF_TLS_CLIENT_OPTIONS(pstruct, options_field) \
     {"ca_file",    "Certificate Authority database file", offsetof(pstruct, options_field . ca_file),   AV_OPT_TYPE_STRING, .flags = TLS_OPTFL }, \

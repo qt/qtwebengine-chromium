@@ -7740,7 +7740,23 @@ The filter has following options:
 The file path of the downloaded whisper.cpp model (mandatory).
 
 @item language
-The language to use for transcription ('auto' for auto-detect).
+The language to use for transcription. Besides a language code, the following
+special values enable auto-detection:
+
+@table @samp
+@item eval
+Re-run language detection on every queued chunk. This costs an extra encoder
+pass per chunk and the detected language may change mid-file.
+
+@item lock
+Detect the language on the first chunk that produces transcribed text, then
+reuse it for the remaining chunks.
+
+@item auto
+Currently an alias for @samp{eval}. This may change in a future version, so use
+@samp{eval} or @samp{lock} if the behavior matters.
+@end table
+
 Default value: @code{"auto"}
 
 @item translate
@@ -8613,9 +8629,13 @@ Substation Alpha) subtitles files.
 
 This filter accepts @option{filename}/@option{f}, @option{original_size},
 @option{fontsdir}, and @option{alpha} from the @ref{subtitles} filter, plus the
-following option:
+following options:
 
 @table @option
+@item script
+The ASS script to render, given inline. Exactly one of @option{filename} and
+@option{script} must be set.
+
 @item shaping
 Set the shaping engine.
 
@@ -8633,6 +8653,11 @@ and Thai. Requires libass to be built with HarfBuzz.
 
 The default is @code{auto}.
 @end table
+
+@subsection Commands
+
+This filter supports the @option{script} option as @ref{commands}; the new
+script replaces the one being rendered.
 
 @section atadenoise
 Apply an Adaptive Temporal Averaging Denoiser to the video input.
@@ -9941,6 +9966,10 @@ premultiplied. Also detects if the alpha plane is fully opaque or not.
 Enable detection of all of the above properties. This is the default.
 @end table
 
+@item threshold
+Allow pixels to exceed the expected bounds by this fraction of the full scale
+value range before treating it as evidence of (respectively) full range or
+straight alpha. Value range is from 0 to 0.05. Defaults to 0.001 (=0.1%).
 @end table
 
 @section colorize
@@ -12160,7 +12189,15 @@ The filter accepts the following options:
 @table @option
 @item dnn_backend
 Specify which DNN backend to use for model loading and execution. This option accepts
-only openvino now, tensorflow backends will be added.
+the following values:
+@table @samp
+@item tensorflow
+TensorFlow backend.
+@item openvino
+OpenVINO backend.
+@item onnx
+ONNX Runtime backend.
+@end table
 
 @item model
 Set path to model file specifying network architecture and its parameters.
@@ -12170,7 +12207,9 @@ Note that different backends use different file formats.
 Set the input name of the dnn network.
 
 @item output
-Set the output name of the dnn network.
+Set the output name of the dnn network. The TensorFlow and ONNX Runtime
+backends accept multiple output names separated by @samp{&}, e.g.
+@option{output=yolo_13&yolo_26}.
 
 @item confidence
 Set the confidence threshold (default: 0.5).
@@ -12182,11 +12221,50 @@ The first line is the name of label id 0 (usually it is 'background'),
 and the second line is the name of label id 1, etc.
 The label id is considered as name if the label file is not provided.
 
+@item model_type
+Set the detection model output format. The following values are accepted:
+
+@table @samp
+@item ssd
+Single-stage detector (default).
+@item yolo
+YOLO v1/v2.
+@item yolov3
+YOLOv3.
+@item yolov4
+YOLOv4.
+@end table
+@item anchors
+Anchor box dimensions, separated by @samp{&}. Required for YOLO-family models.
+The list is consumed in output order, so the anchors of the first output come
+first: with @option{output=yolo_13&yolo_26} the leading pairs belong to
+@code{yolo_13}.
+@item nb_classes
+Number of detection classes. Required for YOLO-family models.
 @item backend_configs
 Set the configs to be passed into backend. To use async execution, set async (default: set).
 Roll back to sync execution if the backend does not support async.
 
 @end table
+
+@subsection Examples
+
+@itemize
+@item
+Run SSD object detection with an ONNX model (single output, DirectML on Windows):
+@example
+ffmpeg -i input.mp4 -vf "scale=300:300,format=rgb24,dnn_detect=dnn_backend=onnx
+       :model=ssd.onnx:model_type=ssd:confidence=0.5:device=dml" -f null -
+@end example
+
+@item
+Run YOLOv3 object detection with an ONNX model (two outputs, CPU):
+@example
+ffmpeg -i input.mp4 -vf "scale=416:416,format=rgb24,dnn_detect=dnn_backend=onnx
+       :model=yolov3.onnx:output=yolo_13&yolo_26:model_type=yolov3:nb_classes=80
+       :anchors=116&90&156&198&373&326&30&61&62&45&59&119" -f null -
+@end example
+@end itemize
 
 @anchor{dnn_processing}
 @section dnn_processing
@@ -12216,13 +12294,23 @@ need to build and install the OpenVINO for C library (see
 be needed if the header files and libraries are not installed into system path)
 
 @item torch
-Libtorch backend. To enable this backend you need to build and install Libtroch
+Libtorch backend. To enable this backend you need to build and install Libtorch
 for C++ library. Please download cxx11 ABI version (see
 @url{https://pytorch.org/get-started/locally})
 and configure FFmpeg with @code{--enable-libtorch
 --extra-cflags=-I/libtorch_root/libtorch/include
 --extra-cflags=-I/libtorch_root/libtorch/include/torch/csrc/api/include
 --extra-ldflags=-L/libtorch_root/libtorch/lib/}
+
+When FFmpeg is built with CUDA support and the input frames use
+@code{AV_PIX_FMT_CUDA} with an underlying pixel format of @code{rgb0},
+@code{bgr0}, @code{rgb24}, or @code{bgr24}, the Torch backend maps GPU
+frame buffers directly into LibTorch CUDA tensors using zero-copy memory
+mapping.  This avoids host-device PCIe transfers and can significantly
+reduce inference latency.  The zero-copy path is selected automatically
+when the input format qualifies; no additional options are required.
+When the input format is not @code{AV_PIX_FMT_CUDA}, the backend uses
+the standard CPU tensor path.
 
 @item onnx
 ONNX Runtime backend. To enable this backend you need to install the
@@ -12239,7 +12327,10 @@ exactly one input tensor when running the model.
 
 The @option{input} and @option{output} options are optional for the
 ONNX Runtime backend; when they are omitted the backend resolves the
-tensor names from the session.
+tensor names from the session.  Multiple output names may be supplied
+separated by @samp{&} (e.g. @option{output=out_a&out_b}); however for
+@code{dnn_processing} only the first output tensor is used for frame
+post-processing.
 
 The ONNX Runtime backend runs inference synchronously using a single
 inference request. The shared @option{async} and @option{nireq} options
@@ -12267,6 +12358,26 @@ Roll back to sync execution if the backend does not support async.
 
 For tensorflow backend, you can set its configs with @option{sess_config} options,
 please use tools/python/tf_sess_config.py to get the configs of TensorFlow backend for your system.
+
+@item async
+Use DNN async inference (default: 1).  When enabled, frames are submitted
+to the backend without blocking the caller.  Supported by the Torch,
+OpenVINO, and TensorFlow backends; the ONNX Runtime backend ignores
+this option.
+
+@item nireq
+Number of concurrent inference requests (default: 0, meaning auto).
+When set to 0, the backend automatically determines an appropriate
+number of requests.  Higher values increase throughput by allowing
+multiple frames to be in flight simultaneously.
+
+@item batch_size
+Number of frames to batch into a single inference request (default: 1).
+Values greater than 1 cause the backend to accumulate frames and
+concatenate them along the batch dimension before running the model.
+This can significantly increase throughput on GPUs at the cost of
+slightly higher per-frame latency.  Currently supported by the OpenVINO
+and Torch backends.
 
 @item device
 Set the device to run the model. For the ONNX Runtime backend this selects the
@@ -12304,6 +12415,32 @@ Handle the Y channel with espcn.pb (see @ref{sr} filter), which changes frame si
 please use tools/python/tf_sess_config.py to get the configs of TensorFlow backend for your system.
 @example
 ./ffmpeg -i 480p.jpg -vf format=yuv420p,dnn_processing=dnn_backend=tensorflow:model=espcn.pb:input=x:output=y:backend_configs=sess_config=0x10022805320e09cdccccccccccec3f20012a01303801 -y tmp.espcn.jpg
+@end example
+
+@item
+Perform zero-copy GPU inference with the Libtorch backend.  Because there
+is currently no GPU-side filter to convert from YUV to RGB,
+@code{hwupload} is used to upload CPU RGB frames into device memory.
+Once a GPU-side YUV-to-RGB filter becomes available, the @code{hwupload}
+step will no longer be necessary and all frames can stay in device memory
+throughout the pipeline:
+@example
+./ffmpeg -init_hw_device cuda=cuda -filter_hw_device cuda -i input.mp4 \
+  -vf "format=rgb24,hwupload,dnn_processing=dnn_backend=torch:model=my_model.pt,hwdownload,format=rgb0" \
+  -y output.mp4
+@end example
+
+@item
+Process rgb24 frames with a TorchScript model using the Libtorch backend:
+@example
+./ffmpeg -i input.jpg -vf format=rgb24,dnn_processing=dnn_backend=torch:model=my_model.pt output.jpg
+@end example
+
+@item
+Process rgb24 frames with the Libtorch backend using batch inference
+(four frames per request):
+@example
+./ffmpeg -i input.mp4 -vf format=rgb24,dnn_processing=dnn_backend=torch:model=my_model.pt:batch_size=4 -y output.mp4
 @end example
 
 @end itemize
@@ -14590,6 +14727,10 @@ A '|'-separated list of color range names, such as
 A '|'-separated list of color range names, such as
 "alpha_modes=straight|premultiplied".
 
+@item chroma_locations
+A '|'-separated list of chroma sample location names, such as
+"chroma_locations=left|topleft".
+
 @end table
 
 @subsection Examples
@@ -15092,6 +15233,80 @@ sort -n MAP_FILE
 # Use INPUT, OUTPUT and the MAP_FILE from above to compare the corresponding frames in INPUT and OUTPUT via SSIM
 ffmpeg -i INPUT -i OUTPUT -filter_complex '[0:v]fsync=file=MAP_FILE[ref];[1:v][ref]ssim' -f null -
 @end example
+
+@section gainmap
+
+Compute an HDR gain map from two renditions of the same image, as defined by
+ISO 21496-1.
+
+The first input is the base rendition (typically SDR), and the second input
+is the alternate rendition (typically HDR). Both must have the same
+dimensions. Outputs a gain map, as either @samp{gbrpf32} or @samp{grayf32}
+depending on the chosen @option{mode}.
+
+@table @option
+@item mode
+Controls what quantity the gain map is computed against.
+
+The accepted values are:
+@table @samp
+@item rgb
+One gain map channel per component.
+
+@item luma
+A single gain map channel, computed from the luma.
+
+@item maxrgb
+A single gain map channel, computed from @samp{max(R, G, B)}.
+@end table
+
+Default is @samp{rgb}.
+
+@item colorspace
+Chooses which colorspace to compute the gain map in.
+
+The accepted values are:
+@table @samp
+@item base
+The base rendition's colorspace.
+
+@item alternate
+The alternate rendition's colorspace.
+@end table
+
+Default is @samp{base}.
+
+@item min
+@item max
+Bounds on the encoded gain (log2). If unspecified, these will be
+measured from the frame.
+
+@item gamma
+Encoding gamma of the resulting gain map. If unspecified, this will be
+optimized for the frame in question. Setting this to @code{1.0} will produce
+a linear gain map, which may be more efficient in some applications.
+
+@item base_offset
+@item alt_offset
+Offset to prevent numerical instability near zero. Both default to @code{1/64}.
+
+@item base_nits
+@item alt_nits
+Override the reference luminance of the input, in nits. If unspecified, uses
+the values from the input metadata.
+@end table
+
+The @code{gainmap} filter also supports the @ref{framesync} options.
+
+@subsection Examples
+
+@itemize
+@item
+Compute a gain map between an SDR and an HDR version of the same image:
+@example
+ffmpeg -i $sdr -i $hdr -filter_complex "[0:v][1:v]gainmap" $out
+@end example
+@end itemize
 
 @section gblur
 
@@ -17051,9 +17266,12 @@ fail negotiation otherwise. Disabled by default.
 @item color_trc
 @item range
 @item chroma_location
-Configure the colorspace that output frames will be delivered in. The default
-value of @code{auto} outputs frames in the same format as the input frames,
-leading to no change. For any other value, conversion will be performed.
+Configure the colorspace that output frames will be delivered in. For any value
+other than the default @code{auto}, conversion will be performed. With
+@code{auto}, @option{color_primaries} and @option{color_trc} keep the values of
+the input frames, while @option{colorspace}, @option{range} and
+@option{chroma_location} use the values negotiated with the filtergraph, which
+are those of the input unless a following filter requires others.
 
 See the @ref{setparams} filter for a list of possible values.
 
@@ -17519,7 +17737,10 @@ offering the maximum possible speed.
 @end table
 
 @subsection Commands
-This filter supports almost all of the above options as @ref{commands}.
+This filter supports almost all of the above options as @ref{commands}. The
+options negotiated with the filtergraph, @option{format}, @option{colorspace},
+@option{range}, @option{chroma_location} and @option{alpha_mode}, are fixed
+once the filtergraph is configured and can not be changed with commands.
 
 @subsection Examples
 @itemize
@@ -17716,10 +17937,14 @@ The filter accepts the following options:
 
 @table @option
 @item min
-Lower bound. Defaults to the lowest allowed value for the input.
+Lower bound. Defaults to the lowest representable value for the input.
+Set to @var{auto} to use the minimum signal level for the input colorspace
+(only affects TV-range YUV signals).
 
 @item max
-Upper bound. Defaults to the highest allowed value for the input.
+Upper bound. Defaults to the highest representable value for the input.
+Set to @var{auto} to use the maximum signal level for the input colorspace
+(only affects TV-range YUV signals).
 
 @item planes
 Specify which planes will be processed. Defaults to all available.
@@ -18721,16 +18946,28 @@ fixing movies that were inverse-telecined incorrectly.
 A description of the accepted options follows.
 
 @table @option
+@item mode
+Set the mode. If the value is 0, the filter drops similar frames.
+If the value is 1, the filter keeps only frames that are one representative of sufficiently long duplicate runs.
+
+Default value is 0.
+
 @item max
-Set the maximum number of consecutive frames which can be dropped (if
+For mode 0: Set the maximum number of consecutive frames which can be dropped (if
 positive), or the minimum interval between dropped frames (if
 negative). If the value is 0, the frame is dropped disregarding the
 number of previous sequentially dropped frames.
 
 Default value is 0.
 
+@item min
+For mode 1: Set the minimum number of frame duplicates to mark the frame as non-unique
+and keep the first occurrence of it.
+
+Default value is 1.
+
 @item keep
-Set the maximum number of consecutive similar frames to ignore before to start dropping them.
+For mode 0: Set the maximum number of consecutive similar frames to ignore before to start dropping them.
 If the value is 0, the frame is dropped disregarding the
 number of previous sequentially similar frames.
 
@@ -21629,8 +21866,12 @@ Set "MPEG" range (16-235 in case of 8-bit luma).
 
 @item in_chroma_loc
 @item out_chroma_loc
-Set in/output chroma sample location. If not specified, center-sited chroma
-is used by default. Possible values:
+Set in/output chroma sample location. If @option{in_chroma_loc} is not
+specified, the chroma location tagged on the input frame is used, and untagged
+input is assumed to be sited like the output, so it is tagged but not converted.
+If @option{out_chroma_loc} is not specified, the output is converted to the
+chroma location negotiated with the rest of the filtergraph, or keeps the input
+location if none was negotiated. Possible values:
 
 @table @samp
 @item auto, unknown
@@ -23129,9 +23370,22 @@ This is a default value
 
 @item point
 Point
+AMF returns an unwritten surface for this algorithm when the format is
+@code{nv12} or @code{p010}, so inputs in those formats are converted to a packed
+RGB format automatically. This is a driver bug rather than a documented
+restriction; the conversion can be dropped once a driver that scales
+@code{nv12} and @code{p010} correctly with @code{point} is in wide use.
 
 @item sr1-1
 Video SR1.1
+This algorithm only supports packed RGB formats and requires a DirectX 11 or
+DirectX 12 device, so it is available on Windows only. Inputs in other formats
+such as @code{nv12} or @code{p010} are converted to a packed RGB format
+automatically.
+Note that the VideoSR algorithms (@code{sr1-0} and @code{sr1-1}) do not
+preserve the alpha channel (it is left zeroed); drop it after the download,
+e.g. with @code{hwdownload,format=rgba,format=rgb24}, if an opaque result is
+required.
 
 @end table
 
@@ -23141,6 +23395,16 @@ Control hq scaler sharpening. The value is a float in the range of [0.0, 2.0]
 @item format
 Controls the output pixel format. By default, or if none is specified, the input
 pixel format is used.
+
+The @code{point} and @code{sr1-1} algorithms emit the packed RGB format the
+scaler receives, so for them this option must name one of @code{rgba},
+@code{bgra}, @code{x2bgr10le} or @code{rgbaf16le}. A named format also decides
+what software input is converted to, and what a hardware surface in another
+format is converted to on the GPU. Without it, @code{x2bgr10le} is selected for
+@code{p010} input and @code{rgba} for other non-RGB input, and the result is
+tagged as full range RGB. libswscale cannot convert other software formats to
+@code{rgbaf16le}; use software input already in that format or a hardware
+input for GPU conversion.
 
 @item keep-ratio
 Force the scaler to keep the aspect ratio of the input image when the output size has a different aspect ratio.
@@ -23156,9 +23420,11 @@ which does not fill the entire output surface should be filled with a solid colo
 
 @itemize
 @item
-Scale input to 720p, keeping aspect ratio and ensuring the output is yuv420p.
+Upscale to 720p, keeping aspect ratio, and read the result back into system
+memory. The filter always outputs AMF surfaces, so a @ref{hwdownload} is needed
+to feed a software encoder.
 @example
-sr_amf=-2:720:format=yuv420p
+sr_amf=-2:720,hwdownload,format=nv12
 @end example
 
 @item
@@ -24801,6 +25067,7 @@ from the video stream (if available).
 Use specified codec instead of snow.
 @end table
 
+@anchor{v360}
 @section v360
 
 Convert 360 videos between various formats.
@@ -26062,8 +26329,10 @@ JEDEC P22 phosphors
 @itemize
 @item
 Scale input to 720p, keeping aspect ratio and ensuring the output is yuv420p.
+The filter always outputs AMF surfaces, so a @ref{hwdownload} is needed to feed a
+software encoder.
 @example
-vpp_amf=-2:720:format=yuv420p
+vpp_amf=-2:720:format=yuv420p,hwdownload,format=yuv420p
 @end example
 
 @item
@@ -27605,7 +27874,8 @@ Bicubic
 This is the default.
 
 @item lanczos
-Lanczos
+High-quality separable Lanczos (windowed sinc). The filter radius can be
+set with @option{param}; the default is 3.
 
 @end table
 
@@ -27627,12 +27897,13 @@ parameters. This is the default behaviour.
 If set to 1, filter with a generic weight LUT instead of using fixed-function
 shader kernels. May be faster or slower depending on the hardware. A value
 of @code{auto} (the default) enables this automatically when required for
-correct anti-aliasing when downscaling.
+correct anti-aliasing when downscaling, and for high-quality Lanczos scaling.
+Set this to 0 to use the legacy fixed 4-tap Lanczos kernel.
 
 @item param
-Algorithm-Specific parameter.
-
-Affects the curves of the bicubic algorithm.
+Algorithm-specific parameter. For @var{bicubic}, this affects the filter
+curve. For @var{lanczos}, this sets the filter radius from 1 to 10 (default 3)
+when using the generic filter path; it has no effect with @option{use_filters=0}.
 
 @item force_original_aspect_ratio
 @item force_divisible_by
@@ -29536,6 +29807,47 @@ Flips an image horizontally.
 
 Flips an image along both the vertical and horizontal axis.
 
+@section fruc_vulkan
+
+Frame rate up-conversion using the NVIDIA Vulkan optical flow extension
+(@code{VK_NV_optical_flow}), implemented on the GPU using Vulkan.
+
+For each pair of consecutive input frames the filter computes a forward and
+backward optical flow field on the device's optical flow engine, and uses those
+fields to synthesise motion-compensated intermediate frames at the requested
+output frame rate. The frame timing logic mirrors the @code{framerate} filter.
+
+The majority of YUV and RGB pixel formats are supported. The exceptions are
+subsampled packed YUV formats such as @code{yuyv422} and @code{uyvy422},
+formats with more than 16 bits integer data per component, such as
+@code{rgb96} and @code{gray32}, and Bayer formats.
+
+@table @option
+@item fps
+A string describing the desired output frame rate, evaluated as an expression.
+The following constants are available: @code{source_fps}. The default value is
+@code{60}.
+
+@item perf
+Optical flow performance level, trading motion-estimation quality for speed.
+This is the dominant cost at high resolutions. Possible values are:
+@table @samp
+@item slow
+Highest quality, slowest. This is the default.
+@item medium
+Balanced quality and speed.
+@item fast
+Lowest quality, fastest.
+@end table
+
+@item grid
+Optical flow output grid size in pixels. A coarser grid computes fewer flow
+vectors, making it faster and less memory hungry at the cost of flow detail.
+Possible values are @code{auto} (the default; selects the finest grid the
+device supports, usually 1x1), @code{1}, @code{2}, @code{4} and @code{8}. Only
+grid sizes the device advertises are accepted.
+@end table
+
 @section gblur_vulkan
 
 Apply Gaussian blur filter on Vulkan frames.
@@ -29662,6 +29974,113 @@ Preserve landscape geometry (when @var{width} >= @var{height}).
 @end table
 
 @end table
+
+@anchor{v360_vulkan}
+@section v360_vulkan
+
+Convert 360 videos between various formats.
+Supported formats (projections) are subset of @ref{v360} filter,
+that are most popular 360-degree video formats.
+
+The filter accepts subset of @ref{v360} options:
+
+@table @option
+
+@item input
+@item output
+Set format of the input/output video.
+
+@table @samp
+
+@item e
+@item equirect
+Equirectangular projection.
+
+@item eac
+Equi-Angular Cubemap. (Output only)
+
+@b{FIXME}: current output doesn't contain padding.
+
+@item flat
+Regular video.
+
+@item dfisheye
+Dual fisheye.
+
+@item sg
+Stereographic format.
+
+@item fisheye
+Fisheye projection.
+
+@item gopromax
+GoPro Max .360 format. (Input only)
+
+A .360 video file contains two video streams (front and rear);
+with this input projection the filter takes two inputs and combines
+them into a single stream. See the @option{overlap} option.
+@end table
+
+@item w
+@item h
+Set the output video resolution.
+See @ref{v360} options.
+
+@item yaw
+@item pitch
+@item roll
+@item rorder
+Set rotation for the output video.
+See @ref{v360} options.
+
+@item h_fov
+@item v_fov
+Set output horizontal/vertical field of view.
+See @ref{v360} options.
+
+@item ih_fov
+@item iv_fov
+Set input horizontal/vertical field of view.
+See @ref{v360} options.
+
+@item overlap
+Set number of overlapped pixels on input .360 video.
+Only used with @code{input=gopromax}.
+
+The GoPro Max .360 video contains overlapped area
+(See @url{https://gopro.com/news/max-tech-specs-stitching-resolution}).
+The filter blends overlapped images in these two areas.
+
+The number of pixels of overlapped areas depends on the video resolution.
+In most cases, the value is automatically calculated based on input video size,
+but it may be changed on GoPro Max2 or future models.
+The option is to adjust for unknown video resolutions.
+
+@end table
+
+@subsection Examples
+Special notes exist to use with @code{input=gopromax}.
+
+The GoPro Max .360 video file contains two video streams,
+and the stream number must be specified.
+The stream number (e.g., @code{[0:5]}) depends on the model and shooting mode.
+Please check actual stream number with @code{ffprobe} command.
+
+@itemize
+@item
+Convert GoPro Max (8bit color depth) .360 to Equirectangular projection.
+GoPro Max uses obsolete yuvj420p pixel format, thus convert the format to yuv420p before this filter.
+@example
+ffmpeg -init_hw_device vulkan -i INPUT.360 -filter_complex "[0:0]format=yuv420p,hwupload[vf],[0:5]format=yuv420p,hwupload[vr], [vf][vr]v360_vulkan=input=gopromax:output=e, hwdownload,format=yuv420p" OUTPUT.mkv
+@end example
+
+@item
+Convert GoPro Max2 (10bit color depth) .360 to Dual fisheye projection.
+GoPro Max2 uses yuv420p10le pixel format.
+@example
+ffmpeg -init_hw_device vulkan -i INPUT.360 -filter_complex "[0:0]hwupload[vf],[0:4]hwupload[vr], [vf][vr]v360_vulkan=input=gopromax:output=dfisheye, hwdownload,format=yuv420p10le" OUTPUT.mkv
+@end example
+@end itemize
 
 @c man end VULKAN VIDEO FILTERS
 
@@ -29805,6 +30224,13 @@ name.
 A string representing the alpha mode of the buffered video frames.
 It may be a number corresponding to an alpha mode, or an alpha mode
 name.
+
+@item chroma_location
+A string representing the chroma sample location of the buffered video
+frames. It may be a number corresponding to a chroma sample location, or a
+chroma sample location name. When it is not set, the filtergraph chooses the
+chroma sample location of the output. Frames without a chroma sample location
+are tagged with the one negotiated for the output.
 
 @item pixel_aspect, sar
 The sample (pixel) aspect ratio of the input video.
@@ -30279,7 +30705,7 @@ value is "25".
 @item c0, c1, c2, c3, c4, c5, c6, c7
 Set 8 colors. Default values for colors is to pick random one.
 
-@item x0, y0, y0, y1
+@item x0, y0, x1, y1
 Set gradient line source and destination points. If negative or out of range, random ones
 are picked.
 
@@ -34143,6 +34569,7 @@ Possible values are:
 @item DYNAMIC_HDR_VIVID
 @item AMBIENT_VIEWING_ENVIRONMENT
 @item VIDEO_HINT
+@item GAIN_MAP_PARAMS
 @end table
 
 @end table

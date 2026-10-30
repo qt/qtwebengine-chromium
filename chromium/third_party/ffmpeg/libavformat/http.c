@@ -91,6 +91,7 @@ typedef struct HTTPContext {
     uint8_t *post_data;
     int post_datalen;
     char *cookies;          ///< holds newline (\n) delimited Set-Cookie header field values (without the "Set-Cookie: " field name)
+    char *host;
     int icy;
     char *icy_metadata_headers;
     char *icy_metadata_packet;
@@ -261,6 +262,11 @@ static int http_open_cnx_internal(URLContext *h, AVDictionary **options)
     av_url_split(proto, sizeof(proto), auth, sizeof(auth),
                  hostname, sizeof(hostname), &port,
                  path1, sizeof(path1), s->location);
+
+    av_freep(&s->host);
+    s->host = av_strdup(hostname);
+    if (!s->host)
+        return AVERROR(ENOMEM);
 
     av_strlcpy(tmp_host, hostname, sizeof(tmp_host));
     // In case of an IPv6 address, we need to strip the Zone ID,
@@ -821,6 +827,7 @@ bail_out:
         av_dict_free(&s->redirect_cache);
         av_freep(&s->new_location);
         av_freep(&s->uri);
+        av_freep(&s->host);
     }
     return ret;
 }
@@ -890,6 +897,50 @@ static int http_get_line(HTTPContext *s, char *line, int line_size)
     }
 }
 
+int ff_http_parse_status_line(void *logctx, const char *line, HTTPStatusLine *st)
+{
+    const char *p;
+
+    memset(st, 0, sizeof(*st));
+
+    if (!av_strstart(line, "HTTP/", &p) ||
+        !av_isdigit(p[0]) || p[1] != '.' || !av_isdigit(p[2]) ||
+        !av_isspace(p[3])) {
+        av_log(logctx, AV_LOG_ERROR, "Malformed HTTP status line.\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    av_strlcpy(st->version, p, sizeof(st->version));
+    st->willclose = !strcmp(st->version, "1.0");
+
+    p += 3;
+    while (av_isspace(*p))
+        p++;
+
+    /* RFC 9112 mandates a space after the code, but a bare "HTTP/1.1 200"
+     * is common enough in the wild to be worth accepting. */
+    if (!av_isdigit(p[0]) || !av_isdigit(p[1]) || !av_isdigit(p[2]) ||
+        (p[3] && !av_isspace(p[3]))) {
+        av_log(logctx, AV_LOG_ERROR, "Malformed HTTP status code.\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    st->code = 100 * (p[0] - '0') + 10 * (p[1] - '0') + p[2] - '0';
+    if (st->code < 100 || st->code > 599) {
+        av_log(logctx, AV_LOG_ERROR, "HTTP status code %d out of range.\n",
+               st->code);
+        return AVERROR_INVALIDDATA;
+    }
+    p += 3;
+    while (av_isspace(*p))
+        p++;
+    st->reason = p;
+
+    av_log(logctx, AV_LOG_TRACE, "http_code=%d\n", st->code);
+
+    return 0;
+}
+
 static int check_http_code(URLContext *h, int http_code, const char *end)
 {
     HTTPContext *s = h->priv_data;
@@ -898,7 +949,6 @@ static int check_http_code(URLContext *h, int http_code, const char *end)
     if (http_code >= 400 && http_code < 600 &&
         (http_code != 401 || s->auth_state.auth_type != HTTP_AUTH_NONE) &&
         (http_code != 407 || s->proxy_auth_state.auth_type != HTTP_AUTH_NONE)) {
-        end += strspn(end, SPACE_CHARS);
         av_log(h, AV_LOG_WARNING, "HTTP error %d %s\n", http_code, end);
         return ff_http_averror(http_code, AVERROR(EIO));
     }
@@ -918,7 +968,7 @@ static int parse_location(HTTPContext *s, const char *p)
 }
 
 /* "bytes $from-$to/$document_size" */
-static void parse_content_range(URLContext *h, const char *p)
+static int parse_content_range(URLContext *h, const char *p)
 {
     HTTPContext *s = h->priv_data;
     const char *slash, *end;
@@ -926,13 +976,20 @@ static void parse_content_range(URLContext *h, const char *p)
     if (!strncmp(p, "bytes ", 6)) {
         p     += 6;
         s->off = strtoull(p, NULL, 10);
-        if ((end = strchr(p, '-')) && strlen(end) > 0)
+        if ((end = strchr(p, '-')) && strlen(end) > 0) {
             s->range_end = strtoull(end + 1, NULL, 10) + 1;
+            if (s->range_end <= s->off) {
+                av_log(h, AV_LOG_ERROR, "Invalid Content-Range: end %"PRIu64" before start %"PRIu64"\n",
+                       s->range_end - 1, s->off);
+                return AVERROR_INVALIDDATA;
+            }
+        }
         if ((slash = strchr(p, '/')) && strlen(slash) > 0)
             s->filesize_from_content_range = strtoull(slash + 1, NULL, 10);
     }
     if (s->seekable == -1 && (!s->is_akamai || s->filesize != 2147483647))
         h->is_streamed = 0; /* we _can_ in fact seek */
+    return 0;
 }
 
 static int parse_content_encoding(URLContext *h, const char *p)
@@ -1042,7 +1099,10 @@ static int parse_set_cookie(const char *set_cookie, AVDictionary **dict)
         next_param = NULL;
         param += strspn(param, WHITESPACES);
         if ((name = av_strtok(param, "=", &value))) {
-            if (av_dict_set(dict, name, value, 0) < 0) {
+            char *end = name + strlen(name);
+            while (end > name && strchr(WHITESPACES, end[-1]))
+                *--end = '\0';
+            if (av_dict_set(dict, name, value ? value : "", 0) < 0) {
                 av_free(cstr);
                 return -1;
             }
@@ -1053,16 +1113,41 @@ static int parse_set_cookie(const char *set_cookie, AVDictionary **dict)
     return 0;
 }
 
-static int parse_cookie(HTTPContext *s, const char *p, AVDictionary **cookies)
+static const char *cookie_domain(const AVDictionary *cookie_params)
+{
+    const AVDictionaryEntry *e = av_dict_get(cookie_params, "domain", NULL, 0);
+    const char *domain = e ? e->value + (e->value[0] == '.') : "";
+
+    return *domain ? domain : NULL;
+}
+
+static int host_is_ip_literal(const char *host)
+{
+    return !host[strspn(host, "0123456789.")] || strchr(host, ':');
+}
+
+static int host_in_cookie_domain(const char *host, const char *domain)
+{
+    int offset = strlen(host) - strlen(domain);
+
+    return offset >= 0 && !av_strcasecmp(host + offset, domain) &&
+           (!offset || (host[offset - 1] == '.' && !host_is_ip_literal(host)));
+}
+
+static int parse_cookie(HTTPContext *s, const char *p, const char *host,
+                        AVDictionary **cookies)
 {
     AVDictionary *new_params = NULL;
     const AVDictionaryEntry *e, *cookie_entry;
     const char *eql;
-    char *name;
+    char *name, *value;
+    int len;
 
     // ensure the cookie is parsable
-    if (parse_set_cookie(p, &new_params))
+    if (parse_set_cookie(p, &new_params)) {
+        av_dict_free(&new_params);
         return -1;
+    }
 
     // if there is no cookie value there is nothing to parse
     cookie_entry = av_dict_iterate(new_params, NULL);
@@ -1104,6 +1189,13 @@ static int parse_cookie(HTTPContext *s, const char *p, AVDictionary **cookies)
             }
         }
     }
+    const char *domain = host ? cookie_domain(new_params) : NULL;
+    int host_only = host && !domain;
+    if (domain && !host_in_cookie_domain(host, domain)) {
+        av_log(s, AV_LOG_WARNING, "Ignoring cookie for domain %s set by %s\n", domain, host);
+        av_dict_free(&new_params);
+        return 0;
+    }
     av_dict_free(&new_params);
 
     // duplicate the cookie name (dict will dupe the value)
@@ -1111,7 +1203,15 @@ static int parse_cookie(HTTPContext *s, const char *p, AVDictionary **cookies)
     if (!(name = av_strndup(p, eql - p))) return AVERROR(ENOMEM);
 
     // add the cookie to the dictionary
-    av_dict_set(cookies, name, eql, AV_DICT_DONT_STRDUP_KEY);
+    len = strlen(eql);
+    while (len && strchr(WHITESPACES, eql[len - 1]))
+        len--;
+    value = av_asprintf("%.*s%s%s", len, eql, host_only ? "; @hostonly=" : "", host_only ? host : "");
+    if (!value) {
+        av_free(name);
+        return AVERROR(ENOMEM);
+    }
+    av_dict_set(cookies, name, value, AV_DICT_DONT_STRDUP_KEY | AV_DICT_DONT_STRDUP_VAL);
 
     return 0;
 }
@@ -1179,7 +1279,7 @@ static int process_line(URLContext *h, char *line, int line_count, int *parsed_h
 {
     HTTPContext *s = h->priv_data;
     const char *auto_method =  h->flags & AVIO_FLAG_READ ? "POST" : "GET";
-    char *tag, *p, *end, *method, *resource, *version;
+    char *tag, *p, *method, *resource, *version;
     int ret;
 
     /* end of header */
@@ -1243,25 +1343,24 @@ static int process_line(URLContext *h, char *line, int line_count, int *parsed_h
             }
             av_log(h, AV_LOG_TRACE, "HTTP version string: %s\n", version);
         } else {
-            if (av_strncasecmp(p, "HTTP/1.0", 8) == 0)
-                s->willclose = 1;
-            while (*p != '/' && *p != '\0')
-                p++;
-            while (*p == '/')
-                p++;
-            av_freep(&s->http_version);
-            s->http_version = av_strndup(p, 3);
-            while (!av_isspace(*p) && *p != '\0')
-                p++;
-            while (av_isspace(*p))
-                p++;
-            s->http_code = strtol(p, &end, 10);
+            HTTPStatusLine st;
 
-            av_log(h, AV_LOG_TRACE, "http_code=%d\n", s->http_code);
+            if ((ret = ff_http_parse_status_line(h, p, &st)) < 0)
+                return ret;
+
+            /* Only ever set: a keep-alive decision made earlier must survive. */
+            if (st.willclose)
+                s->willclose = 1;
+
+            av_freep(&s->http_version);
+            if (!(s->http_version = av_strdup(st.version)))
+                return AVERROR(ENOMEM);
+
+            s->http_code = st.code;
 
             *parsed_http_code = 1;
 
-            if ((ret = check_http_code(h, s->http_code, end)) < 0)
+            if ((ret = check_http_code(h, s->http_code, st.reason)) < 0)
                 return ret;
         }
     } else {
@@ -1282,7 +1381,8 @@ static int process_line(URLContext *h, char *line, int line_count, int *parsed_h
                    s->filesize == UINT64_MAX) {
             s->filesize = strtoull(p, NULL, 10);
         } else if (!av_strcasecmp(tag, "Content-Range")) {
-            parse_content_range(h, p);
+            if ((ret = parse_content_range(h, p)) < 0)
+                return ret;
         } else if (!av_strcasecmp(tag, "Accept-Ranges") &&
                    !strncmp(p, "bytes", 5) &&
                    s->seekable == -1) {
@@ -1310,7 +1410,7 @@ static int process_line(URLContext *h, char *line, int line_count, int *parsed_h
             av_free(s->mime_type);
             s->mime_type = av_get_token((const char **)&p, ";");
         } else if (!av_strcasecmp(tag, "Set-Cookie")) {
-            if (parse_cookie(s, p, &s->cookie_dict))
+            if (parse_cookie(s, p, s->host, &s->cookie_dict))
                 av_log(h, AV_LOG_WARNING, "Unable to parse '%s'\n", p);
         } else if (!av_strcasecmp(tag, "Icy-MetaInt")) {
             s->icy_metaint = strtoull(p, NULL, 10);
@@ -1349,8 +1449,7 @@ static int process_line(URLContext *h, char *line, int line_count, int *parsed_h
  *
  * @return a negative value if an error condition occurred, 0 otherwise
  */
-static int get_cookies(HTTPContext *s, char **cookies, const char *path,
-                       const char *domain)
+static int get_cookies(HTTPContext *s, char **cookies, const char *path)
 {
     // cookie strings will look like Set-Cookie header field values.  Multiple
     // Set-Cookie fields will result in multiple values delimited by a newline
@@ -1372,10 +1471,11 @@ static int get_cookies(HTTPContext *s, char **cookies, const char *path,
     while ((cookie = av_strtok(next, "\n", &saveptr)) && !ret) {
         AVDictionary *cookie_params = NULL;
         const AVDictionaryEntry *cookie_entry, *e;
+        const char *domain, *eql;
 
         next = NULL;
         // store the cookie in a dict in case it is updated in the response
-        if (parse_cookie(s, cookie, &s->cookie_dict))
+        if (parse_cookie(s, cookie, NULL, &s->cookie_dict))
             av_log(s, AV_LOG_WARNING, "Unable to parse '%s'\n", cookie);
 
         // continue on to the next cookie if this one cannot be parsed
@@ -1384,8 +1484,14 @@ static int get_cookies(HTTPContext *s, char **cookies, const char *path,
 
         // if the cookie has no value, skip it
         cookie_entry = av_dict_iterate(cookie_params, NULL);
-        if (!cookie_entry || !cookie_entry->value)
+        eql = strchr(cookie, '=');
+        if (!cookie_entry || !eql || eql == cookie + strspn(cookie, WHITESPACES) ||
+            memchr(cookie, ';', eql - cookie))
             goto skip_cookie;
+
+        for (e = cookie_entry; (e = av_dict_iterate(cookie_params, e)); )
+            if (!av_strcasecmp(e->key, "secure") && !av_stristart(s->location, "https:", NULL))
+                goto skip_cookie;
 
         // if the cookie has expired, don't add it
         if ((e = av_dict_get(cookie_params, "expires", NULL, 0)) && e->value) {
@@ -1397,21 +1503,22 @@ static int get_cookies(HTTPContext *s, char **cookies, const char *path,
         }
 
         // if no domain in the cookie assume it applied to this request
-        if ((e = av_dict_get(cookie_params, "domain", NULL, 0)) && e->value) {
-            // find the offset comparison is on the min domain (b.com, not a.b.com)
-            int domain_offset = strlen(domain) - strlen(e->value);
-            if (domain_offset < 0)
-                goto skip_cookie;
+        domain = cookie_domain(cookie_params);
+        if (domain && !host_in_cookie_domain(s->host, domain))
+            goto skip_cookie;
 
-            // match the cookie domain
-            if (av_strcasecmp(&domain[domain_offset], e->value))
-                goto skip_cookie;
-        }
+        if ((e = av_dict_get(cookie_params, "@hostonly", NULL, 0)) && av_strcasecmp(e->value, s->host))
+            goto skip_cookie;
 
         // if a cookie path is provided, ensure the request path is within that path
         e = av_dict_get(cookie_params, "path", NULL, 0);
-        if (e && av_strncasecmp(path, e->value, strlen(e->value)))
-            goto skip_cookie;
+        if (e) {
+            size_t len = strlen(e->value);
+            if (strncmp(path, e->value, len) ||
+                (len && path[len] && path[len] != '/' && path[len] != '?' &&
+                 e->value[len - 1] != '/'))
+                goto skip_cookie;
+        }
 
         // cookie parameters match, so copy the value
         if (!*cookies) {
@@ -1645,7 +1752,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
         av_bprintf(&request, "Content-Type: %s\r\n", s->content_type);
     if (!has_header(s->headers, "\r\nCookie: ") && s->cookies) {
         char *cookies = NULL;
-        if (!get_cookies(s, &cookies, path, hoststr) && cookies) {
+        if (!get_cookies(s, &cookies, local_path) && cookies) {
             av_bprintf(&request, "Cookie: %s\r\n", cookies);
             av_free(cookies);
         }
@@ -1938,34 +2045,6 @@ static int http_read_stream_all(URLContext *h, uint8_t *buf, int size)
     return pos;
 }
 
-static void update_metadata(URLContext *h, char *data)
-{
-    char *key;
-    char *val;
-    char *end;
-    char *next = data;
-    HTTPContext *s = h->priv_data;
-
-    while (*next) {
-        key = next;
-        val = strstr(key, "='");
-        if (!val)
-            break;
-        end = strstr(val, "';");
-        if (!end)
-            break;
-
-        *val = '\0';
-        *end = '\0';
-        val += 2;
-
-        av_dict_set(&s->metadata, key, val, 0);
-        av_log(h, AV_LOG_VERBOSE, "Metadata update for %s: %s\n", key, val);
-
-        next = end + 2;
-    }
-}
-
 static int store_icy(URLContext *h, int size)
 {
     HTTPContext *s = h->priv_data;
@@ -1995,7 +2074,7 @@ static int store_icy(URLContext *h, int size)
             data[len] = 0;
             if ((ret = av_opt_set(s, "icy_metadata_packet", data, 0)) < 0)
                 return ret;
-            update_metadata(h, data);
+            ff_http_parse_icy_packet(h, &s->metadata, data);
         }
         s->icy_data_read = 0;
         remaining        = s->icy_metaint;
@@ -2097,6 +2176,7 @@ static int http_close(URLContext *h)
     av_dict_free(&s->redirect_cache);
     av_freep(&s->new_location);
     av_freep(&s->uri);
+    av_freep(&s->host);
 
     av_log(h, AV_LOG_DEBUG, "Statistics: %d connection%s, %d request%s, %d retr%s, %d reconnection%s, %d redirect%s\n",
            s->nb_connections, s->nb_connections == 1 ? ""  : "s",

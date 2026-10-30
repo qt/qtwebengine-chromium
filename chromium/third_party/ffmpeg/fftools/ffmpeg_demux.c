@@ -117,6 +117,13 @@ typedef struct DemuxStream {
     uint64_t                 data_size;
 } DemuxStream;
 
+typedef struct DemuxStreamGroup {
+    InputStreamGroup         istg;
+
+    // name used for logging
+    char                     log_name[32];
+} DemuxStreamGroup;
+
 typedef struct Demuxer {
     InputFile             f;
 
@@ -2287,6 +2294,11 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
         } else {
             recording_time = stop_time - start;
         }
+    }
+
+    if (recording_time < 0) {
+        av_log(d, AV_LOG_ERROR, "-t value must be non-negative; aborting.\n");
+        return AVERROR(EINVAL);
     }
 
     if (o->format) {

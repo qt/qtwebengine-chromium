@@ -30,20 +30,18 @@
 #include "id3v1.h"
 #include "wv.h"
 
-enum WV_FLAGS {
-    WV_MONO   = 0x0004,
-    WV_HYBRID = 0x0008,
-    WV_JOINT  = 0x0010,
-    WV_CROSSD = 0x0020,
-    WV_HSHAPE = 0x0040,
-    WV_FLOAT  = 0x0080,
-    WV_INT32  = 0x0100,
-    WV_HBR    = 0x0200,
-    WV_HBAL   = 0x0400,
-    WV_MCINIT = 0x0800,
-    WV_MCEND  = 0x1000,
-    WV_DSD    = 0x80000000,
-};
+#define WV_MONO   0x00000004U
+#define WV_HYBRID 0x00000008U
+#define WV_JOINT  0x00000010U
+#define WV_CROSSD 0x00000020U
+#define WV_HSHAPE 0x00000040U
+#define WV_FLOAT  0x00000080U
+#define WV_INT32  0x00000100U
+#define WV_HBR    0x00000200U
+#define WV_HBAL   0x00000400U
+#define WV_MCINIT 0x00000800U
+#define WV_MCEND  0x00001000U
+#define WV_DSD    0x80000000U
 
 static const int wv_rates[16] = {
      6000,  8000,  9600, 11025, 12000, 16000,  22050, 24000,
@@ -261,6 +259,8 @@ static int wv_read_header(AVFormatContext *s)
     av_channel_layout_from_mask(&st->codecpar->ch_layout, wc->chmask);
     st->codecpar->sample_rate           = wc->rate;
     st->codecpar->bits_per_coded_sample = wc->bpp;
+    if (wc->header.flags & WV_DSD)
+        st->codecpar->format = AV_SAMPLE_FMT_DSD;
     avpriv_set_pts_info(st, 64, 1, wc->rate);
     st->start_time = 0;
     if (wc->header.total_samples != 0xFFFFFFFFu)

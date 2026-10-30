@@ -919,6 +919,9 @@ void ff_h274_hash_freep(H274HashContext **ctx)
         H274HashContext *c = *ctx;
         if (c->ctx)
             av_free(c->ctx);
+#if HAVE_BIGENDIAN
+        av_freep(&c->buf);
+#endif
         av_freep(ctx);
 #if HAVE_BIGENDIAN
         av_freep(&c->buf);

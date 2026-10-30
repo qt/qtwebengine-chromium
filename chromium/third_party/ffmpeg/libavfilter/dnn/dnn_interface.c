@@ -52,6 +52,8 @@ static const AVOption dnn_base_options[] = {
                 OFFSET(backend_options), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, FLAGS | AV_OPT_FLAG_DEPRECATED},
         {"nireq", "number of request",
                 OFFSET(nireq), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, FLAGS},
+        {"batch_size", "batch size per request",
+                OFFSET(batch_size), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 1000, FLAGS},
         {"async", "use DNN async inference",
                 OFFSET(async), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, FLAGS},
         {"device", "device to run model",

@@ -2034,8 +2034,8 @@ static int process_frame_obj(SANMVideoContext *ctx, GetByteContext *gb,
 
     codec = bytestream2_get_byteu(gb);
     param = bytestream2_get_byteu(gb);
-    left  = bytestream2_get_le16u(gb);
-    top   = bytestream2_get_le16u(gb);
+    left  = bytestream2_get_le16u(gb) + xoff;
+    top   = bytestream2_get_le16u(gb) + yoff;
     w     = bytestream2_get_le16u(gb);
     h     = bytestream2_get_le16u(gb);
     bytestream2_skip(gb, 2);
@@ -2108,6 +2108,12 @@ static int process_frame_obj(SANMVideoContext *ctx, GetByteContext *gb,
          */
         if (((w > ctx->width) || (h > ctx->height) || (w * h > ctx->buf_size)) && fsc)
             return AVERROR_INVALIDDATA;
+    }
+
+    /* users of codecs>=37 are subversion 2, enforce that for STOR/FTCH */
+    if (fsc && ctx->subversion < 2) {
+        ctx->subversion = 2;
+        ctx->stor_size = 0;  /* invalidate existing data */
     }
 
     /* users of codecs>=37 are subversion 2, enforce that for STOR/FTCH */

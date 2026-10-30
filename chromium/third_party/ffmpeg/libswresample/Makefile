@@ -7,6 +7,7 @@ HEADERS = swresample.h                       \
           version_major.h                    \
 
 OBJS = audioconvert.o                        \
+       dsd2pcm.o                             \
        dither.o                              \
        options.o                             \
        rematrix.o                            \
@@ -19,10 +20,11 @@ OBJS = audioconvert.o                        \
 OBJS-$(CONFIG_LIBSOXR) += soxr_resample.o
 
 # Objects duplicated from other libraries for shared builds
-SHLIBOBJS              += log2_tab.o
+SHLIBOBJS              += log2_tab.o reverse.o
 
 # Windows resource file
 SHLIBOBJS-$(HAVE_GNU_WINDRES) += swresampleres.o
 
-TESTPROGS = swresample \
+TESTPROGS = rematrix \
+            swresample \
             swresample_resample_realloc \

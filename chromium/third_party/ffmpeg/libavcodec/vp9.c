@@ -43,6 +43,7 @@
 #include "vpx_rac.h"
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/video_enc_params.h"
@@ -97,10 +98,10 @@ static void vp9_tile_data_free(VP9TileData *td)
 
 static void vp9_frame_unref(VP9Frame *f)
 {
+    av_refstruct_unref(&f->hwaccel_picture_private);
     ff_progress_frame_unref(&f->tf);
     av_refstruct_unref(&f->header_ref);
     av_refstruct_unref(&f->extradata);
-    av_refstruct_unref(&f->hwaccel_picture_private);
     f->segmentation_map = NULL;
 }
 
@@ -1581,6 +1582,24 @@ static int vp9_export_enc_params(VP9Context *s, VP9Frame *frame)
     return 0;
 }
 
+static void vp9_warn_unsupported_webm_alpha(AVCodecContext *avctx,
+                                            const AVPacket *pkt)
+{
+    VP9Context *s = avctx->priv_data;
+    const uint8_t *sd;
+    size_t sd_size;
+
+    sd = av_packet_get_side_data(pkt, AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
+                                 &sd_size);
+    if (!sd || sd_size < 8 || AV_RB64(sd) != 1)
+        return;
+
+    av_log_once(avctx, AV_LOG_WARNING, AV_LOG_DEBUG,
+                &s->webm_alpha_warned,
+                "Ignoring unsupported WebM alpha channel side data; use the "
+                "libvpx-vp9 decoder to decode it.\n");
+}
+
 static int vp9_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                             int *got_frame, AVPacket *pkt)
 {
@@ -1595,6 +1614,8 @@ static int vp9_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                             (!s->s.h.segmentation.enabled || !s->s.h.segmentation.update_map);
     const VP9Frame *src;
     AVFrame *f;
+
+    vp9_warn_unsupported_webm_alpha(avctx, pkt);
 
     ret = ff_cbs_read_packet(s->cbc, &s->current_frag, pkt);
     if (ret < 0) {
@@ -1845,6 +1866,7 @@ static av_cold void vp9_decode_flush(AVCodecContext *avctx)
 
     for (i = 0; i < 8; i++) {
         ff_progress_frame_unref(&s->s.refs[i]);
+        ff_progress_frame_unref(&s->next_refs[i]);
         vp9_frame_unref(&s->s.ref_frames[i]);
     }
 
@@ -1912,6 +1934,7 @@ static int vp9_decode_update_thread_context(AVCodecContext *dst, const AVCodecCo
     s->s.h.bpp = ssrc->s.h.bpp;
     s->bpp_index = ssrc->bpp_index;
     s->pix_fmt = ssrc->pix_fmt;
+    s->webm_alpha_warned = ssrc->webm_alpha_warned;
     memcpy(&s->prob_ctx, &ssrc->prob_ctx, sizeof(s->prob_ctx));
     memcpy(&s->s.h.lf_delta, &ssrc->s.h.lf_delta, sizeof(s->s.h.lf_delta));
     memcpy(&s->s.h.segmentation.feat, &ssrc->s.h.segmentation.feat,

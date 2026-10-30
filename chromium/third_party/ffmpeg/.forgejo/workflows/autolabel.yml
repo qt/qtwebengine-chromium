@@ -22,7 +22,6 @@ jobs:
         with:
           configuration-path: .forgejo/labeler/labeler.yml
           repo-token: ${{ secrets.AUTOLABELER_TOKEN }}
-          sync-labels: true
       - name: Label by title-match
         uses: actions/github-script@v8
         with:

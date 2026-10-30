@@ -102,7 +102,7 @@ static av_cold int init_vulkan(AVFilterContext *avctx)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
     RET(ff_vk_init_sampler(vkctx, &s->sampler, 1, VK_FILTER_NEAREST));
 
     SPEC_LIST_CREATE(sl, 2, 2*sizeof(int))
@@ -110,22 +110,25 @@ static av_cold int init_vulkan(AVFilterContext *avctx)
     SPEC_LIST_ADD(sl, 1, 32, planes);
 
     ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT,
-                      NULL, (int []) { 32, 32, 1 }, 0);
+                      sl, (int []) { 32, 32, 1 }, 0);
 
     const FFVulkanDescriptorSetBinding desc[] = {
+        { /* output_images */
+            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems      = planes,
+        },
         { /* a_images */
             .type       = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
             .samplers   = DUP_SAMPLER(s->sampler),
+            .elems      = planes,
         },
         { /* b_images */
             .type       = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
             .samplers   = DUP_SAMPLER(s->sampler),
-        },
-        { /* output_images */
-            .type       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems      = planes,
         },
     };
     ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 3, 0);

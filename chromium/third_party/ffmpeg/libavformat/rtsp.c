@@ -916,10 +916,17 @@ int ff_rtsp_open_transport_ctx(AVFormatContext *s, RTSPStream *rtsp_st)
                                               rtsp_st->dynamic_protocol_context,
                                               rtsp_st->dynamic_handler);
         }
-        if (rtsp_st->crypto_suite[0])
-            ff_rtp_parse_set_crypto(rtsp_st->transport_priv,
-                                    rtsp_st->crypto_suite,
-                                    rtsp_st->crypto_params);
+        if (rtsp_st->crypto_suite[0]) {
+            int ret = ff_rtp_parse_set_crypto(rtsp_st->transport_priv,
+                                              rtsp_st->crypto_suite,
+                                              rtsp_st->crypto_params);
+            if (ret < 0) {
+                av_log(s, AV_LOG_ERROR,
+                       "SRTP setup failed for suite '%s'\n",
+                       rtsp_st->crypto_suite);
+                return ret;
+            }
+        }
     }
 
     return 0;
@@ -1362,6 +1369,18 @@ start:
     if (rt->seq != reply->seq) {
         av_log(s, AV_LOG_WARNING, "CSeq %d expected, %d received.\n",
             rt->seq, reply->seq);
+        /* At close time, drain stale async replies - e.g. queued keepalive
+         * OPTIONS or GET_PARAMETER responses - until the expected CSeq shows
+         * up.  Otherwise ff_rtsp_send_cmd("TEARDOWN") in rtsp_read_close()
+         * is satisfied by a queued keepalive reply, leaving the TEARDOWN
+         * 200 OK unread so the server never frees the session.  Only done
+         * while teardown_deadline bounds the wait; every other synchronous
+         * command keeps accepting a mismatching reply. */
+        if (rt->teardown_deadline) {
+            if (content_ptr)
+                av_freep(content_ptr);
+            goto start;
+        }
     }
 
     /* EOS */
@@ -1868,6 +1887,45 @@ void ff_rtsp_close_connections(AVFormatContext *s)
     ffurl_closep(&rt->rtsp_hd);
 }
 
+static int rtsp_url_same_origin(const char *url1, const char *url2)
+{
+    char proto1[128], proto2[128];
+    char host1[1024], host2[1024];
+    int port1, port2;
+
+    av_url_split(proto1, sizeof(proto1), NULL, 0, host1, sizeof(host1),
+                 &port1, NULL, 0, url1);
+    av_url_split(proto2, sizeof(proto2), NULL, 0, host2, sizeof(host2),
+                 &port2, NULL, 0, url2);
+
+    if (!proto1[0] || !proto2[0] || !host1[0] || !host2[0])
+        return 0;
+
+    if (port1 < 0)
+        port1 = !av_strcasecmp(proto1, "rtsps") ? RTSPS_DEFAULT_PORT
+                                                : RTSP_DEFAULT_PORT;
+    if (port2 < 0)
+        port2 = !av_strcasecmp(proto2, "rtsps") ? RTSPS_DEFAULT_PORT
+                                                : RTSP_DEFAULT_PORT;
+
+    return !av_strcasecmp(proto1, proto2) &&
+           !av_strcasecmp(host1, host2) &&
+           port1 == port2;
+}
+
+static int rtsp_control_interrupt_cb(void *opaque)
+{
+    AVFormatContext *s = opaque;
+    RTSPState *rt = s->priv_data;
+
+    /* While closing, a pending user interrupt must not prevent TEARDOWN from
+     * being sent and its reply from being read; bound the wait instead. */
+    if (rt->teardown_deadline)
+        return av_gettime_relative() >= rt->teardown_deadline;
+
+    return ff_check_interrupt(&s->interrupt_callback);
+}
+
 int ff_rtsp_connect(AVFormatContext *s)
 {
     RTSPState *rt = s->priv_data;
@@ -1884,6 +1942,8 @@ int ff_rtsp_connect(AVFormatContext *s)
     socklen_t peer_len = sizeof(peer);
 
     rt->stored_msg.expected_seq = -1;
+    rt->control_interrupt_cb.callback = rtsp_control_interrupt_cb;
+    rt->control_interrupt_cb.opaque   = s;
     if (rt->rtp_port_max < rt->rtp_port_min) {
         av_log(s, AV_LOG_ERROR, "Invalid UDP port range, max port %d less "
                                 "than min port %d\n", rt->rtp_port_max,
@@ -1975,7 +2035,7 @@ redirect:
 
         /* GET requests */
         if (ffurl_alloc(&rt->rtsp_hd, httpname, AVIO_FLAG_READ,
-                        &s->interrupt_callback) < 0) {
+                        &rt->control_interrupt_cb) < 0) {
             av_dict_free(&options);
             err = AVERROR(EIO);
             goto fail;
@@ -2017,7 +2077,7 @@ redirect:
 
         /* POST requests */
         if (ffurl_alloc(&rt->rtsp_hd_out, httpname, AVIO_FLAG_WRITE,
-                        &s->interrupt_callback) < 0 ) {
+                        &rt->control_interrupt_cb) < 0 ) {
             av_dict_free(&options);
             err = AVERROR(EIO);
             goto fail;
@@ -2078,7 +2138,7 @@ redirect:
                     host, port,
                     "?timeout=%"PRId64, rt->stimeout);
         if ((ret = ffurl_open_whitelist(&rt->rtsp_hd, tcpname, AVIO_FLAG_READ_WRITE,
-                       &s->interrupt_callback, &proto_opts, s->protocol_whitelist, s->protocol_blacklist, NULL)) < 0) {
+                       &rt->control_interrupt_cb, &proto_opts, s->protocol_whitelist, s->protocol_blacklist, NULL)) < 0) {
             av_dict_free(&proto_opts);
             err = ret;
             goto fail;
@@ -2181,7 +2241,13 @@ redirect:
     ff_rtsp_close_streams(s);
     ff_rtsp_close_connections(s);
     if (reply->status_code >=300 && reply->status_code < 400 && s->iformat) {
-        int ret = ff_format_check_set_url(s, reply->location);
+        int ret;
+
+        if (!rtsp_url_same_origin(s->url, reply->location)) {
+            memset(rt->auth, 0, sizeof(rt->auth));
+            memset(&rt->auth_state, 0, sizeof(rt->auth_state));
+        }
+        ret = ff_format_check_set_url(s, reply->location);
         if (ret < 0) {
             err = ret;
             goto fail2;

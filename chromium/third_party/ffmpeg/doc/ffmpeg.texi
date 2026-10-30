@@ -1226,6 +1226,19 @@ that specifies the language for the "value" string. "key" must be the same as th
 all sub-mix element's @var{annotations}s
 @end table
 
+@item gain_map
+Groups together a base @var{stream} with a gain map, which together form a
+pair of renditions (e.g. HDR and SDR) as per ISO 21496-1.
+
+For this group @var{type}, the following options are available
+
+@table @option
+@item el_index
+Index of the gain map stream within the group. Defaults to 0.
+@item video_size
+Size of the final image for presentation.
+@end table
+
 @end table
 
 E.g. to create an scalable 5.1 IAMF file from several WAV input files
@@ -1248,6 +1261,13 @@ streams into an mp4 output
 ffmpeg -i input.iamf -c:a copy -stream_group map=0=0:st=0:st=1:st=2:st=3 -stream_group map=0=1:stg=0
 -streamid 0:0 -streamid 1:1 -streamid 2:2 -streamid 3:3 output.mp4
 @end example
+
+@item -reinit_opts[:@var{stream_specifier}] pts=@var{pts}|@var{key}=@var{value}[:force_reinit=1][:@var{key}=@var{value},pts=@var{pts}...] (@emph{output,per-stream})
+
+Creates a "," separated group of options to reconfigure an encoder at the
+specified output @var{pts} in AV_TIME_BASE units.
+The pseudo-option @var{force_reinit} ensures the encoder is fully reinitialized
+instead of simply reconfigured.
 
 @item -target @var{type} (@emph{output})
 Specify target file type (@code{vcd}, @code{svcd}, @code{dvd}, @code{dv},
@@ -1582,6 +1602,48 @@ numerator and denominator of the aspect ratio. For example "4:3",
 If used together with @option{-vcodec copy}, it will affect the aspect ratio
 stored at container level, but not the aspect ratio stored in encoded
 frames, if it exists.
+
+@item -stereo3d[:@var{stream_specifier}] @var{layout} (@emph{output,per-stream})
+Set stereoscopic 3D layout metadata on the output stream. This does
+@emph{not} rearrange pixels; use @option{-vf stereo3d} for that.
+
+The metadata is stored as @code{AV_PKT_DATA_STEREO3D} side data on the
+output stream. Muxers that already consume that side data will write the
+corresponding container boxes or elements, including:
+
+@itemize
+@item
+MP4 Google spatial-media @code{st3d} (requires @option{-strict unofficial})
+@item
+QuickTime MOV Apple @code{vexu} eyes (no @code{st3d})
+@item
+Matroska @code{StereoMode}; @option{-stereo3d} overrides the
+@code{stereo_mode} metadata tag, including a value inherited from the
+input
+@end itemize
+
+@var{layout} is case-insensitive. The following values are accepted:
+
+@table @samp
+@item 2d
+@itemx mono
+Monoscopic video.
+@item sbs
+@itemx sbsl
+@itemx side by side
+Side-by-side, left eye on the left.
+@item tb
+@itemx tbl
+@itemx top and bottom
+Top-and-bottom, left eye on top.
+@end table
+
+Inverted layouts such as @samp{sbsr} are not supported. An empty stream
+specifier applies to video streams only and is ignored for audio and
+other types. An explicit specifier on a non-video stream (for example
+@option{-stereo3d:a}) is an error.
+
+Recommended form: @option{-stereo3d:v sbsl}.
 
 @item -display_rotation[:@var{stream_specifier}] @var{rotation} (@emph{input,per-stream})
 Set video rotation metadata.
@@ -2782,14 +2844,8 @@ to the @option{-ss} option is considered an actual timestamp, and is not
 offset by the start time of the file. This matters only for files which do
 not start from timestamp 0, such as transport streams.
 
-@item -thread_queue_size @var{size} (@emph{input/output})
-For input, this option sets the maximum number of queued packets when reading
-from the file or device. With low latency / high rate live streams, packets may
-be discarded if they are not read in a timely manner; setting this value can
-force ffmpeg to use a separate input thread and read packets as soon as they
-arrive. By default ffmpeg only does this if multiple inputs are specified.
-
-For output, this option specified the maximum number of packets that may be
+@item -thread_queue_size @var{size} (@emph{output})
+This option specifies the maximum number of packets per stream that may be
 queued to each muxing thread.
 
 @item -sdp_file @var{file} (@emph{global})

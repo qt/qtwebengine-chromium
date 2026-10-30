@@ -1537,8 +1537,11 @@ static void move_segments(struct representation *rep_src, struct representation 
         free_fragment_list(rep_dest);
         if (rep_src->start_number > (rep_dest->start_number + rep_dest->n_fragments))
             rep_dest->cur_seq_no = 0;
-        else
+        else {
             rep_dest->cur_seq_no += rep_src->start_number - rep_dest->start_number;
+            if (rep_dest->cur_seq_no < 0)
+                rep_dest->cur_seq_no = 0;
+        }
         rep_dest->fragments    = rep_src->fragments;
         rep_dest->n_fragments  = rep_src->n_fragments;
         rep_dest->parent  = rep_src->parent;
@@ -1658,7 +1661,7 @@ static struct fragment *get_current_fragment(struct representation *pls)
     int reload_count = 0;
 
     while (( !ff_check_interrupt(c->interrupt_callback)&& pls->n_fragments > 0)) {
-        if (pls->cur_seq_no < pls->n_fragments) {
+        if (pls->cur_seq_no >= 0 && pls->cur_seq_no < pls->n_fragments) {
             seg_ptr = pls->fragments[pls->cur_seq_no];
             seg = av_mallocz(sizeof(struct fragment));
             if (!seg) {
@@ -1885,7 +1888,7 @@ restart:
     if (v->init_sec_buf_read_offset < v->init_sec_data_len) {
         /* Push init section out first before first actual fragment */
         int copy_size = FFMIN(v->init_sec_data_len - v->init_sec_buf_read_offset, buf_size);
-        memcpy(buf, v->init_sec_buf, copy_size);
+        memcpy(buf, v->init_sec_buf + v->init_sec_buf_read_offset, copy_size);
         v->init_sec_buf_read_offset += copy_size;
         ret = copy_size;
         goto end;
@@ -1961,12 +1964,16 @@ static int reopen_demux_for_component(AVFormatContext *s, struct representation 
         pls->ctx = NULL;
         goto fail;
     }
+    av_freep(&pls->pb.pub.buffer);
     ffio_init_context(&pls->pb, avio_ctx_buffer, INITIAL_BUFFER_SIZE, 0,
                       pls, read_data, NULL, c->is_live ? NULL : seek_data);
     pls->pb.pub.seekable = 0;
 
-    if ((ret = ff_copy_whiteblacklists(pls->ctx, s)) < 0)
+    if ((ret = ff_copy_whiteblacklists(pls->ctx, s)) < 0) {
+        avformat_free_context(pls->ctx);
+        pls->ctx = NULL;
         goto fail;
+    }
 
     pls->ctx->flags = AVFMT_FLAG_CUSTOM_IO;
     pls->ctx->probesize = s->probesize > 0 ? s->probesize : 1024 * 4;
@@ -2380,7 +2387,7 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     if (!cur) {
-        return AVERROR_INVALIDDATA;
+        return AVERROR_EOF;
     }
     while (!ff_check_interrupt(c->interrupt_callback) && !ret) {
         ret = av_read_frame(cur->ctx, pkt);
@@ -2396,9 +2403,17 @@ static int dash_read_packet(AVFormatContext *s, AVPacket *pkt)
             cur->is_restart_needed = 0;
             ff_format_io_close(cur->parent, &cur->input);
             ret = reopen_demux_for_component(s, cur);
+        } else if (ret == AVERROR_EOF) {
+            close_demux_for_component(cur);
+            ff_format_io_close(cur->parent, &cur->input);
+            av_log(s, AV_LOG_DEBUG, "EOF on stream_index %d\n", cur->stream_index);
+            // prevent recheck_discard_flags() from re-enabling the component
+            for (int i = 0; i < cur->nb_assoc_stream; i++)
+                cur->assoc_stream[i]->discard = AVDISCARD_ALL;
+            return FFERROR_REDO;
         }
     }
-    return AVERROR_EOF;
+    return ret;
 }
 
 static int dash_close(AVFormatContext *s)

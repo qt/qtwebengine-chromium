@@ -28,6 +28,7 @@
 #include "libavutil/macros.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/thread.h"
 #include "libavutil/tree.h"
 #include "ops.h"
 #include "ops_dispatch.h"
@@ -73,6 +74,13 @@ static int generate_entry_struct(void *opaque, void *key)
     case SWS_UOP_READ_PLANAR_FV_FMA:
         av_bprintf(bp, ", .par.filter.type = %s", pixel_types[par->filter.type].full);
         break;
+    case SWS_UOP_RW_SHUFFLE:
+        av_bprintf(bp, ", .par.shuffle.clear_value = 0x%x"
+                       ", .par.shuffle.read_size = %u"
+                       ", .par.shuffle.write_size = %u",
+                   par->shuffle.clear_value,
+                   par->shuffle.read_size, par->shuffle.write_size);
+        break;
     case SWS_UOP_LSHIFT:
     case SWS_UOP_RSHIFT:
         av_bprintf(bp, ", .par.shift.amount = %u", par->shift.amount);
@@ -110,6 +118,9 @@ static int generate_entry_struct(void *opaque, void *key)
                    par->dither.y_offset[2], par->dither.y_offset[3],
                    par->dither.size_log2);
         break;
+    case SWS_UOP_LUT_3D:
+        av_bprintf(bp, ", .par.lut3d.dynamic = %d", par->lut3d.dynamic);
+        break;
     }
 
     av_bprintf(bp, ")");
@@ -132,6 +143,10 @@ static int generate_entry_args(void *opaque, void *key)
     case SWS_UOP_READ_PLANAR_FV:
     case SWS_UOP_READ_PLANAR_FV_FMA:
         av_bprintf(bp, ", %s", pixel_types[par->filter.type].full);
+        break;
+    case SWS_UOP_RW_SHUFFLE:
+        av_bprintf(bp, ", 0x%x, %u, %u", par->shuffle.clear_value,
+                   par->shuffle.read_size, par->shuffle.write_size);
         break;
     case SWS_UOP_LSHIFT:
     case SWS_UOP_RSHIFT:
@@ -168,13 +183,21 @@ static int generate_entry_args(void *opaque, void *key)
                    par->dither.y_offset[2], par->dither.y_offset[3],
                    par->dither.size_log2);
         break;
+    case SWS_UOP_LUT_3D:
+        av_bprintf(bp, ", %d", par->lut3d.dynamic);
+        break;
     }
 
     av_bprintf(bp, ")");
     return 0;
 }
 
-static int register_uop(struct AVTreeNode **root, const SwsUOp *uop)
+struct EnumPriv {
+    struct AVTreeNode *root;
+    AVMutex lock;
+};
+
+static int register_uop(struct EnumPriv *s, const SwsUOp *uop)
 {
     SwsUOp *key = av_memdup(uop, sizeof(*uop));
     if (!key)
@@ -187,7 +210,9 @@ static int register_uop(struct AVTreeNode **root, const SwsUOp *uop)
         return AVERROR(ENOMEM);
     }
 
-    av_tree_insert(root, key, ff_sws_uop_cmp_v, &node);
+    ff_mutex_lock(&s->lock);
+    av_tree_insert(&s->root, key, ff_sws_uop_cmp_v, &node);
+    ff_mutex_unlock(&s->lock);
     if (node) {
         av_free(node);
         av_free(key);
@@ -205,9 +230,8 @@ static int register_flags(SwsContext *ctx, const SwsOpList *ops, SwsUOpFlags fla
     if (ret < 0)
         goto fail;
 
-    struct AVTreeNode **root = ctx->opaque;
     for (int i = 0; i < uops->num_ops; i++) {
-        ret = register_uop(root, &uops->ops[i]);
+        ret = register_uop(ctx->opaque, &uops->ops[i]);
         if (ret < 0)
             goto fail;
     }
@@ -218,8 +242,9 @@ fail:
 }
 
 static const SwsUOpFlags uop_flags[] = {
-    0,
-    SWS_UOP_FLAG_FMA, /* x86 backend */
+    SWS_UOP_FLAG_EXPAND_BIT | SWS_UOP_FLAG_READ_PALETTE | SWS_UOP_FLAG_ADD,
+    SWS_UOP_FLAG_EXPAND_BIT | SWS_UOP_FLAG_READ_PALETTE | SWS_UOP_FLAG_ADD |
+    SWS_UOP_FLAG_PSHUFB | SWS_UOP_FLAG_FMA, /* x86 backend */
 };
 
 static int register_uops(SwsContext *ctx, const SwsOpList *ops,
@@ -288,32 +313,51 @@ static int free_uop_key(void *opaque, void *key)
  */
 static int sws_uops_macros_gen(char **out_str)
 {
-    int ret;
-    struct AVTreeNode *root = NULL;
+    struct EnumPriv s = {0};
+    SwsLut3D *lut3d = NULL;
+    int ret = ff_mutex_init(&s.lock, NULL);
+    if (ret)
+        return AVERROR(ENOSYS);
 
     AVBPrint bprint, *const bp = &bprint;
     av_bprint_init(bp, 0, AV_BPRINT_SIZE_UNLIMITED);
 
     /* Allocate dummy graph and context for ff_sws_compile_pass() */
     SwsGraph *graph = ff_sws_graph_alloc();
-    if (!graph)
-        return AVERROR(ENOMEM);
-
-    SwsContext *ctx = graph->ctx = sws_alloc_context();
-    if (!ctx) {
+    SwsContext *ctx = sws_alloc_context();
+    if (!graph || !ctx) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
 
-    /* Use this to plumb the tree state through all the layers of abstraction */
-    ctx->opaque = &root;
+    /* Use this to plumb the enum state through all the layers of abstraction */
+    graph->ctx = ctx;
+    ctx->opaque = &s;
     ctx->scaler = SWS_SCALE_BILINEAR; /* cheaper to generate filter kernels */
+    ctx->threads = 0; /* use slice threading to speed up tree building */
+
+    /* Allocate dummy 3DLUT to force generation of SWS_UOP_LUT_3D */
+    lut3d = ff_sws_lut3d_alloc();
+    if (!lut3d) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+    ret = ff_sws_enum_op_lists(ctx, graph, lut3d, AV_PIX_FMT_NONE,
+                               AV_PIX_FMT_NONE, register_all_uops);
+    if (ret < 0)
+        goto fail;
+
+    lut3d->dynamic = true;
+    ret = ff_sws_enum_op_lists(ctx, graph, lut3d, AV_PIX_FMT_NONE,
+                               AV_PIX_FMT_NONE, register_all_uops);
+    if (ret < 0)
+        goto fail;
 
     /* Register all unique uops over every relevant combination of flags */
     for (int i = 0; i < FF_ARRAY_ELEMS(flags_list); i++) {
         ctx->flags = flags_list[i];
-        ret = ff_sws_enum_op_lists(ctx, graph, AV_PIX_FMT_NONE, AV_PIX_FMT_NONE,
-                                   register_all_uops);
+        ret = ff_sws_enum_op_lists(ctx, graph, NULL, AV_PIX_FMT_NONE,
+                                   AV_PIX_FMT_NONE, register_all_uops);
         if (ret < 0)
             goto fail;
     }
@@ -348,10 +392,10 @@ static int sws_uops_macros_gen(char **out_str)
             const char *macro  = uop_names[key.uop].full + sizeof("SWS_UOP_") - 1;
             const char *prefix = pixel_types[key.type].prefix;
             av_bprintf(bp, "#define SWS_FOR_%s%s(MACRO, ...)", prefix, macro);
-            av_tree_enumerate(root, &key, enum_type, generate_entry_args);
+            av_tree_enumerate(s.root, &key, enum_type, generate_entry_args);
             av_bprintf(bp, "\n");
             av_bprintf(bp, "#define SWS_FOR_STRUCT_%s%s(MACRO, ...)", prefix, macro);
-            av_tree_enumerate(root, &key, enum_type, generate_entry_struct);
+            av_tree_enumerate(s.root, &key, enum_type, generate_entry_struct);
             av_bprintf(bp, "\n");
         }
     }
@@ -360,9 +404,11 @@ static int sws_uops_macros_gen(char **out_str)
     ret = av_bprint_finalize(bp, out_str);
 
 fail:
+    av_refstruct_unref(&lut3d);
     av_bprint_finalize(bp, NULL);
-    av_tree_enumerate(root, NULL, NULL, free_uop_key);
-    av_tree_destroy(root);
+    av_tree_enumerate(s.root, NULL, NULL, free_uop_key);
+    av_tree_destroy(s.root);
+    ff_mutex_destroy(&s.lock);
     ff_sws_graph_free(&graph);
     sws_free_context(&ctx);
     return ret;

@@ -34,9 +34,9 @@
 #include "qpel.h"
 
 FF_VISIBILITY_PUSH_HIDDEN
-void ff_put_no_rnd_pixels8x8_l2_mmxext(uint8_t *dst,
-                                       const uint8_t *src1, const uint8_t *src2,
-                                       ptrdiff_t dstStride, ptrdiff_t src1Stride);
+void ff_put_no_rnd_pixels8x8_l2_sse2(uint8_t *dst,
+                                     const uint8_t *src1, const uint8_t *src2,
+                                     ptrdiff_t dstStride, ptrdiff_t src1Stride);
 void ff_put_no_rnd_pixels16x16_l2_sse2(uint8_t *dst,
                                        const uint8_t *src1, const uint8_t *src2,
                                        ptrdiff_t dstStride, ptrdiff_t src1Stride);
@@ -241,10 +241,10 @@ MACRO(put,,                SIZE, SIZEP1, HXMM, VXMM, HVXMM, L2) \
 MACRO(avg,,                SIZE, SIZEP1, HXMM, VXMM, HVXMM, L2) \
 MACRO(put_no_rnd, no_rnd_, SIZE, SIZEP1, HXMM, VXMM, HVXMM, L2)
 
-QPEL3(QPEL_H,   8,  9, ssse3, sse2, ssse3, mmxext)
+QPEL3(QPEL_H,   8,  9, ssse3, sse2, ssse3, sse2)
 QPEL3(QPEL_H,  16, 17, ssse3, sse2, ssse3, sse2)
-QPEL3(QPEL_V,   8,  9, ssse3, sse2, ssse3, mmxext)
-QPEL3(QPEL_HV,  8,  9, ssse3, sse2, ssse3, mmxext)
+QPEL3(QPEL_V,   8,  9, ssse3, sse2, ssse3, sse2)
+QPEL3(QPEL_HV,  8,  9, ssse3, sse2, ssse3, sse2)
 QPEL3(QPEL_V,  16, 17, ssse3, sse2, ssse3, sse2)
 QPEL3(QPEL_HV, 16, 17, ssse3, sse2, ssse3, sse2)
 
@@ -300,5 +300,14 @@ av_cold void ff_qpeldsp_init_x86(QpelDSPContext *c)
         SET_H_QPEL_FUNCS(16, ssse3,);
         SET_HV_QPEL_FUNCS(16, ssse3,);
     }
+#if HAVE_SSE2_EXTERNAL
+    if (EXTERNAL_SSE2(cpu_flags)) {
+        c->put_no_rnd_qpel_pixels_tab[0][0] =
+        c->put_qpel_pixels_tab[0][0] = ff_put_pixels16x16_sse2;
+        c->put_no_rnd_qpel_pixels_tab[1][0] =
+        c->put_qpel_pixels_tab[1][0] = ff_put_pixels8x8_sse2;
+        c->avg_qpel_pixels_tab[0][0] = ff_avg_pixels16x16_sse2;
+    }
+#endif
 }
 FF_VISIBILITY_POP_HIDDEN

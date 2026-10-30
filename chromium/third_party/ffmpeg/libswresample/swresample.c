@@ -154,7 +154,7 @@ av_cold void swr_close(SwrContext *s){
 }
 
 av_cold int swr_init(struct SwrContext *s){
-    int ret;
+    int ret, mixing;
     char l1[1024], l2[1024];
 
     clear_context(s);
@@ -174,6 +174,14 @@ av_cold int swr_init(struct SwrContext *s){
     }
     if(s->out_sample_rate <= 0){
         av_log(s, AV_LOG_ERROR, "Requested output sample rate %d is invalid\n", s->out_sample_rate);
+        return AVERROR(EINVAL);
+    }
+
+    if (s->out_sample_fmt == AV_SAMPLE_FMT_DSD &&
+        !(s->in_sample_fmt == AV_SAMPLE_FMT_DSD &&
+          s->in_sample_rate == s->out_sample_rate &&
+          !(s->flags & SWR_FLAG_RESAMPLE))) {
+        av_log(s, AV_LOG_ERROR, "Conversion to DSD is not supported\n");
         return AVERROR(EINVAL);
     }
 
@@ -224,9 +232,31 @@ av_cold int swr_init(struct SwrContext *s){
                  s->rematrix_volume!=1.0 ||
                  s->rematrix_custom;
 
+    av_channel_layout_describe(&s->out_ch_layout, l2, sizeof(l2));
+    av_channel_layout_describe(&s->in_ch_layout, l1, sizeof(l1));
+    if ((   s->out_ch_layout.order == AV_CHANNEL_ORDER_UNSPEC
+         || s-> in_ch_layout.order == AV_CHANNEL_ORDER_UNSPEC) && s->used_ch_layout.nb_channels != s->out.ch_count && !s->rematrix_custom) {
+        av_log(s, AV_LOG_ERROR, "Rematrix is needed between %s and %s "
+               "but there is not enough information to do it\n", l1, l2);
+        return AVERROR(EINVAL);
+    }
+
+    /* a matrix that only copies channels leaves the samples as they are,
+     * so the format in between is selected like without a matrix */
+    mixing = 0;
+    if (s->rematrix) {
+        mixing = swri_rematrix_build(s);
+        if (mixing < 0)
+            return mixing;
+    }
+
     if(s->int_sample_fmt == AV_SAMPLE_FMT_NONE){
+        // DSD to PCM conversion is done in floating point
+        if(   s->in_sample_fmt == AV_SAMPLE_FMT_DSD
+           && s->out_sample_fmt != AV_SAMPLE_FMT_DSD) {
+            s->int_sample_fmt= AV_SAMPLE_FMT_FLTP;
         // 16bit or less to 16bit or less with the same sample rate
-        if(   av_get_bytes_per_sample(s-> in_sample_fmt) <= 2
+        } else if(   av_get_bytes_per_sample(s-> in_sample_fmt) <= 2
            && av_get_bytes_per_sample(s->out_sample_fmt) <= 2
            && s->out_sample_rate==s->in_sample_rate) {
             s->int_sample_fmt= AV_SAMPLE_FMT_S16P;
@@ -235,13 +265,13 @@ av_cold int swr_init(struct SwrContext *s){
                     +av_get_bytes_per_sample(s->out_sample_fmt) <= 3 ) {
             s->int_sample_fmt= AV_SAMPLE_FMT_S16P;
         }else if(   av_get_bytes_per_sample(s-> in_sample_fmt) <= 2
-           && !s->rematrix
+           && !mixing
            && s->out_sample_rate==s->in_sample_rate
            && !(s->flags & SWR_FLAG_RESAMPLE)){
             s->int_sample_fmt= AV_SAMPLE_FMT_S16P;
         }else if(   av_get_planar_sample_fmt(s-> in_sample_fmt) == AV_SAMPLE_FMT_S32P
                  && av_get_planar_sample_fmt(s->out_sample_fmt) == AV_SAMPLE_FMT_S32P
-                 && !s->rematrix
+                 && !mixing
                  && s->out_sample_rate == s->in_sample_rate
                  && !(s->flags & SWR_FLAG_RESAMPLE)
                  && s->engine != SWR_ENGINE_SOXR){
@@ -316,18 +346,8 @@ av_cold int swr_init(struct SwrContext *s){
         goto fail;
     }
 
-    av_channel_layout_describe(&s->out_ch_layout, l2, sizeof(l2));
-    av_channel_layout_describe(&s->in_ch_layout, l1, sizeof(l1));
     if (s->in_ch_layout.order != AV_CHANNEL_ORDER_UNSPEC && s->used_ch_layout.nb_channels != s->in_ch_layout.nb_channels) {
         av_log(s, AV_LOG_ERROR, "Input channel layout %s mismatches specified channel count %d\n", l1, s->used_ch_layout.nb_channels);
-        ret = AVERROR(EINVAL);
-        goto fail;
-    }
-
-    if ((   s->out_ch_layout.order == AV_CHANNEL_ORDER_UNSPEC
-         || s-> in_ch_layout.order == AV_CHANNEL_ORDER_UNSPEC) && s->used_ch_layout.nb_channels != s->out.ch_count && !s->rematrix_custom) {
-        av_log(s, AV_LOG_ERROR, "Rematrix is needed between %s and %s "
-               "but there is not enough information to do it\n", l1, l2);
         ret = AVERROR(EINVAL);
         goto fail;
     }
@@ -346,7 +366,10 @@ av_assert0(s->out.ch_count);
     if(!s->resample && !s->rematrix && !s->channel_map && !s->dither.method){
         s->full_convert = swri_audio_convert_alloc(s->out_sample_fmt,
                                                    s-> in_sample_fmt, s-> in.ch_count, NULL, 0);
-        return 0;
+        // fall through to the generic path for conversions that have no
+        // direct implementation (e.g. DSD input to non-float output)
+        if (s->full_convert)
+            return 0;
     }
 
     s->in_convert = swri_audio_convert_alloc(s->int_sample_fmt,
@@ -355,7 +378,10 @@ av_assert0(s->out.ch_count);
                                              s->int_sample_fmt, s->out.ch_count, NULL, 0);
 
     if (!s->in_convert || !s->out_convert) {
-        ret = AVERROR(ENOMEM);
+        av_log(s, AV_LOG_ERROR, "Cannot convert %s sample format to %s sample format\n",
+               av_get_sample_fmt_name(!s->in_convert ? s->in_sample_fmt : s->int_sample_fmt),
+               av_get_sample_fmt_name(!s->in_convert ? s->int_sample_fmt : s->out_sample_fmt));
+        ret = AVERROR(EINVAL);
         goto fail;
     }
 
@@ -654,10 +680,10 @@ static int swr_convert_internal(struct SwrContext *s, AudioData *out, int out_co
         if(postin != midbuf)
             if ((out_count = resample(s, midbuf, out_count, postin, in_count)) < 0)
                 return out_count;
-        if(midbuf != preout)
+        if(midbuf != preout && out_count)
             swri_rematrix(s, preout, midbuf, out_count, preout==out);
     }else{
-        if(postin != midbuf)
+        if(postin != midbuf && in_count)
             swri_rematrix(s, midbuf, postin, in_count, midbuf==out);
         if(midbuf != preout)
             if ((out_count = resample(s, preout, out_count, midbuf, in_count)) < 0)
@@ -865,10 +891,14 @@ int swr_inject_silence(struct SwrContext *s, int count){
     if((ret=swri_realloc_audio(&s->silence, count))<0)
         return ret;
 
-    if(s->silence.planar) for(i=0; i<s->silence.ch_count; i++) {
-        memset(s->silence.ch[i], s->silence.bps==1 ? 0x80 : 0, count*s->silence.bps);
-    } else
-        memset(s->silence.ch[0], s->silence.bps==1 ? 0x80 : 0, count*s->silence.bps*s->silence.ch_count);
+    {
+        int fill = s->silence.fmt == AV_SAMPLE_FMT_DSD ? 0x69 :
+                   s->silence.bps == 1                 ? 0x80 : 0;
+        if(s->silence.planar) for(i=0; i<s->silence.ch_count; i++) {
+            memset(s->silence.ch[i], fill, count*s->silence.bps);
+        } else
+            memset(s->silence.ch[0], fill, count*s->silence.bps*s->silence.ch_count);
+    }
 
     reversefill_audiodata(&s->silence, tmp_arg);
     av_log(s, AV_LOG_VERBOSE, "adding %d audio samples of silence\n", count);

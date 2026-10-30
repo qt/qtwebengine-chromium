@@ -216,17 +216,24 @@ buildflag_header("ffmpeg_features") {
 if (os_config == "linux-noasm") {
   # When assembly is disabled, exclude architecture-specific C init files
   # (which contain static global tables referencing assembly functions) to
-  # prevent unresolved symbol lookup errors in libffmpeg.so. Also clear GNU
-  # Assembler sources for non-x86 targets.
+  # prevent unresolved symbol lookup errors in libffmpeg.so, while preserving
+  # core C utility files like cpu.c. Also clear GNU Assembler sources.
   _filtered_c_sources = filter_exclude(ffmpeg_c_sources,
                                        [
-                                         "*/x86/*",
-                                         "*/arm/*",
-                                         "*/aarch64/*",
-                                         "*/riscv/*",
-                                         "*/mips/*",
-                                         "*/loongarch/*",
-                                         "*/ppc/*",
+                                         "*/x86/*_init.c",
+                                         "*/x86/*_init_*.c",
+                                         "*/arm/*_init.c",
+                                         "*/arm/*_init_*.c",
+                                         "*/aarch64/*_init.c",
+                                         "*/aarch64/*_init_*.c",
+                                         "*/riscv/*_init.c",
+                                         "*/riscv/*_init_*.c",
+                                         "*/mips/*_init.c",
+                                         "*/mips/*_init_*.c",
+                                         "*/loongarch/*_init.c",
+                                         "*/loongarch/*_init_*.c",
+                                         "*/ppc/*_init.c",
+                                         "*/ppc/*_init_*.c",
                                        ])
   ffmpeg_c_sources = []
   ffmpeg_c_sources = _filtered_c_sources
@@ -416,14 +423,6 @@ target(link_target_type, "ffmpeg_internal") {
       "_LARGEFILE_SOURCE",
       "HAVE_AV_CONFIG_H",
     ]
-
-    if (is_component_ffmpeg) {
-      # Required to avoid 4049 and 4217 errors around redundant imports.
-      cflags += [
-        "/FIcompat/msvcrt/snprintf.h",
-        "/FIcompat/msvcrt/strtod.h",
-      ]
-    }
 
     # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
     cflags += [

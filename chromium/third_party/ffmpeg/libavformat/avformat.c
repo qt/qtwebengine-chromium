@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
+
 #include <math.h>
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
@@ -107,6 +109,7 @@ void ff_free_stream_group(AVStreamGroup **pstg)
         break;
     case AV_STREAM_GROUP_PARAMS_LCEVC:
     case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:
+    case AV_STREAM_GROUP_PARAMS_GAIN_MAP:
         av_opt_free(stg->params.layered_video);
         av_freep(&stg->params.layered_video);
         break;
@@ -187,6 +190,9 @@ void avformat_free_context(AVFormatContext *s)
     av_freep(&s->chapters);
     av_dict_free(&s->metadata);
     av_dict_free(&si->id3v2_meta);
+#if CONFIG_LIBCURL_PROTOCOL
+    ff_curl_loop_free(&si->curl_loop);
+#endif
     av_packet_free(&si->pkt);
     av_packet_free(&si->parse_pkt);
     ff_packet_list_free(&si->packet_buffer);
@@ -270,6 +276,7 @@ const char *avformat_stream_group_name(enum AVStreamGroupParamsType type)
     case AV_STREAM_GROUP_PARAMS_LCEVC:                     return "LCEVC (Split video and enhancement)";
     case AV_STREAM_GROUP_PARAMS_TREF:                      return "Track Reference";
     case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:              return "Dolby Vision (Split base and enhancement layer)";
+    case AV_STREAM_GROUP_PARAMS_GAIN_MAP:                  return "Gain Map (Split base rendition and gain map)";
     }
     return NULL;
 }
@@ -521,7 +528,10 @@ int av_find_best_stream(AVFormatContext *ic, enum AVMediaType type,
         int real_stream_index = program ? program[i] : i;
         AVStream *st          = ic->streams[real_stream_index];
         AVCodecParameters *par = st->codecpar;
+        const AVCodecDescriptor *desc = avcodec_descriptor_get(par->codec_id);
         if (par->codec_type != type)
+            continue;
+        if (desc && (desc->props & AV_CODEC_PROP_ENHANCEMENT))
             continue;
         if (wanted_stream_nb >= 0 && real_stream_index != wanted_stream_nb)
             continue;

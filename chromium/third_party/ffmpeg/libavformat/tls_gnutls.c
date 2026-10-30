@@ -475,9 +475,10 @@ static ssize_t gnutls_url_push(gnutls_transport_ptr_t transport,
     int ret = ffurl_write(uc, buf, len);
     if (ret >= 0)
         return ret;
-    if (ret == AVERROR_EXIT)
-        return 0;
-    if (ret == AVERROR(EAGAIN)) {
+    if (ret == AVERROR_EXIT) {
+        /* Use EINTR, not 0: returning 0 would cause GnuTLS to busy-spin. */
+        errno = EINTR;
+    } else if (ret == AVERROR(EAGAIN)) {
         errno = EAGAIN;
     } else {
         errno = EIO;
@@ -606,6 +607,9 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
             ret = AVERROR(EINVAL);
             goto fail;
         }
+    } else if (s->cert_buf || s->key_buf) {
+        av_log(h, AV_LOG_ERROR, "cert and key required\n");
+    }
 
         have_cert_pkey = 1;
     }

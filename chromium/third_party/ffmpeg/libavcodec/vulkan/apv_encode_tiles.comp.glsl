@@ -24,6 +24,7 @@
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_arithmetic : require
 #extension GL_KHR_shader_subgroup_rotate : require
+#extension GL_EXT_maximal_reconvergence : require
 
 #define PB_UNALIGNED
 #include "common.glsl"
@@ -34,13 +35,8 @@
  * One workgroup encodes one tile-component. The workgroup size (set by the
  * host via spec constants 253/254/255) equals the number of transform blocks
  * in the tile-component, so there is exactly one invocation per block.
- *
- * The minimum APV tile is 16x8 MBs -> 16*8*4 = 512 blocks. The buffers below
- * are sized for 1024 (a 2x tile). With a guaranteed subgroup size of >= 32,
- * a 1024-invocation workgroup has at most 1024/32 = 32 subgroups.
  */
-#define MAX_BLOCKS    1024
-#define MAX_SUBGROUPS 32
+layout (constant_id = 0) const uint max_subgroups = 32; /* at the smallest subgroup size */
 
 /* ff_zigzag_direct, packed: each byte is the raster index (y*8 + x). */
 const uint8_t zigzag[64] = {
@@ -139,8 +135,8 @@ layout (push_constant, scalar) uniform pushConstants {
     uint  blocks_per_mb;    /* blocks per MB of this dispatch's components */
 };
 
-shared uint32_t sg_lasttail[MAX_SUBGROUPS]; /* last block's tail, per subgroup */
-shared uint32_t sg_scan    [MAX_SUBGROUPS]; /* per-subgroup scan totals        */
+shared uint32_t sg_lasttail[max_subgroups]; /* last block's tail, per subgroup */
+shared uint32_t sg_scan    [max_subgroups]; /* per-subgroup scan totals        */
 
 /*
  * Flush only the complete bytes held by the writer. The trailing partial
@@ -278,7 +274,7 @@ void dc_context(uint coeff_base, uint idx, out int prev_dc, out int prev_k_dc)
     prev_k_dc = min(abs(dc_m1 - dc_m2) >> 1, 5);
 }
 
-void main(void)
+void main(void) [[maximally_reconverges]]
 {
     const uint b         = gl_LocalInvocationID.x;
     const uint comp      = comp_base + gl_WorkGroupID.z;

@@ -105,9 +105,8 @@ static void filter(AVFilterContext *ctx, AVFrame *dst,
 {
     YADIFVTContext *s = ctx->priv;
     YADIFContext *y = &s->yadif;
-    int i;
 
-    for (i = 0; i < y->csp->nb_components; i++) {
+    for (int i = 0; i < y->csp->nb_components; i++) {
         int pixel_size, channels;
         const AVComponentDescriptor *comp = &y->csp->comp[i];
         CVMetalTextureRef prev, cur, next, dest;
@@ -124,7 +123,7 @@ static void filter(AVFilterContext *ctx, AVFrame *dst,
         channels = comp->step / pixel_size;
         if (pixel_size > 2 || channels > 2) {
             av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s\n", y->csp->name);
-            goto exit;
+            return;
         }
         switch (pixel_size) {
         case 1:
@@ -135,7 +134,7 @@ static void filter(AVFilterContext *ctx, AVFrame *dst,
             break;
         default:
             av_log(ctx, AV_LOG_ERROR, "Unsupported pixel format: %s\n", y->csp->name);
-            goto exit;
+            return;
         }
         av_log(ctx, AV_LOG_TRACE,
                "Deinterlacing plane %d: pixel_size: %d channels: %d\n",
@@ -145,6 +144,15 @@ static void filter(AVFilterContext *ctx, AVFrame *dst,
         cur  = ff_metal_texture_from_pixbuf(ctx, s->textureCache, (CVPixelBufferRef)y->cur->data[3], i, format);
         next = ff_metal_texture_from_pixbuf(ctx, s->textureCache, (CVPixelBufferRef)y->next->data[3], i, format);
         dest = ff_metal_texture_from_pixbuf(ctx, s->textureCache, (CVPixelBufferRef)dst->data[3], i, format);
+
+        if (!prev || !cur || !next || !dest) {
+            av_log(ctx, AV_LOG_ERROR, "Failed to create Metal texture for plane %d\n", i);
+            if (prev) CFRelease(prev);
+            if (cur)  CFRelease(cur);
+            if (next) CFRelease(next);
+            if (dest) CFRelease(dest);
+            return;
+        }
 
         tex_prev = CVMetalTextureGetTexture(prev);
         tex_cur  = CVMetalTextureGetTexture(cur);
@@ -165,9 +173,6 @@ static void filter(AVFilterContext *ctx, AVFrame *dst,
     if (y->current_field == YADIF_FIELD_END) {
         y->current_field = YADIF_FIELD_NORMAL;
     }
-
-exit:
-    return;
 }
 
 static av_cold void do_uninit(AVFilterContext *ctx) API_AVAILABLE(macos(10.11), ios(8.0))

@@ -70,6 +70,16 @@ static int encode(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt)
     av_assert0(0);
 }
 
+static void reset_cpu_flags(void)
+{
+    static int default_cpu_flags = -1;
+
+    if (default_cpu_flags < 0)
+        default_cpu_flags = av_get_cpu_flags();
+
+    av_force_cpu_flags(default_cpu_flags);
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     uint64_t maxpixels_per_frame = 512 * 512;
     uint64_t maxpixels;
@@ -79,6 +89,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     uint64_t nb_samples = 0;
     AVDictionary *opts = NULL;
     uint64_t ec_pixels = 0;
+
+    reset_cpu_flags();
 
     if (!c) {
 #define ENCODER_SYMBOL0(CODEC) ff_##CODEC##_encoder
@@ -112,7 +124,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size > 1024) {
         GetByteContext gbc;
         int flags;
-        int64_t flags64;
+        av_unused int64_t flags64;
 
         size -= 1024;
         bytestream2_init(&gbc, data + size, 1024);
@@ -135,12 +147,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
         flags64 = bytestream2_get_le64(&gbc);
 
-        if (c->p.pix_fmts) {
-            int npixfmts = 0;
-            while (c->p.pix_fmts[npixfmts++] != AV_PIX_FMT_NONE)
-                ;
-            ctx->pix_fmt = c->p.pix_fmts[bytestream2_get_byte(&gbc) % npixfmts];
-        }
+        const enum AVPixelFormat *pix_fmts;
+        int pix_fmts_num;
+        int res = avcodec_get_supported_config(ctx, NULL, AV_CODEC_CONFIG_PIX_FORMAT,
+                                               0, (const void **) &pix_fmts,
+                                               &pix_fmts_num);
+        if (res >= 0 && pix_fmts_num > 0)
+            ctx->pix_fmt = pix_fmts[bytestream2_get_byte(&gbc) % pix_fmts_num];
 
         switch (c->p.id) {
         case AV_CODEC_ID_FFV1:{

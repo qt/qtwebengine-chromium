@@ -2546,7 +2546,24 @@ static int mkv_parse_block_addition_mappings(AVFormatContext *s, AVStream *st, M
 {
     const EbmlList *mappings_list = &track->block_addition_mappings;
     MatroskaBlockAdditionMapping *mappings = mappings_list->elem;
+    int nb_itutt35 = 0;
     int ret;
+
+    for (int i = 0; i < mappings_list->nb_elem; i++) {
+        MatroskaBlockAdditionMapping *mapping = &mappings[i];
+
+        switch (mapping->type) {
+        case MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35:
+            if (nb_itutt35 && mapping->extradata.size < 4) {
+                av_log(s, AV_LOG_ERROR, "One or more maps for BlockAddIDType 4 lack extradata\n");
+                return AVERROR_INVALIDDATA;
+            }
+            nb_itutt35++;
+            break;
+        default:
+            break;
+        }
+    }
 
     for (int i = 0; i < mappings_list->nb_elem; i++) {
         MatroskaBlockAdditionMapping *mapping = &mappings[i];
@@ -2560,7 +2577,6 @@ static int mkv_parse_block_addition_mappings(AVFormatContext *s, AVStream *st, M
             type = MATROSKA_BLOCK_ADD_ID_TYPE_OPAQUE;
             av_fallthrough;
         case MATROSKA_BLOCK_ADD_ID_TYPE_OPAQUE:
-        case MATROSKA_BLOCK_ADD_ID_TYPE_ITU_T_T35:
             if (mapping->value != type) {
                 int strict = s->strict_std_compliance >= FF_COMPLIANCE_STRICT;
                 av_log(s, strict ? AV_LOG_ERROR : AV_LOG_WARNING,
@@ -4396,7 +4412,9 @@ static int matroska_parse_block(MatroskaDemuxContext *matroska, AVBufferRef *buf
     }
 
     if (!block_duration && trust_default_duration)
-        block_duration = track->default_duration * laces / matroska->time_scale;
+        block_duration = av_rescale_q(track->default_duration * laces,
+                                      (AVRational) { 1, 1000000000 },
+                                      st->time_base);
 
     if (cluster_time != (uint64_t)-1 && (block_time >= 0 || cluster_time >= -block_time))
         track->end_timecode =

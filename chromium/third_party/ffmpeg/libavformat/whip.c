@@ -791,7 +791,7 @@ static int exchange_sdp(AVFormatContext *s)
         goto end;
     }
 
-    if (!whip->sdp_offer || !strlen(whip->sdp_offer)) {
+    if (!whip->sdp_offer || !*whip->sdp_offer) {
         av_log(whip, AV_LOG_ERROR, "No offer to exchange\n");
         ret = AVERROR(EINVAL);
         goto end;
@@ -812,13 +812,14 @@ static int exchange_sdp(AVFormatContext *s)
     if (whip->timeout >= 0)
         av_dict_set_int(&opts, "timeout", whip->timeout, 0);
 
-    hex_data = av_mallocz(2 * strlen(whip->sdp_offer) + 1);
+    const size_t sdp_offer_len = strlen(whip->sdp_offer);
+    hex_data = av_malloc(2 * sdp_offer_len + 1);
     if (!hex_data) {
         ret = AVERROR(ENOMEM);
         goto end;
     }
-    ff_data_to_hex(hex_data, whip->sdp_offer, strlen(whip->sdp_offer), 0);
-    av_dict_set(&opts, "post_data", hex_data, 0);
+    ff_data_to_hex(hex_data, whip->sdp_offer, sdp_offer_len, 0);
+    av_dict_set(&opts, "post_data", hex_data, AV_DICT_DONT_STRDUP_VAL);
 
     ret = ffurl_open_whitelist(&whip_uc, s->url, AVIO_FLAG_READ_WRITE, &s->interrupt_callback,
         &opts, s->protocol_whitelist, s->protocol_blacklist, NULL);
@@ -876,7 +877,6 @@ end:
     ffurl_closep(&whip_uc);
     av_bprint_finalize(&bp, NULL);
     av_dict_free(&opts);
-    av_freep(&hex_data);
     return ret;
 }
 
@@ -2180,6 +2180,7 @@ static int whip_check_bitstream(AVFormatContext *s, AVStream *st, const AVPacket
 
 #define OFFSET(x) offsetof(WHIPContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
+#define DEP AV_OPT_FLAG_DEPRECATED
 static const AVOption options[] = {
     { "handshake_timeout",  "Timeout in milliseconds for ICE and DTLS handshake.",      OFFSET(handshake_timeout),  AV_OPT_TYPE_INT,    { .i64 = 5000 },    -1, INT_MAX, ENC },
     { "timeout",            "Set timeout for socket I/O operations",                    OFFSET(timeout),            AV_OPT_TYPE_DURATION, { .i64 = -1 }, -1, INT_MAX, ENC },

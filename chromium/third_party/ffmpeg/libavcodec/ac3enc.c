@@ -1183,16 +1183,22 @@ static void count_frame_bits(AC3EncodeContext *s)
 
         /* coupling coordinates */
         if (block->cpl_in_use) {
+            int cpl_coords_exist = 0;
+
             for (ch = 1; ch <= s->fbw_channels; ch++) {
                 if (block->channel_in_cpl[ch]) {
                     if (!s->eac3 || block->new_cpl_coords[ch] != 2)
                         frame_bits++;
                     if (block->new_cpl_coords[ch]) {
+                        cpl_coords_exist = 1;
                         frame_bits += 2;
                         frame_bits += (4 + 4) * s->num_cpl_bands;
                     }
                 }
             }
+            if (s->channel_mode == AC3_CHMODE_STEREO &&
+                s->phase_flags_in_use && cpl_coords_exist)
+                frame_bits += s->num_cpl_bands;
         }
 
         /* stereo rematrixing */
@@ -1320,15 +1326,37 @@ static void count_mantissa_bits_update_ch(AC3EncodeContext *s, int ch,
                                           uint16_t mant_cnt[AC3_MAX_BLOCKS][16],
                                           int start, int end)
 {
+    uint16_t counts[16];
+    const uint8_t *prev_bap = NULL;
+    int prev_len = -1;
     int blk;
 
     for (blk = 0; blk < s->num_blocks; blk++) {
         AC3Block *block = &s->blocks[blk];
+        const uint8_t *bap;
+        int len;
+
         if (ch == CPL_CH && !block->cpl_in_use)
             continue;
-        s->ac3dsp.update_bap_counts(mant_cnt[blk],
-                                    s->ref_bap[ch][blk] + start,
-                                    FFMIN(end, block->end_freq[ch]) - start);
+
+        bap = s->ref_bap[ch][blk] + start;
+        len = FFMIN(end, block->end_freq[ch]) - start;
+        /* the same bap buffer can be counted over different lengths */
+        if (bap != prev_bap || len != prev_len) {
+            if (blk + 1 == s->num_blocks ||
+                (ch == CPL_CH && !s->blocks[blk + 1].cpl_in_use) ||
+                bap != s->ref_bap[ch][blk + 1] + start ||
+                len != FFMIN(end, s->blocks[blk + 1].end_freq[ch]) - start) {
+                s->ac3dsp.update_bap_counts(mant_cnt[blk], bap, len);
+                continue;
+            }
+            memset(counts, 0, sizeof(counts));
+            s->ac3dsp.update_bap_counts(counts, bap, len);
+            prev_bap = bap;
+            prev_len = len;
+        }
+        for (int i = 0; i < 16; i++)
+            mant_cnt[blk][i] += counts[i];
     }
 }
 
@@ -1725,7 +1753,7 @@ static void output_audio_block(AC3EncodeContext *s, PutBitContext *pb, int blk)
                     put_bits(pb, 1, block->channel_in_cpl[ch]);
             }
             if (s->channel_mode == AC3_CHMODE_STEREO)
-                put_bits(pb, 1, 0); /* phase flags in use */
+                put_bits(pb, 1, s->phase_flags_in_use);
             start_sub = (s->start_freq[CPL_CH] - 37) / 12;
             end_sub   = (s->cpl_end_freq       - 37) / 12;
             put_bits(pb, 4, start_sub);
@@ -1742,11 +1770,14 @@ static void output_audio_block(AC3EncodeContext *s, PutBitContext *pb, int blk)
 
     /* coupling coordinates */
     if (block->cpl_in_use) {
+        int cpl_coords_exist = 0;
+
         for (ch = 1; ch <= s->fbw_channels; ch++) {
             if (block->channel_in_cpl[ch]) {
                 if (!s->eac3 || block->new_cpl_coords[ch] != 2)
                     put_bits(pb, 1, block->new_cpl_coords[ch]);
                 if (block->new_cpl_coords[ch]) {
+                    cpl_coords_exist = 1;
                     put_bits(pb, 2, block->cpl_master_exp[ch]);
                     for (bnd = 0; bnd < s->num_cpl_bands; bnd++) {
                         put_bits(pb, 4, block->cpl_coord_exp [ch][bnd]);
@@ -1754,6 +1785,11 @@ static void output_audio_block(AC3EncodeContext *s, PutBitContext *pb, int blk)
                     }
                 }
             }
+        }
+        if (s->channel_mode == AC3_CHMODE_STEREO &&
+            s->phase_flags_in_use && cpl_coords_exist) {
+            for (bnd = 0; bnd < s->num_cpl_bands; bnd++)
+                put_bits(pb, 1, s->phase_flags[bnd]);
         }
     }
 
@@ -1862,11 +1898,8 @@ static void output_audio_block(AC3EncodeContext *s, PutBitContext *pb, int blk)
             case 0:                                          break;
             case 1: if (q != 128) put_bits (pb,   5, q); break;
             case 2: if (q != 128) put_bits (pb,   7, q); break;
-            case 3:               put_sbits(pb,   3, q); break;
             case 4: if (q != 128) put_bits (pb,   7, q); break;
-            case 14:              put_sbits(pb,  14, q); break;
-            case 15:              put_sbits(pb,  16, q); break;
-            default:              put_sbits(pb, b-1, q); break;
+            default:              put_sbits(pb, ff_ac3_bap_bits[b], q); break;
             }
         }
         if (ch == CPL_CH)

@@ -360,6 +360,11 @@ NO_RND_PIXELS_Y2 put,  8, q, q
 NO_RND_PIXELS_Y2 avg, 16, u, a
 NO_RND_PIXELS_Y2 put, 16, u, a
 
+INIT_MMX mmxext
+NO_RND_PIXELS_Y2 put
+INIT_XMM sse2
+NO_RND_PIXELS_Y2 avg
+NO_RND_PIXELS_Y2 put
 
 ; void ff_put_no_rnd_pixels8_xy2(uint8_t *block, const uint8_t *pixels, ptrdiff_t line_size, int h)
 %macro SET_PIXELS8_XY2 1-2

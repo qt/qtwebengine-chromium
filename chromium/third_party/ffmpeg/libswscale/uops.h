@@ -30,9 +30,11 @@
  ***************************************************************************/
 
 #include "libavutil/attributes.h"
+#include "rational64.h"
 
 typedef struct SwsContext       SwsContext;
 typedef struct SwsFilterWeights SwsFilterWeights;
+typedef struct SwsLut3D         SwsLut3D;
 typedef struct SwsOpList        SwsOpList;
 
 typedef enum SwsPixelType {
@@ -45,8 +47,34 @@ typedef enum SwsPixelType {
 } SwsPixelType;
 
 const char *ff_sws_pixel_type_name(SwsPixelType type);
-int ff_sws_pixel_type_size(SwsPixelType type) av_const;
-bool ff_sws_pixel_type_is_int(SwsPixelType type) av_const;
+
+static inline av_const int ff_sws_pixel_type_size(SwsPixelType type)
+{
+    switch (type) {
+    case SWS_PIXEL_U8:  return sizeof(uint8_t);
+    case SWS_PIXEL_U16: return sizeof(uint16_t);
+    case SWS_PIXEL_U32: return sizeof(uint32_t);
+    case SWS_PIXEL_F32: return sizeof(float);
+    case SWS_PIXEL_NONE: break;
+    case SWS_PIXEL_TYPE_NB: break;
+    }
+    return 0;
+}
+
+static inline av_const bool ff_sws_pixel_type_is_int(SwsPixelType type)
+{
+    switch (type) {
+    case SWS_PIXEL_U8:
+    case SWS_PIXEL_U16:
+    case SWS_PIXEL_U32:
+        return true;
+    case SWS_PIXEL_F32:
+        return false;
+    case SWS_PIXEL_NONE:
+    case SWS_PIXEL_TYPE_NB: break;
+    }
+    return false;
+}
 
 typedef union SwsPixel {
     char data[4];
@@ -59,6 +87,30 @@ typedef union SwsPixel {
 
 /* Ensures (SwsPixel) {0} is properly initialized to all zeros */
 static_assert(sizeof(SwsPixel) == sizeof(char[4]), "SwsPixel size mismatch");
+
+static inline SwsPixel ff_sws_pixel_from_q64(SwsPixelType type, AVRational64 val)
+{
+    switch (type) {
+    case SWS_PIXEL_U8:  return (SwsPixel) { .u8  = val.num / val.den };
+    case SWS_PIXEL_U16: return (SwsPixel) { .u16 = val.num / val.den };
+    case SWS_PIXEL_U32: return (SwsPixel) { .u32 = val.num / val.den };
+    case SWS_PIXEL_F32: return (SwsPixel) { .f32 = (float) val.num / val.den };
+    case SWS_PIXEL_NONE:
+    case SWS_PIXEL_TYPE_NB: break;
+    }
+    return (SwsPixel) {0};
+}
+
+static inline bool ff_sws_pixel_is_1s(SwsPixelType type, SwsPixel val)
+{
+    switch (ff_sws_pixel_type_size(type)) {
+    case 1: return val.u8  == UINT8_MAX;
+    case 2: return val.u16 == UINT16_MAX;
+    case 4: return val.u32 == UINT32_MAX;
+    default: break;
+    }
+    return false;
+}
 
 /**
  * Bit-mask of components. Exact meaning depends on the usage context.
@@ -94,8 +146,12 @@ static inline char *ff_sws_comp_mask_print(SwsCompMask mask, char buf[5])
 
 typedef uint32_t SwsUOpFlags;
 typedef enum SwsUOpFlagBits {
-    SWS_UOP_FLAG_NONE = 0,
-    SWS_UOP_FLAG_FMA  = (1 << 0), /* platform supports FMA ops */
+    SWS_UOP_FLAG_NONE         = 0,
+    SWS_UOP_FLAG_FMA          = (1 << 0), /* platform supports FMA ops */
+    SWS_UOP_FLAG_PSHUFB       = (1 << 1), /* platform supports pshufb equivalent */
+    SWS_UOP_FLAG_EXPAND_BIT   = (1 << 2), /* backend implements SWS_UOP_EXPAND_BIT */
+    SWS_UOP_FLAG_READ_PALETTE = (1 << 3), /* backend implements SWS_UOP_READ_PALETTE */
+    SWS_UOP_FLAG_ADD          = (1 << 4), /* backend implements SWS_UOP_ADD */
 } SwsUOpFlagBits;
 
 typedef enum SwsUOpType {
@@ -115,6 +171,9 @@ typedef enum SwsUOpType {
     SWS_UOP_WRITE_PACKED,    /* simple packed byte-aligned write */
     SWS_UOP_WRITE_NIBBLE,    /* fractional write (4 bits) to single plane */
     SWS_UOP_WRITE_BIT,       /* fractional write (1 bit) to single plane */
+
+    /* Packed shuffle / gather uops */
+    SWS_UOP_RW_SHUFFLE,      /* in-place (packed) indexed shuffle/gather */
 
     /* Data rearrangement uops; mask = needed or trivial components */
     SWS_UOP_PERMUTE,         /* permute pointers (no duplicates) */
@@ -145,10 +204,22 @@ typedef enum SwsUOpType {
     SWS_UOP_LINEAR,          /* mask = non-trivial output rows */
     SWS_UOP_LINEAR_FMA,      /* with SWS_UOP_FLAG_FMA */
     SWS_UOP_DITHER,          /* mask = components to dither */
+    SWS_UOP_LUT_3D,          /* mask = needed output components */
 
     /* Platform-specific uops would go here */
     SWS_UOP_TYPE_NB,
 } SwsUOpType;
+
+typedef struct SwsShuffleUOp {
+    uint8_t clear_value; /* value to clear elements with negative indices to */
+    uint8_t read_size;   /* input bytes per iteration */
+    uint8_t write_size;  /* output bytes per iteration */
+} SwsShuffleUOp;
+
+typedef struct SwsShuffleMask {
+    int8_t mask[16];    /* shuffle index mask, or -1 to clear bytes (to `clear_value`) */
+    uint8_t pixels;     /* number of pixels per iteration */
+} SwsShuffleMask;
 
 typedef struct SwsFilterUOp {
     SwsPixelType type; /* pixel type to store result as */
@@ -196,6 +267,10 @@ typedef struct SwsDitherUOp {
     uint8_t size_log2;
 } SwsDitherUOp;
 
+typedef struct SwsLut3DUOp {
+    int dynamic;
+} SwsLut3DUOp;
+
 /**
  * Computes (1 << size_log2) + MAX(y_offset). The dither matrix attached to
  * the SwsUOp is always pre-padded to this number of lines.
@@ -203,13 +278,15 @@ typedef struct SwsDitherUOp {
 int ff_sws_dither_height(const SwsDitherUOp *dither);
 
 typedef union SwsUOpParams {
-    SwsFilterUOp    filter; /* for SWS_UOP_READ_*_FV/FH */
+    SwsShuffleUOp   shuffle; /* for SWS_UOP_RW_SHUFFLE */
+    SwsFilterUOp    filter;  /* for SWS_UOP_READ_*_FV/FH */
     SwsShiftUOp     shift;
     SwsMoveUOp      move; /* for SWS_UOP_PERMUTE and SWS_UOP_COPY */
     SwsPackUOp      pack;
     SwsClearUOp     clear;
     SwsLinearUOp    lin;
     SwsDitherUOp    dither;
+    SwsLut3DUOp     lut3d;
 } SwsUOpParams;
 
 typedef struct SwsUOp {
@@ -225,7 +302,9 @@ typedef struct SwsUOp {
         SwsPixel *ptr;              /* refstruct */
         SwsPixel scalar;
         SwsPixel vec4[4];
-        SwsPixel mat4[4][5];        /* row major */
+        SwsPixel mat4x5[4][5];      /* row major */
+        SwsShuffleMask shuffle;     /* for SWS_UOP_RW_SHUFFLE */
+        const SwsLut3D *lut3d;      /* for SWS_UOP_LUT_3D; refstruct */
         void *opaque;               /* reserved for internal use */
     } data;
 } SwsUOp;
@@ -258,9 +337,15 @@ typedef struct SwsUOpList {
 
 SwsUOpList *ff_sws_uop_list_alloc(void);
 void ff_sws_uop_list_free(SwsUOpList **ops);
+void ff_sws_uop_list_remove_at(SwsUOpList *uops, int index, int count);
 
 /* Takes over ownership of `uop` and sets it to {0}, even on failure. */
 int ff_sws_uop_list_append(SwsUOpList *uops, SwsUOp *uop);
+
+/**
+ * Called internally by ff_sws_ops_translate().
+ */
+int ff_sws_uop_list_optimize(SwsContext *ctx, SwsUOpFlags flags, SwsUOpList *uops);
 
 /**
  * Translate a list of operations down to micro-ops, which can be further
@@ -270,5 +355,20 @@ int ff_sws_uop_list_append(SwsUOpList *uops, SwsUOp *uop);
  */
 int ff_sws_ops_translate(SwsContext *ctx, const SwsOpList *ops,
                          SwsUOpFlags flags, SwsUOpList *uops);
+
+/**
+ * Compute a shuffle mask for `pshufb`-style ASM functions, by repeating
+ * the shuffle pattern for as many groups as will fit.
+ *
+ * @param uop         An operation of type SWS_UOP_RW_SHUFFLE.
+ * @param shuffle     The output shuffle index mask (or -1 to clear bytes).
+ * @param size        The maximum size (in bytes) of the output shuffle mask.
+ *
+ * @return the number of groups on success, or a negative error code.
+ *
+ * @note The shuffle mask is already pre-expanded to fill up to 16 bytes,
+ *       so this is only needed for larger shuffle instructions (e.g. vpermb).
+ */
+int ff_sws_shuffle_mask(const SwsUOp *uop, int8_t shuffle[], int size);
 
 #endif

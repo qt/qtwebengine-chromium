@@ -38,6 +38,8 @@
 
 #include "codec_internal.h"
 #include "decode.h"
+#include "mpegaudiodata.h"
+#include "profiles.h"
 
 #define MAX_LOST_FRAMES 2
 // max framesize * (max delay frames + 1)
@@ -68,31 +70,10 @@ static av_cold int mpegh3dadec_close(AVCodecContext *avctx)
 // https://github.com/Fraunhofer-IIS/mpeghdec/wiki/MPEG-H-decoder-target-layouts
 static av_cold int channel_layout_to_cicp(const AVChannelLayout *layout)
 {
-// different from AV_CH_LAYOUT_7POINT2POINT3
-#define CH_LAYOUT_7POINT2POINT3 AV_CH_LAYOUT_5POINT1POINT2 | AV_CH_SIDE_SURROUND_LEFT | \
-                                AV_CH_SIDE_SURROUND_RIGHT | AV_CH_TOP_BACK_CENTER |     \
-                                AV_CH_LOW_FREQUENCY_2
-#define CH_LAYOUT_5POINT1POINT6 AV_CH_LAYOUT_5POINT1POINT4_BACK | \
-                                AV_CH_TOP_FRONT_CENTER | AV_CH_TOP_CENTER
-#define CH_LAYOUT_7POINT1POINT6 AV_CH_LAYOUT_7POINT1POINT4_BACK | \
-                                AV_CH_TOP_FRONT_CENTER | AV_CH_TOP_CENTER
-    static const uint64_t channel_layout_masks[] = {
-        0,
-        AV_CH_LAYOUT_MONO,               AV_CH_LAYOUT_STEREO,
-        AV_CH_LAYOUT_SURROUND,           AV_CH_LAYOUT_4POINT0,
-        AV_CH_LAYOUT_5POINT0,            AV_CH_LAYOUT_5POINT1,
-        AV_CH_LAYOUT_7POINT1_WIDE,       0,
-        AV_CH_LAYOUT_2_1,                AV_CH_LAYOUT_2_2,
-        AV_CH_LAYOUT_6POINT1,            AV_CH_LAYOUT_7POINT1,
-        AV_CH_LAYOUT_22POINT2,           AV_CH_LAYOUT_5POINT1POINT2,
-        CH_LAYOUT_7POINT2POINT3,         AV_CH_LAYOUT_5POINT1POINT4_BACK,
-        CH_LAYOUT_5POINT1POINT6,         CH_LAYOUT_7POINT1POINT6,
-        AV_CH_LAYOUT_7POINT1POINT4_BACK,
-    };
-    for (size_t i = 0; i < FF_ARRAY_ELEMS(channel_layout_masks); ++i) {
-        if (channel_layout_masks[i]) {
+    for (size_t i = 0; i < FF_ARRAY_ELEMS(ff_mpa_cicp_channel_layout_masks); ++i) {
+        if (ff_mpa_cicp_channel_layout_masks[i]) {
             AVChannelLayout ch_layout;
-            av_channel_layout_from_mask(&ch_layout, channel_layout_masks[i]);
+            av_channel_layout_from_mask(&ch_layout, ff_mpa_cicp_channel_layout_masks[i]);
             if (!av_channel_layout_compare(layout, &ch_layout))
                 return i;
         }
@@ -133,7 +114,8 @@ static av_cold int mpegh3dadec_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
-    if (avctx->extradata_size) {
+    if (avctx->codec_tag != MKTAG('m', 'h', 'm', '1') &&
+        avctx->codec_tag != MKTAG('m', 'h', 'm', '2') && avctx->extradata_size) {
         if (mpeghdecoder_setMhaConfig(s->decoder, avctx->extradata,
                                       avctx->extradata_size)) {
             av_log(avctx, AV_LOG_ERROR, "Unable to set MHA configuration\n");
@@ -219,13 +201,13 @@ const FFCodec ff_libmpeghdec_decoder = {
     CODEC_LONG_NAME("libmpeghdec (MPEG-H 3D Audio)"),
     .p.type         = AVMEDIA_TYPE_AUDIO,
     .p.id           = AV_CODEC_ID_MPEGH_3D_AUDIO,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
-                      AV_CODEC_CAP_CHANNEL_CONF,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .priv_data_size = sizeof(MPEGH3DADecContext),
     .init           = mpegh3dadec_init,
     FF_CODEC_DECODE_CB(mpegh3dadec_decode_frame),
     .flush          = mpegh3dadec_flush,
     .close          = mpegh3dadec_close,
+    .p.profiles     = NULL_IF_CONFIG_SMALL(ff_mpegh_3da_profiles),
     .p.wrapper_name = "libmpeghdec",
 };

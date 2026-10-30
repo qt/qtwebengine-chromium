@@ -443,6 +443,15 @@ int ff_mkdir_p(const char *path)
         pos++;
     } else if (!av_strncasecmp(temp, "./", 2) || !av_strncasecmp(temp, ".\\", 2)) {
         pos += 2;
+    } else if (is_dos_path(temp)) {
+        /* Skip Windows drive letter (e.g. "C:") and the separator(s) after it.
+         * Otherwise the loop below calls mkdir("C:"), which on Windows is a
+         * drive-relative path. When the process CWD is on a different drive,
+         * "C:" resolves to the drive root (C:\), and mkdir on the root
+         * returns EACCES, causing spurious "Permission denied" errors. */
+        pos += 2;
+        while (*pos == '/' || *pos == '\\')
+            pos++;
     }
 
     for ( ; *pos != '\0'; ++pos) {
@@ -480,11 +489,12 @@ char *ff_data_to_hex(char *buff, const uint8_t *src, int s, int lowercase)
                                            'c', 'd', 'e', 'f' };
     const char *hex_table = lowercase ? hex_table_lc : hex_table_uc;
 
-    for (int i = 0; i < s; i++) {
+    av_assume(s >= 0);
+    for (unsigned i = 0; i < s; i++) {
         buff[i * 2]     = hex_table[src[i] >> 4];
         buff[i * 2 + 1] = hex_table[src[i] & 0xF];
     }
-    buff[2 * s] = '\0';
+    buff[2U * s] = '\0';
 
     return buff;
 }

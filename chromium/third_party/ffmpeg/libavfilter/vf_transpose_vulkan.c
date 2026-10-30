@@ -55,7 +55,7 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
 
     ff_vk_shader_load(&s->shd, VK_SHADER_STAGE_COMPUTE_BIT, NULL,
                       (uint32_t []) { 32, 1, planes }, 0);
@@ -152,6 +152,13 @@ static int config_props_output(AVFilterLink *outlink)
     FFVulkanContext *vkctx = &s->vkctx;
     AVFilterLink *inlink = avctx->inputs[0];
     FilterLink *inl = ff_filter_link(inlink);
+
+    if (s->dir & 4) {
+        av_log(avctx, AV_LOG_WARNING,
+               "dir values greater than 3 are deprecated, use the passthrough option instead\n");
+        s->dir &= 3;
+        s->passthrough = TRANSPOSE_PT_TYPE_LANDSCAPE;
+    }
 
     if ((inlink->w >= inlink->h && s->passthrough == TRANSPOSE_PT_TYPE_LANDSCAPE) ||
         (inlink->w <= inlink->h && s->passthrough == TRANSPOSE_PT_TYPE_PORTRAIT)) {

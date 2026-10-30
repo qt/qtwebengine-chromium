@@ -43,6 +43,14 @@ static av_cold int liblc3_decode_init(AVCodecContext *avctx)
     int ep_mode;
     unsigned decoder_size;
 
+    static const struct {
+        enum AVSampleFormat av_format;
+        enum lc3_pcm_format lc3_format;
+    } format_map[] = {
+        { AV_SAMPLE_FMT_FLT,  LC3_PCM_FORMAT_FLOAT },
+        { AV_SAMPLE_FMT_FLTP, LC3_PCM_FORMAT_FLOAT },
+    };
+
     if (avctx->extradata_size < 6)
         return AVERROR_INVALIDDATA;
     if (channels < 0 || channels > DECODER_MAX_CHANNELS) {
@@ -107,6 +115,8 @@ static int liblc3_decode(AVCodecContext *avctx, AVFrame *frame,
     int channels = avctx->ch_layout.nb_channels;
     uint8_t *in = avpkt->data;
     int block_bytes, ret;
+    size_t sample_size;
+    int is_planar;
 
     frame->nb_samples = av_rescale(
         liblc3->frame_us, liblc3->srate_hz, 1000*1000);

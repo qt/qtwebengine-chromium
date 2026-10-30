@@ -153,7 +153,8 @@ static int io_open_default(AVFormatContext *s, AVIOContext **pb,
 
     av_log(s, loglevel, "Opening \'%s\' for %s\n", url, flags & AVIO_FLAG_WRITE ? "writing" : "reading");
 
-    return ffio_open_whitelist(pb, url, flags, &s->interrupt_callback, options, s->protocol_whitelist, s->protocol_blacklist);
+    return ffio_open_whitelist2(pb, url, flags, &s->interrupt_callback, options,
+                                s->protocol_whitelist, s->protocol_blacklist, s);
 }
 
 static int io_close2_default(AVFormatContext *s, AVIOContext *pb)
@@ -402,6 +403,7 @@ static void *stream_group_child_next(void *obj, void *prev)
             return stg->params.tref;
         case AV_STREAM_GROUP_PARAMS_LCEVC:
         case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:
+        case AV_STREAM_GROUP_PARAMS_GAIN_MAP:
             return stg->params.layered_video;
         default:
             break;
@@ -435,6 +437,7 @@ static const AVClass *stream_group_child_iterate(void **opaque)
         break;
     case AV_STREAM_GROUP_PARAMS_LCEVC:
     case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:
+    case AV_STREAM_GROUP_PARAMS_GAIN_MAP:
         ret = &layered_video_class;
         break;
     default:
@@ -515,6 +518,7 @@ AVStreamGroup *avformat_stream_group_create(AVFormatContext *s,
         break;
     case AV_STREAM_GROUP_PARAMS_LCEVC:
     case AV_STREAM_GROUP_PARAMS_DOLBY_VISION:
+    case AV_STREAM_GROUP_PARAMS_GAIN_MAP:
         stg->params.layered_video = av_mallocz(sizeof(*stg->params.layered_video));
         if (!stg->params.layered_video)
             goto fail;

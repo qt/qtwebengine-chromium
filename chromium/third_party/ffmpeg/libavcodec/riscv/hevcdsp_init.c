@@ -49,27 +49,30 @@ void ff_hevc_dsp_init_riscv(HEVCDSPContext *c, const int bit_depth)
     const int flags = av_get_cpu_flags();
     int vlenb;
 
-    if (!(flags & AV_CPU_FLAG_RVV_I32) || !(flags & AV_CPU_FLAG_RVB))
+    if (!(flags & AV_CPU_FLAG_RVV_I32))
         return;
 
     vlenb = ff_get_rv_vlenb();
-    if (vlenb >= 32) {
-        switch (bit_depth) {
-            case 8:
-                RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_256);
-                RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_256);
-                break;
-            default:
-                break;
-        }
-    } else if (vlenb >= 16) {
-        switch (bit_depth) {
-            case 8:
-                RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_128);
-                RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_128);
-                break;
-            default:
-                break;
+
+    if (flags & AV_CPU_FLAG_RVB) {
+        if (vlenb >= 32) {
+            switch (bit_depth) {
+                case 8:
+                    RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_256);
+                    RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_256);
+                    break;
+                default:
+                    break;
+            }
+        } else if (vlenb >= 16) {
+            switch (bit_depth) {
+                case 8:
+                    RVV_FNASSIGN(c->put_hevc_qpel, 0, 0, pel_pixels, rvv_128);
+                    RVV_FNASSIGN(c->put_hevc_epel, 0, 0, pel_pixels, rvv_128);
+                    break;
+                default:
+                    break;
+            }
         }
     }
 

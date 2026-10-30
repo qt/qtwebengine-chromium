@@ -2,12 +2,19 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- ASTC image encoding and decoding via libastcenc, with .astc and KTX 1.0 muxers and demuxers
 - extensively improved AAC encoder
 - APV Vulkan encoder
 - iTerm2 inline image protocol muxer
 - LCEVC payload merging bitstream filter
 - MVR demuxer
 - latticepal filter
+- DVD-Audio LPCM decoder and demuxing support
+- AVFoundation input device selection by unique ID and USB serial number
+- NVIDIA optical flow accelerated interpolation filter (vf_fruc_vulkan)
+- H.264 data partitioning support
+- DSD (dsd_msbf) encoder
+- Rhetorex ADPCM decoder
 
 
 version 9.0:

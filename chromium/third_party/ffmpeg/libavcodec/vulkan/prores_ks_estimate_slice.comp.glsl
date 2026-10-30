@@ -23,6 +23,8 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : require
 #extension GL_KHR_shader_subgroup_clustered : require
 #extension GL_KHR_shader_subgroup_shuffle : require
+#extension GL_KHR_shader_subgroup_vote : require
+#extension GL_EXT_maximal_reconvergence : require
 #extension GL_GOOGLE_include_directive : require
 
 #include "common.glsl"
@@ -35,6 +37,7 @@ layout (constant_id = 4) const int slices_per_picture = 0;
 layout (constant_id = 5) const int min_quant = 0;
 layout (constant_id = 6) const int max_quant = 0;
 layout (constant_id = 7) const int bits_per_mb = 0;
+layout (constant_id = 8) const int force_quant = 0;
 
 struct SliceData {
     uint32_t mbs_per_slice;
@@ -47,7 +50,6 @@ struct SliceScore {
     int total_bits[16];
     int total_score[16];
     int overquant;
-    int buf_start;
     int quant;
 };
 
@@ -233,12 +235,16 @@ int sum_of_planes(int value)
         return subgroupClusteredAdd(value, 4);
 }
 
-void main()
+void main() [[maximally_reconverges]]
 {
-    uint slice = gl_GlobalInvocationID.x / num_planes;
+    /* One lane per plane of a slice; the workgroup is a single subgroup */
+    const uint slices_per_wg = gl_WorkGroupSize.x / num_planes;
+    uint slice = gl_WorkGroupID.x * slices_per_wg + gl_LocalInvocationID.x / num_planes;
     uint plane = gl_LocalInvocationID.x % num_planes;
     uint q = min_quant + gl_GlobalInvocationID.y;
-    if (slice >= slices_per_picture)
+    /* A constant quantiser is estimated once, and stored at index 0 */
+    uint quant = force_quant != 0 ? uint(force_quant) : q;
+    if (gl_LocalInvocationID.x >= slices_per_wg * num_planes || slice >= slices_per_picture)
         return;
 
     /* Estimate slice bits and error for specified quantizer and plane */
@@ -247,11 +253,21 @@ void main()
     if (plane == 3)
         bits = estimate_alpha_plane(slice);
     else
-        bits = estimate_slice_plane(error, slice, plane, q);
+        bits = estimate_slice_plane(error, slice, plane, quant);
 
     /* Write results to score buffer */
     scores[slice].bits[q][plane] = FFALIGN(bits, 8);
     scores[slice].score[q][plane] = error;
+
+    /* The trellis and the encoder sum all four planes */
+    if (num_planes == 3 && plane == 0) {
+        scores[slice].bits[q][3] = 0;
+        scores[slice].score[q][3] = 0;
+        if (q == max_quant) {
+            scores[slice].bits[max_quant + 1][3] = 0;
+            scores[slice].score[max_quant + 1][3] = 0;
+        }
+    }
 
     /* Accumulate total bits and error of all planes */
     int total_bits = sum_of_planes(bits);
@@ -261,7 +277,7 @@ void main()
     scores[slice].total_bits[q] = total_bits;
     scores[slice].total_score[q] = total_score;
 
-    if (q != max_quant)
+    if (force_quant != 0 || q != max_quant)
         return;
 
     /* Task threads that computed max_quant to also compute overquant if necessary */
@@ -274,23 +290,25 @@ void main()
         scores[slice].score[max_quant + 1][plane] = error;
         scores[slice].overquant = int(max_quant);
     } else {
-        /* Keep searching until an encoding fits our budget */
-        for (q = max_quant + 1; q < 128; ++q) {
-            /* Estimate slice bits and error for specified quantizer and plane */
-            error = 0;
-            bits = 0;
-            if (plane == 3)
-                bits = estimate_alpha_plane(slice);
-            else
-                bits = estimate_slice_plane(error, slice, plane, q);
+        /* Keep searching until an encoding fits our budget. The loop stays
+         * subgroup-uniform, as the sums must not run under divergence. */
+        bool done = false;
+        for (uint oq = max_quant + 1; oq < 128 && !subgroupAll(done); ++oq) {
+            int e = 0, b = 0;
+            if (!done)
+                b = plane == 3 ? estimate_alpha_plane(slice) :
+                                 estimate_slice_plane(e, slice, plane, oq);
 
-            /* Accumulate total bits and error of all planes */
-            total_bits = sum_of_planes(bits);
-            total_score = sum_of_planes(error);
-
-            /* If estimated bits fit within budget, we are done */
-            if (total_bits <= bits_per_mb * mbs_per_slice)
-                break;
+            int tb = sum_of_planes(b);
+            int ts = sum_of_planes(e);
+            if (!done) {
+                bits = b;
+                error = e;
+                total_bits = tb;
+                total_score = ts;
+                q = oq;
+                done = total_bits <= bits_per_mb * mbs_per_slice;
+            }
         }
 
         scores[slice].bits[max_quant + 1][plane] = bits;

@@ -317,7 +317,7 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
 
     /* e.g. AVFMT_NOFILE formats will not have an AVIOContext */
     if (s->pb && is_id3v2_format(s->iformat))
-        ff_id3v2_read_dict(s->pb, &si->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
+        ff_id3v2_read_dict(s, s->pb, &si->id3v2_meta, ID3v2_DEFAULT_MAGIC, &id3v2_extra_meta);
 
     if (ffifmt(s->iformat)->read_header)
         if ((ret = ffifmt(s->iformat)->read_header(s)) < 0) {
@@ -2594,15 +2594,24 @@ static int parameters_from_context(AVFormatContext *ic, AVCodecParameters *par,
      */
     if (par_tmp->color_range != AVCOL_RANGE_UNSPECIFIED)
         par->color_range = par_tmp->color_range;
-    if (par_tmp->color_primaries != AVCOL_PRI_UNSPECIFIED ||
-        par_tmp->color_trc != AVCOL_TRC_UNSPECIFIED ||
-        par_tmp->color_space != AVCOL_SPC_UNSPECIFIED) {
+    if (par_tmp->color_primaries != AVCOL_PRI_UNSPECIFIED)
         par->color_primaries = par_tmp->color_primaries;
+    if (par_tmp->color_trc != AVCOL_TRC_UNSPECIFIED)
         par->color_trc = par_tmp->color_trc;
+    if (par_tmp->color_space != AVCOL_SPC_UNSPECIFIED)
         par->color_space = par_tmp->color_space;
-    }
     if (par_tmp->chroma_location != AVCHROMA_LOC_UNSPECIFIED)
         par->chroma_location = par_tmp->chroma_location;
+
+    /* A failed avcodec_open2() zeroes ch_layout through
+     * ff_codec_close() -> av_opt_free(); do not copy that empty layout
+     * over a container-signaled one. Other AVOption types used here are
+     * integers and are not cleared. */
+    if (par_tmp->ch_layout.nb_channels > 0 && !par->ch_layout.nb_channels) {
+        ret = av_channel_layout_copy(&par->ch_layout, &par_tmp->ch_layout);
+        if (ret < 0)
+            goto fail;
+    }
 
     ret = 0;
 fail:

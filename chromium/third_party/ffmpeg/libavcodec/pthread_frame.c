@@ -395,7 +395,6 @@ static int update_context_from_thread(AVCodecContext *dst, const AVCodecContext 
         dst->hwaccel_flags = src->hwaccel_flags;
 
         av_refstruct_replace(&dst->internal->pool, src->internal->pool);
-        ff_decode_internal_sync(dst, src);
     }
 
     if (for_user) {
@@ -476,6 +475,7 @@ static int update_context_from_user(AVCodecContext *dst, const AVCodecContext *s
 
     dst->skip_loop_filter = src->skip_loop_filter;
     dst->skip_idct        = src->skip_idct;
+    dst->skip_pred        = src->skip_pred;
     dst->skip_frame       = src->skip_frame;
 
     dst->frame_num        = src->frame_num;
@@ -882,17 +882,18 @@ static av_cold int init_thread(PerThreadContext *p, int *threads_to_free,
     }
     p->thread_init = NEEDS_CLOSE;
 
-    if (first) {
+    if (first)
         update_context_from_thread(avctx, copy, 1);
 
-        av_frame_side_data_free(&avctx->decoded_side_data, &avctx->nb_decoded_side_data);
-        for (int i = 0; i < copy->nb_decoded_side_data; i++) {
-            err = av_frame_side_data_clone(&avctx->decoded_side_data,
-                                           &avctx->nb_decoded_side_data,
-                                           copy->decoded_side_data[i], 0);
-            if (err < 0)
-                return err;
-        }
+    const AVCodecContext *src = first ? copy : avctx;
+    AVCodecContext       *dst = first ? avctx : copy;
+    av_frame_side_data_free(&dst->decoded_side_data, &dst->nb_decoded_side_data);
+    for (int i = 0; i < src->nb_decoded_side_data; i++) {
+        err = av_frame_side_data_clone(&dst->decoded_side_data,
+                                       &dst->nb_decoded_side_data,
+                                       src->decoded_side_data[i], 0);
+        if (err < 0)
+            return err;
     }
 
     atomic_init(&p->debug_threads, (copy->debug & FF_DEBUG_THREADS) != 0);

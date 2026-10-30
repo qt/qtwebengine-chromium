@@ -172,7 +172,9 @@ static av_cold int init(AVFilterContext *ctx)
 
 static inline int frame_size(int sample_rate, int frame_len_msec)
 {
-    const int frame_size = lrint((double)sample_rate * (frame_len_msec / 1000.0));
+    const int64_t frame_size = llrint((double)sample_rate * (frame_len_msec / 1000.0));
+    if (frame_size >= INT_MAX / 2)
+        return AVERROR(EINVAL);
     return frame_size + (frame_size % 2);
 }
 
@@ -350,6 +352,8 @@ static int config_input(AVFilterLink *inlink)
 
     s->channels = inlink->ch_layout.nb_channels;
     s->frame_len = frame_size(inlink->sample_rate, s->frame_len_msec);
+    if (s->frame_len < 0)
+        return s->frame_len;
     av_log(ctx, AV_LOG_DEBUG, "frame len %d\n", s->frame_len);
 
     s->prev_amplification_factor = av_malloc_array(inlink->ch_layout.nb_channels, sizeof(*s->prev_amplification_factor));
@@ -984,7 +988,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     DynamicAudioNormalizerContext *s = ctx->priv;
     AVFilterLink *inlink = ctx->inputs[0];
     int prev_filter_size = s->filter_size;
-    int ret;
+    int frame_len, ret;
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     if (ret < 0)
@@ -1001,7 +1005,17 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         }
     }
 
-    s->frame_len = frame_size(inlink->sample_rate, s->frame_len_msec);
+    frame_len = frame_size(inlink->sample_rate, s->frame_len_msec);
+    if (frame_len < 0)
+        return frame_len;
+    if (frame_len != s->frame_len) {
+        AVFrame *window = ff_get_audio_buffer(ctx->outputs[0], frame_len * 2);
+        if (!window)
+            return AVERROR(ENOMEM);
+        av_frame_free(&s->window);
+        s->window = window;
+        s->frame_len = frame_len;
+    }
     s->sample_advance = FFMAX(1, lrint(s->frame_len * (1. - s->overlap)));
     if (s->expr_str) {
         ret = av_expr_parse(&s->expr, s->expr_str, var_names, NULL, NULL,

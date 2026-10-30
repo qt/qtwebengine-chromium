@@ -469,7 +469,7 @@ static void slideleft##name##_transition(AVFilterContext *ctx,                  
         for (int y = 0; y < height; y++) {                                           \
             for (int x = 0; x < width; x++) {                                        \
                 const int zx = z + x;                                                \
-                const int zz = zx % width + width * (zx < 0);                        \
+                const int zz = zx % width + width * (zx % width < 0);                \
                 dst[x] = (zx >= 0) && (zx < width) ? xf1[zz] : xf0[zz];              \
             }                                                                        \
                                                                                      \
@@ -502,7 +502,7 @@ static void slideright##name##_transition(AVFilterContext *ctx,                 
         for (int y = 0; y < height; y++) {                                           \
             for (int x = 0; x < width; x++) {                                        \
                 const int zx = z + x;                                                \
-                const int zz = zx % width + width * (zx < 0);                        \
+                const int zz = zx % width + width * (zx % width < 0);                \
                 dst[x] = (zx >= 0) && (zx < width) ? xf1[zz] : xf0[zz];              \
             }                                                                        \
                                                                                      \
@@ -532,7 +532,7 @@ static void slideup##name##_transition(AVFilterContext *ctx,                    
                                                                                     \
         for (int y = slice_start; y < slice_end; y++) {                             \
             const int zy = z + y;                                                   \
-            const int zz = zy % height + height * (zy < 0);                         \
+            const int zz = zy % height + height * (zy % height < 0);                \
             const type *xf0 = (const type *)(a->data[p] + zz * a->linesize[p]);     \
             const type *xf1 = (const type *)(b->data[p] + zz * b->linesize[p]);     \
                                                                                     \
@@ -564,7 +564,7 @@ static void slidedown##name##_transition(AVFilterContext *ctx,                  
                                                                                     \
         for (int y = slice_start; y < slice_end; y++) {                             \
             const int zy = z + y;                                                   \
-            const int zz = zy % height + height * (zy < 0);                         \
+            const int zz = zy % height + height * (zy % height < 0);                \
             const type *xf0 = (const type *)(a->data[p] + zz * a->linesize[p]);     \
             const type *xf1 = (const type *)(b->data[p] + zz * b->linesize[p]);     \
                                                                                     \
@@ -1451,14 +1451,14 @@ static void fadegrays##name##_transition(AVFilterContext *ctx,                  
                 const type *yf0 = (const type *)(a->data[0] +                        \
                                                  y * a->linesize[0]);                \
                 const type *yf1 = (const type *)(b->data[0] +                        \
-                                                 y * a->linesize[0]);                \
+                                                 y * b->linesize[0]);                \
                 bg[0][0] = yf0[x];                                                   \
                 bg[1][0] = yf1[x];                                                   \
                 if (s->nb_planes == 4) {                                             \
                     const type *af0 = (const type *)(a->data[3] +                    \
                                                      y * a->linesize[3]);            \
                     const type *af1 = (const type *)(b->data[3] +                    \
-                                                     y * a->linesize[3]);            \
+                                                     y * b->linesize[3]);            \
                     bg[0][3] = af0[x];                                               \
                     bg[1][3] = af1[x];                                               \
                 }                                                                    \

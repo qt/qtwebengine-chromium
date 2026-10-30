@@ -531,6 +531,10 @@ typedef struct HEVCContext {
     // NoRaslOutputFlag associated with the last IRAP frame
     int no_rasl_output_flag;
 
+    // The first slice of the current picture was skipped (undecodable RASL
+    // or avctx->skip_frame), so drop its remaining slices too
+    int skipping_frame;
+
     HEVCPredContext hpc;
     HEVCDSPContext hevcdsp;
     VideoDSPContext vdsp;
@@ -718,6 +722,20 @@ void ff_hevc_hls_residual_coding(HEVCLocalContext *lc, const HEVCPPS *pps,
 void ff_hevc_hls_mvd_coding(HEVCLocalContext *lc, int x0, int y0, int log2_cb_size);
 
 int ff_hevc_is_alpha_video(const HEVCContext *s);
+
+/**
+ * Resolve the caller's view selection into layers.
+ *
+ * Depends only on the requested view IDs and the VPS, so unlike
+ * layers_active_decode it is already valid before setup_multilayer() runs and
+ * can be used from a hwaccel frame_params()/init() callback.  Auxiliary alpha
+ * video is not covered here, as its layers do not follow view selection.
+ *
+ * @param active_output receives the mask of layers to output
+ * @return number of layers that will be decoded, or a negative error code
+ */
+int ff_hevc_requested_layers(const HEVCContext *s, const HEVCVPS *vps,
+                             unsigned *active_output);
 
 extern const uint8_t ff_hevc_qpel_extra_before[4];
 extern const uint8_t ff_hevc_qpel_extra_after[4];

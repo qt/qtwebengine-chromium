@@ -54,7 +54,7 @@
 #include "libavutil/stereo3d.h"
 #include "libavutil/dict.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/libm.h"
+#include "libavutil/mathematics.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/timecode.h"
 #include "libavutil/timestamp.h"
@@ -332,6 +332,7 @@ static const AVTextFormatSection sections[] = {
 
 typedef struct EntrySelection {
     int show_all_entries;
+    int explicitly_selected; ///< Selected by unique name or through a selected parent.
     AVDictionary *entries_to_show;
 } EntrySelection;
 
@@ -447,6 +448,7 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 } while (0)
 
 #define print_int(k, v)         avtext_print_integer(tfc, k, v, 0)
+#define print_int_opt(k, v)     avtext_print_integer(tfc, k, v, AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
 #define print_q(k, v, s)        avtext_print_rational(tfc, k, v, s)
 #define print_str(k, v)         avtext_print_string(tfc, k, v, 0)
 #define print_str_opt(k, v)     avtext_print_string(tfc, k, v, AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
@@ -458,6 +460,30 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 #define print_val(k, v, u)            avtext_print_unit_integer(tfc, k, v, AV_TEXTFORMAT_VALUE_FMT_INT, u)
 #define print_int_fmt(k, v, f, u)     avtext_print_unit_integer(tfc, k, v, f, u)
 #define print_decibel(k, v)           avtext_print_unit_double(tfc, k, v, AV_TEXTFORMAT_VALUE_FMT_DECIBEL, 0)
+
+static void print_integers(AVTextFormatContext *tfc, const char *key,
+                           const void *data, int size, const char *format,
+                           int columns, int bytes, int offset_add)
+{
+    AVBPrint bp;
+    unsigned offset = 0;
+
+    av_bprint_init(&bp, 0, AV_BPRINT_SIZE_AUTOMATIC);
+    av_bprint_chars(&bp, '\n', 1);
+    while (size) {
+        av_bprintf(&bp, "%08x: ", offset);
+        for (int i = 0, l = FFMIN(size, columns); i < l; i++) {
+            if      (bytes == 1) av_bprintf(&bp, format, *(const uint8_t*)data);
+            else if (bytes == 2) av_bprintf(&bp, format, AV_RN16(data));
+            else if (bytes == 4) av_bprintf(&bp, format, AV_RN32(data));
+            data = (const char*)data + bytes;
+            size--;
+        }
+        av_bprint_chars(&bp, '\n', 1);
+        offset += offset_add;
+    }
+    avtext_print_string(tfc, key, bp.str, 0);
+}
 
 static void print_integers(AVTextFormatContext *tfc, const char *key,
                            const void *data, int size, const char *format,
@@ -748,10 +774,6 @@ static void print_dynamic_hdr10_plus(AVTextFormatContext *tfc, const AVDynamicHD
                 params->window_lower_right_corner_x,'/');
         print_q("window_lower_right_corner_y",
                 params->window_lower_right_corner_y,'/');
-        print_q("window_upper_left_corner_x",
-                params->window_upper_left_corner_x,'/');
-        print_q("window_upper_left_corner_y",
-                params->window_upper_left_corner_y,'/');
         print_int("center_of_ellipse_x",
                   params->center_of_ellipse_x ) ;
         print_int("center_of_ellipse_y",
@@ -977,6 +999,7 @@ static void print_film_grain_params(AVTextFormatContext *tfc,
         [AV_FILM_GRAIN_PARAMS_AV1]  = "av1",
         [AV_FILM_GRAIN_PARAMS_H274] = "h274",
     };
+    const char *const component_names[] = { "Y", "Cb", "Cr" };
 
     AVBPrint pbuf;
     if (!fgp || fgp->type >= FF_ARRAY_ELEMS(film_grain_type_names))
@@ -1017,7 +1040,7 @@ static void print_film_grain_params(AVTextFormatContext *tfc,
         avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_COMPONENT_LIST);
 
         if (aom->num_y_points) {
-            avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
+            avtext_print_section_header(tfc, component_names[0], SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
 
             print_int("bit_depth_luma", fgp->bit_depth_luma);
             print_list_fmt("y_points_value", "%"PRIu8, aom->num_y_points, 1, aom->y_points[idx][0]);
@@ -1032,7 +1055,7 @@ static void print_film_grain_params(AVTextFormatContext *tfc,
             if (!aom->num_uv_points[uv] && !aom->chroma_scaling_from_luma)
                 continue;
 
-            avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
+            avtext_print_section_header(tfc, component_names[1 + uv], SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
 
             print_int("bit_depth_chroma", fgp->bit_depth_chroma);
             print_list_fmt("uv_points_value", "%"PRIu8, aom->num_uv_points[uv], 1, aom->uv_points[uv][idx][0]);
@@ -1062,13 +1085,13 @@ static void print_film_grain_params(AVTextFormatContext *tfc,
             if (!h274->component_model_present[c])
                 continue;
 
-            avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
+            avtext_print_section_header(tfc, component_names[c], SECTION_ID_FRAME_SIDE_DATA_COMPONENT);
             print_int(c ? "bit_depth_chroma" : "bit_depth_luma", c ? fgp->bit_depth_chroma : fgp->bit_depth_luma);
 
             avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_PIECE_LIST);
             for (int i = 0; i < h274->num_intensity_intervals[c]; i++) {
 
-                avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_PIECE);
+                avtext_print_section_header(tfc, "Intensity interval", SECTION_ID_FRAME_SIDE_DATA_PIECE);
                 print_int("intensity_interval_lower_bound", h274->intensity_interval_lower_bound[c][i]);
                 print_int("intensity_interval_upper_bound", h274->intensity_interval_upper_bound[c][i]);
                 print_list_fmt("comp_model_value", "%"PRId16, h274->num_model_values[c], 1, h274->comp_model_value[c][i][idx]);
@@ -1925,6 +1948,10 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
         } else
             print_str_opt("profile", "unknown");
     }
+    if (par->level != AV_LEVEL_UNKNOWN)
+        print_int("level", par->level);
+    else
+        print_int_opt("level", par->level);
 
     s = av_get_media_type_string(par->codec_type);
     if (s) print_str    ("codec_type", s);
@@ -1965,7 +1992,6 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
             print_str_opt("display_aspect_ratio", "N/A");
         }
         print_pixel_format(tfc, par->format);
-        print_int("level",   par->level);
 
         print_color_range(tfc, par->color_range);
         print_color_space(tfc, par->color_space);
@@ -2912,15 +2938,17 @@ static int opt_format(void *optctx, const char *opt, const char *arg)
 }
 
 static inline void mark_section_show_entries(SectionID section_id,
-                                             int show_all_entries, AVDictionary *entries)
+                                             int show_all_entries, AVDictionary *entries,
+                                             int explicitly_selected)
 {
     EntrySelection *selection = &selected_entries[section_id];
 
     selection->show_all_entries = show_all_entries;
+    selection->explicitly_selected |= explicitly_selected;
     if (show_all_entries) {
         const AVTextFormatSection *section = &sections[section_id];
         for (const int *id = section->children_ids; *id != -1; id++)
-            mark_section_show_entries(*id, show_all_entries, entries);
+            mark_section_show_entries(*id, show_all_entries, entries, explicitly_selected);
     } else {
         av_dict_copy(&selection->entries_to_show, entries, 0);
     }
@@ -2939,7 +2967,9 @@ static int match_section(const char *section_name,
                    "'%s' matches section with unique name '%s'\n", section_name,
                    (char *)av_x_if_null(section->unique_name, section->name));
             ret++;
-            mark_section_show_entries(section->id, show_all_entries, entries);
+            mark_section_show_entries(section->id, show_all_entries, entries,
+                                      !section->unique_name ||
+                                      !strcmp(section_name, section->unique_name));
         }
     }
     return ret;
@@ -3265,15 +3295,15 @@ static int opt_codec(void *optctx, const char *opt, const char *arg)
 
 static int opt_show_versions(void *optctx, const char *opt, const char *arg)
 {
-    mark_section_show_entries(SECTION_ID_PROGRAM_VERSION, 1, NULL);
-    mark_section_show_entries(SECTION_ID_LIBRARY_VERSION, 1, NULL);
+    mark_section_show_entries(SECTION_ID_PROGRAM_VERSION, 1, NULL, 1);
+    mark_section_show_entries(SECTION_ID_LIBRARY_VERSION, 1, NULL, 1);
     return 0;
 }
 
 #define DEFINE_OPT_SHOW_SECTION(section, target_section_id)             \
     static int opt_show_##section(void *optctx, const char *opt, const char *arg) \
     {                                                                   \
-        mark_section_show_entries(SECTION_ID_##target_section_id, 1, NULL); \
+        mark_section_show_entries(SECTION_ID_##target_section_id, 1, NULL, 1); \
         return 0;                                                       \
     }
 
@@ -3344,22 +3374,28 @@ static const OptionDef real_options[] = {
     { NULL, },
 };
 
-static inline int check_section_show_entries(int section_id)
+static inline int check_section_show_entries(int section_id, int require_explicit)
 {
     const EntrySelection *selection = &selected_entries[section_id];
 
-    if (selection->show_all_entries || selection->entries_to_show)
+    /* A shared stream section must not implicitly enable programs or groups. */
+    if (section_id == SECTION_ID_PROGRAM_STREAMS ||
+        section_id == SECTION_ID_STREAM_GROUP_STREAMS)
+        require_explicit = 1;
+
+    if ((!require_explicit || selection->explicitly_selected) &&
+        (selection->show_all_entries || selection->entries_to_show))
         return 1;
 
     const AVTextFormatSection *section = &sections[section_id];
     for (const int *id = section->children_ids; *id != -1; id++)
-        if (check_section_show_entries(*id))
+        if (check_section_show_entries(*id, require_explicit))
             return 1;
     return 0;
 }
 
 #define SET_DO_SHOW(id, varname) do {                                   \
-        if (check_section_show_entries(SECTION_ID_##id))                \
+        if (check_section_show_entries(SECTION_ID_##id, 0))             \
             do_show_##varname = 1;                                      \
     } while (0)
 
@@ -3452,6 +3488,11 @@ int main(int argc, char **argv)
     f = avtext_get_formatter_by_name(f_name);
     if (!f) {
         av_log(NULL, AV_LOG_ERROR, "Unknown output format with name '%s'\n", f_name);
+        ret = AVERROR(EINVAL);
+        goto end;
+    }
+    if (f->flags & AV_TEXTFORMAT_FLAG_IS_DIAGRAM_FORMATTER) {
+        av_log(NULL, AV_LOG_ERROR, "Output format '%s' can only draw filter graphs\n", f_name);
         ret = AVERROR(EINVAL);
         goto end;
     }

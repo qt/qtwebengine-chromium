@@ -227,9 +227,9 @@ typedef struct DiracContext {
 
     DECLARE_ALIGNED(16, uint8_t, obmc_weight)[3][MAX_BLOCKSIZE*MAX_BLOCKSIZE];
 
-    void (*put_pixels_tab[4])(uint8_t *dst, const uint8_t *src[5], int stride, int h);
-    void (*avg_pixels_tab[4])(uint8_t *dst, const uint8_t *src[5], int stride, int h);
-    void (*add_obmc)(uint16_t *dst, const uint8_t *src, int stride, const uint8_t *obmc_weight, int yblen);
+    void (*put_pixels_tab[4])(uint8_t *dst, const uint8_t *src[5], ptrdiff_t stride, int h);
+    void (*avg_pixels_tab[4])(uint8_t *dst, const uint8_t *src[5], ptrdiff_t stride, int h);
+    void (*add_obmc)(uint16_t *dst, const uint8_t *src, ptrdiff_t stride, const uint8_t *obmc_weight, int yblen);
     dirac_weight_func weight_func;
     dirac_biweight_func biweight_func;
 
@@ -1924,7 +1924,7 @@ static int dirac_decode_frame_internal(DiracContext *s)
             select_dsp_funcs(s, p->width, p->height, p->xblen, p->yblen);
 
             for (i = 0; i < s->num_refs; i++) {
-                int ret = interpolate_refplane(s, s->ref_pics[i], comp, p->width, p->height);
+                ret = interpolate_refplane(s, s->ref_pics[i], comp, p->width, p->height);
                 if (ret < 0)
                     return ret;
             }
@@ -2133,7 +2133,9 @@ static int dirac_decode_data_unit(AVCodecContext *avctx, const uint8_t *buf, int
 
     parse_code = buf[4];
 
-    init_get_bits(&s->gb, &buf[13], 8*(size - DATA_UNIT_HEADER_SIZE));
+    ret = init_get_bits8(&s->gb, &buf[13], size - DATA_UNIT_HEADER_SIZE);
+    if (ret < 0)
+        return ret;
 
     if (parse_code == DIRAC_PCODE_SEQ_HEADER) {
         if (s->seen_sequence_header)

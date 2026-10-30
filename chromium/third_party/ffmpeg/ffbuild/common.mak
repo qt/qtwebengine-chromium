@@ -16,10 +16,13 @@ endif
 BIN2CEXE = ffbuild/bin2c$(HOSTEXESUF)
 BIN2C = $(BIN2CEXE)
 
+# $(call INSTALL_FILES, install options, files, destination)
+INSTALL_FILES = $(INSTALL) $(1) $(2) "$(3)"
+
 ifndef V
 Q      = @
 ECHO   = printf "$(1)\t%s\n" $(2)
-BRIEF  = CC CXX OBJCC HOSTCC HOSTLD AS X86ASM AR LD LDXX STRIP CP WINDRES GLSLC NVCC BIN2C METALCC METALLIB
+BRIEF  = CC CXX OBJCC HOSTCC HOSTLD AS X86ASM AR LD LDXX STRIP CP WINDRES GLSLC NVCC BIN2C METALCC METALLIB MSCLCC
 SILENT = DEPCC DEPCXX DEPHOSTCC DEPAS DEPX86ASM RANLIB RM
 
 MSG    = $@
@@ -27,7 +30,7 @@ M      = @$(call ECHO,$(TAG),$@);
 $(foreach VAR,$(BRIEF), \
     $(eval override $(VAR) = @$$(call ECHO,$(VAR),$$(MSG)); $($(VAR))))
 $(foreach VAR,$(SILENT),$(eval override $(VAR) = @$($(VAR))))
-$(eval INSTALL = @$(call ECHO,INSTALL,$$(^:$(SRC_PATH)/%=%)); $(INSTALL))
+INSTALL_FILES = @$(foreach F,$(2),printf 'INSTALL\t%s -> %s\n' "$(F:$(SRC_PATH)/%=%)" "$(3)"; )$(INSTALL) $(1) $(2) "$(3)"
 endif
 
 # Prepend to a recursively expanded variable without making it simply expanded.
@@ -79,22 +82,22 @@ COMPILE_LASX = $(call COMPILE,CC,LASXFLAGS)
 %_lasx.o: %_lasx.c
 	$(COMPILE_LASX)
 
-%.o: %.c
+%.o: %.c | $(MSCL)
 	$(COMPILE_C)
 
-%.o: %.cpp
+%.o: %.cpp | $(MSCL)
 	$(COMPILE_CXX)
 
-%.o: %.m
+%.o: %.m | $(MSCL)
 	$(COMPILE_M)
 
-%.s: %.c
+%.s: %.c | $(MSCL)
 	$(CC) $(CCFLAGS) -S -o $@ $<
 
-%.o: %.S
+%.o: %.S | $(MSCL)
 	$(COMPILE_S)
 
-%_host.o: %.c
+%_host.o: %.c | $(MSCL)
 	$(COMPILE_HOSTC)
 
 %.o: %.asm
@@ -104,7 +107,7 @@ COMPILE_LASX = $(call COMPILE,CC,LASXFLAGS)
 %.o: %.rc
 	$(WINDRES) $(IFLAGS) $(foreach ARG,$(CC_DEPFLAGS),--preprocessor-arg "$(ARG)") -o $@ $<
 
-%.i: %.c
+%.i: %.c | $(MSCL)
 	$(CC) $(CCFLAGS) $(CC_E) $<
 
 %.h.c:
@@ -240,7 +243,8 @@ checkheaders: $(HOBJS)
 .SECONDARY:   $(HOBJS:.o=.c) $(SPVOBJS:.o=.c) $(SPVOBJS:.o=.gz) $(SPVOBJS:.o=) $(PTXOBJS:.o=.c) $(PTXOBJS:.o=.gz) $(PTXOBJS:.o=)
 alltools: $(TOOLS)
 
-$(HOSTOBJS): %.o: %.c
+# ffbuild/mscl.o is excluded as it has its own bootstrap rule in Makefile
+$(filter-out ffbuild/mscl.o,$(HOSTOBJS)): %.o: %.c | $(MSCL)
 	$(COMPILE_HOSTC)
 
 $(HOSTPROGS): %$(HOSTEXESUF): %.o
@@ -256,7 +260,7 @@ $(TOOLOBJS): | tools
 
 OUTDIRS := $(OUTDIRS) $(dir $(OBJS) $(HOBJS) $(HOSTOBJS) $(SHLIBOBJS) $(STLIBOBJS) $(TESTOBJS))
 
-CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.ho *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.spv *.spv.gz *.spv.c *.gen.asm *.gen.c *.gen.S *.ver *.version *.html.gz *.html.c *.css.min.gz *.css.min *.css.c *~ *.ilk *.pdb
+CLEANSUFFIXES     = *.d *.gcda *.gcno *.h.c *.map *.o *.objs *.pc *.ptx *.ptx.gz *.ptx.c *.spv *.spv.gz *.spv.c *.gen.asm *.gen.c *.gen.S *.ver *.version *.html.gz *.html.c *.css.min.gz *.css.min *.css.c *~ *.ilk *.pdb
 LIBSUFFIXES       = *.a *.lib *.so *.so.* *.dylib *.dll *.def *.dll.a
 
 define RULES

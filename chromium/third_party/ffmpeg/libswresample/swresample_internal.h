@@ -27,6 +27,8 @@
 
 #define SWR_CH_MAX 64
 
+#define SQRT1_3      0.57735026918962576451  /* sqrt(1/3) */
+#define SQRT2_3      0.81649658092772603273  /* sqrt(2/3) */
 #define SQRT3_2      1.22474487139158904909  /* sqrt(3/2) */
 
 #define NS_TAPS 20
@@ -205,6 +207,8 @@ void swri_noise_shaping_int32 (SwrContext *s, AudioData *dsts, const AudioData *
 void swri_noise_shaping_float (SwrContext *s, AudioData *dsts, const AudioData *srcs, const AudioData *noises, int count);
 void swri_noise_shaping_double(SwrContext *s, AudioData *dsts, const AudioData *srcs, const AudioData *noises, int count);
 
+av_warn_unused_result
+int swri_rematrix_build(SwrContext *s);
 av_warn_unused_result
 int swri_rematrix_init(SwrContext *s);
 void swri_rematrix_free(SwrContext *s);

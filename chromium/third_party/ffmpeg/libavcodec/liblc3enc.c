@@ -138,7 +138,12 @@ static int liblc3_encode(AVCodecContext *avctx, AVPacket *pkt,
     int block_bytes = liblc3->block_bytes;
     int channels = avctx->ch_layout.nb_channels;
     uint8_t *data_ptr;
+    size_t sample_size;
+    int is_planar;
     int ret;
+
+    is_planar = av_sample_fmt_is_planar(avctx->sample_fmt);
+    sample_size = av_get_bytes_per_sample(avctx->sample_fmt);
 
     if ((ret = ff_get_encode_buffer(avctx, pkt, block_bytes, 0)) < 0)
         return ret;

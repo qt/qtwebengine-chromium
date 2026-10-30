@@ -393,6 +393,9 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
                                qpel_mc_func *qpix_op,
                                h264_chroma_mc_func chroma_op, cavs_vector *mv)
 {
+    if (!pic->data[0])
+        return;
+
     const int mx         = mv->x + src_x_offset * 8;
     const int my         = mv->y + src_y_offset * 8;
     const int luma_xy    = (mx & 3) + ((my & 3) << 2);
@@ -407,8 +410,6 @@ static inline void mc_dir_part(AVSContext *h, AVFrame *pic, int chroma_height,
     const int pic_height = 16 * h->mb_height;
     int emu = 0;
 
-    if (!pic->data[0])
-        return;
     if (mx & 7)
         extra_width  -= 3;
     if (my & 7)
@@ -726,9 +727,9 @@ int ff_cavs_init_pic(AVSContext *h)
     /* clear some predictors */
     for (i = 0; i <= 20; i += 4)
         h->mv[i] = un_mv;
-    h->mv[MV_BWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_BWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_BWD_X0], BLK_16X16);
-    h->mv[MV_FWD_X0] = ff_cavs_dir_mv;
+    h->mv[MV_FWD_X0] = CAVS_DIR_MV;
     set_mvs(&h->mv[MV_FWD_X0], BLK_16X16);
     h->pred_mode_Y[3] = h->pred_mode_Y[6] = NOT_AVAIL;
     h->cy             = h->cur.f->data[0];

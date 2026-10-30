@@ -326,7 +326,10 @@ static int buf_realloc(struct ogg_stream *os, int size)
 {
     /* Even if invalid guarantee there's enough memory to read the page */
     if (os->bufsize - os->bufpos < size) {
-        uint8_t *nb = av_realloc(os->buf, 2*os->bufsize + AV_INPUT_BUFFER_PADDING_SIZE);
+        uint8_t *nb;
+        if (os->bufsize > (UINT_MAX - AV_INPUT_BUFFER_PADDING_SIZE) / 2)
+            return AVERROR(ENOMEM);
+        nb = av_realloc(os->buf, 2*os->bufsize + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!nb)
             return AVERROR(ENOMEM);
         os->buf = nb;
@@ -593,6 +596,9 @@ static int ogg_packet(AVFormatContext *s, int *sid, int *dstart, int *dsize,
 
     ogg->curidx    = idx;
     os->incomplete = 0;
+
+    // the packet started at the first segment of the page it completes on
+    os->page_start = segp == 0;
 
     if (os->header) {
         if ((ret = os->codec->header(s, idx)) < 0) {

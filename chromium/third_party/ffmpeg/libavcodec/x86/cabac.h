@@ -29,9 +29,7 @@
 #include "libavutil/x86/asm.h"
 #include "config.h"
 
-#if   (defined(__i386) && defined(__clang__) && (__clang_major__<2 || (__clang_major__==2 && __clang_minor__<10)))\
-   || (                  !defined(__clang__) && defined(__llvm__) && __GNUC__==4 && __GNUC_MINOR__==2 && __GNUC_PATCHLEVEL__<=1)\
-   || (defined(__INTEL_COMPILER) && defined(_MSC_VER))
+#if defined(__INTEL_COMPILER) && defined(_MSC_VER)
 #       define BROKEN_COMPILER 1
 #else
 #       define BROKEN_COMPILER 0
@@ -216,7 +214,7 @@
 
 #endif /* BROKEN_RELOCATIONS */
 
-#if HAVE_7REGS && !BROKEN_COMPILER
+#if HAVE_X86_7REGS && !BROKEN_COMPILER
 #define get_cabac_inline get_cabac_inline_x86
 static
 #if ARCH_X86_32
@@ -255,7 +253,7 @@ int get_cabac_inline_x86(CABACContext *c, uint8_t *const state)
     );
     return bit & 1;
 }
-#endif /* HAVE_7REGS && !BROKEN_COMPILER */
+#endif /* HAVE_X86_7REGS && !BROKEN_COMPILER */
 
 #if !BROKEN_COMPILER
 #define get_cabac_bypass_sign get_cabac_bypass_sign_x86

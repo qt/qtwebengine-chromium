@@ -57,7 +57,7 @@ static av_cold int init_filter(AVFilterContext *ctx)
         goto fail;
     }
 
-    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, FF_VK_DEFAULT_EXEC_CONTEXTS, 0, 0, 0, NULL));
     RET(ff_vk_init_sampler(vkctx, &s->sampler, 1,
                            s->lowpass == VLPF_OFF ? VK_FILTER_NEAREST
                                                   : VK_FILTER_LINEAR));
@@ -70,6 +70,11 @@ static av_cold int init_filter(AVFilterContext *ctx)
                       sl, (uint32_t []) { 32, 1, planes }, 0);
 
     const FFVulkanDescriptorSetBinding desc[] = {
+        { /* output_img */
+            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
+            .elems  = planes,
+        },
         { /* top_field */
             .type     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .stages   = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -81,11 +86,6 @@ static av_cold int init_filter(AVFilterContext *ctx)
             .stages   = VK_SHADER_STAGE_COMPUTE_BIT,
             .samplers = DUP_SAMPLER(s->sampler),
             .elems    = planes,
-        },
-        { /* output_img */
-            .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .stages = VK_SHADER_STAGE_COMPUTE_BIT,
-            .elems  = planes,
         },
     };
     ff_vk_shader_add_descriptor_set(vkctx, &s->shd, desc, 3, 0);

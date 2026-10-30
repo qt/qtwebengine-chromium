@@ -134,7 +134,6 @@ static const AVClass asf_class = {
 #undef NDEBUG
 #include <assert.h>
 
-#define ASF_MAX_STREAMS 127
 #define FRAME_HEADER_SIZE 6
 // Fix Me! FRAME_HEADER_SIZE may be different.
 // (7 is known to be too large for GipsyGuitar.wmv)
@@ -310,11 +309,6 @@ static int asf_read_stream_properties(AVFormatContext *s, int64_t size)
     unsigned int tag1;
     int64_t pos1, pos2, start_time;
     int test_for_ext_stream_audio, is_dvr_ms_audio = 0;
-
-    if (s->nb_streams == ASF_MAX_STREAMS) {
-        av_log(s, AV_LOG_ERROR, "too many streams\n");
-        return AVERROR(EINVAL);
-    }
 
     pos1 = avio_tell(pb);
 
@@ -1447,13 +1441,12 @@ static int64_t asf_read_pts(AVFormatContext *s, int stream_index,
     FFFormatContext *const si = ffformatcontext(s);
     ASFContext *asf     = s->priv_data;
     AVPacket pkt1, *pkt = &pkt1;
-    ASFStream *asf_st;
     int64_t pts;
     int64_t pos = *ppos;
     int i;
-    int64_t start_pos[ASF_MAX_STREAMS];
+    int64_t start_pos[FF_ARRAY_ELEMS(asf->streams)];
 
-    for (i = 0; i < s->nb_streams; i++)
+    for (i = 0; i < FF_ARRAY_ELEMS(start_pos); i++)
         start_pos[i] = pos;
 
     if (s->packet_size > 0)
@@ -1475,17 +1468,12 @@ static int64_t asf_read_pts(AVFormatContext *s, int stream_index,
         pts = pkt->dts;
 
         if (pkt->flags & AV_PKT_FLAG_KEY) {
-            i = pkt->stream_index;
+            AVStream *st = s->streams[pkt->stream_index];
 
-            asf_st = &asf->streams[s->streams[i]->id];
-
-//            assert((asf_st->packet_pos - s->data_offset) % s->packet_size == 0);
-            pos = asf_st->packet_pos;
-            av_assert1(pkt->pos == asf_st->packet_pos);
-
-            av_add_index_entry(s->streams[i], pos, pts, pkt->size,
-                               pos - start_pos[i] + 1, AVINDEX_KEYFRAME);
-            start_pos[i] = asf_st->packet_pos + 1;
+            pos = pkt->pos;
+            av_add_index_entry(st, pos, pts, pkt->size,
+                               pos - start_pos[st->id] + 1, AVINDEX_KEYFRAME);
+            start_pos[st->id] = pos + 1;
 
             if (pkt->stream_index == stream_index) {
                 av_packet_unref(pkt);

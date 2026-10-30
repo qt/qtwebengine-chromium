@@ -609,8 +609,6 @@ static av_cold int mjpeg_encode_init(AVCodecContext *avctx)
 }
 
 #if CONFIG_AMV_ENCODER
-// maximum over s->mjpeg_vsample[i]
-#define V_MAX 2
 static int amv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
                               const AVFrame *pic_arg, int *got_packet)
 {
@@ -633,8 +631,8 @@ static int amv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
         return AVERROR(ENOMEM);
     //picture should be flipped upside-down
     for(i=0; i < 3; i++) {
-        int vsample = i ? 2 >> chroma_v_shift : 2;
-        pic->data[i] += pic->linesize[i] * (vsample * s->c.height / V_MAX - 1);
+        int v_shift = i ? chroma_v_shift : 0;
+        pic->data[i] += pic->linesize[i] * (AV_CEIL_RSHIFT(s->c.height, v_shift) - 1);
         pic->linesize[i] *= -1;
     }
     ret = ff_mpv_encode_picture(avctx, pkt, pic, got_packet);
@@ -646,11 +644,12 @@ static int amv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
 #define OFFSET(x) offsetof(MJPEGEncContext, mjpeg.x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-#define AMV_OPTIONS_OFFSET 4
+#define AMV_OPTIONS_OFFSET 5
 { "huffman", "Huffman table strategy", OFFSET(huffman), AV_OPT_TYPE_INT, { .i64 = HUFFMAN_TABLE_OPTIMAL }, 0, NB_HUFFMAN_TABLE_OPTION - 1, VE, .unit = "huffman" },
     { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = HUFFMAN_TABLE_DEFAULT }, INT_MIN, INT_MAX, VE, .unit = "huffman" },
     { "optimal", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = HUFFMAN_TABLE_OPTIMAL }, INT_MIN, INT_MAX, VE, .unit = "huffman" },
 { "force_duplicated_matrix", "Always write luma and chroma matrix for mjpeg, useful for rtp streaming.", OFFSET(force_duplicated_matrix), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, VE },
+{ "xmp_gain_map", "Write Ultra HDR gain map metadata as an XMP packet", OFFSET(xmp_gain_map), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, VE },
 FF_MPV_COMMON_OPTS
 { NULL},
 };
