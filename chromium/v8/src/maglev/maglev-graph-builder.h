@@ -1101,7 +1101,7 @@ class MaglevGraphBuilder {
       compiler::OptionalSharedFunctionInfoRef maybe_shared,
       CallArguments& args);
   MaybeReduceResult TryReduceFunctionPrototypeApplyCallWithReceiver(
-      compiler::OptionalHeapObjectRef maybe_receiver, CallArguments& args,
+      compiler::OptionalJSFunctionRef maybe_receiver, CallArguments& args,
       const compiler::FeedbackSource& feedback_source);
   ReduceResult ReduceCallWithArrayLikeForArgumentsObject(
       ValueNode* target_node, CallArguments& args,
